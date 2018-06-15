@@ -1,9 +1,12 @@
+#!/usr/bin/env python3
+
 import argparse
 import torch
 import torch.nn as nn
 import numpy as np
 import os
 import pickle
+import sys
 
 from data_loader import get_loader 
 from build_vocab import Vocabulary
@@ -119,6 +122,7 @@ def main(args):
                 print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Perplexity: {:5.4f}'
                       .format(epoch+1, args.num_epochs, i+1, total_step, 
                               loss.item(), np.exp(loss.item()))) 
+                sys.stdout.flush()
                 
             # Save the model checkpoints
             if args.save_step and (i+1) % args.save_step == 0:

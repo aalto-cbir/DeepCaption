@@ -2,3 +2,6 @@
 *.pyc
 /data
 /models
+*~
+/*.json
+/*.result

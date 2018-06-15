@@ -1,7 +1,10 @@
+#!/usr/bin/env python3
+
 import argparse
 import glob
 import json
 import numpy as np 
+import os
 import pickle
 import re
 import sys
@@ -12,10 +15,12 @@ from build_vocab import Vocabulary
 from model import ModelParams, EncoderCNN, DecoderRNN
 from torchvision import transforms 
 from tqdm import tqdm
-from os.path import basename, splitext
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+def basename(fname):
+    return os.path.splitext(os.path.basename(fname))[0]
 
 def fix_caption(caption):
     m = re.match(r'^<start> (.*?)( <end>)?$', caption)
@@ -73,7 +78,7 @@ def main(args):
     N = len(file_list)
     print('Directory {} contains {} files.'.format(args.image_dir, N))
     for i, image_file in tqdm(enumerate(file_list), disable=args.verbose):
-        m = re.search(r'0*(\d+)$', splitext(basename(image_file))[0])
+        m = re.search(r'0*(\d+)$', basename(image_file))
         if m is None:
             print('Unable to parse COCO image_id from filename {}!'.format(image_file))
             sys.exit(1)
@@ -105,7 +110,12 @@ def main(args):
 
         output_data.append({'caption': sentence, 'image_id': image_id})
 
-    json.dump(output_data, open(args.output_file, 'w'))
+    if not args.output_file:
+        output_file = basename(args.model) + '.json'
+    else:
+        output_file = args.output_file
+        
+    json.dump(output_data, open(output_file, 'w'))
         
     
 if __name__ == '__main__':
@@ -116,8 +126,7 @@ if __name__ == '__main__':
                         help='path to existing model')
     parser.add_argument('--vocab_path', type=str, default='data/vocab.pkl', 
                         help='path for vocabulary wrapper')
-    parser.add_argument('--output_file', type=str, default='output.json', 
-                        help='path for output JSON')
+    parser.add_argument('--output_file', type=str, help='path for output JSON')
     parser.add_argument('--verbose', help='verbose output', action='store_true')
     
     args = parser.parse_args()
