@@ -3,6 +3,23 @@ import torch.nn as nn
 import torchvision.models as models
 from torch.nn.utils.rnn import pack_padded_sequence
 
+class ModelParams:
+    def __init__(self, d):
+        self.embed_size = self._get_param(d, 'embed_size', 256)
+        self.hidden_size = self._get_param(d, 'hidden_size', 512)
+        self.num_layers = self._get_param(d, 'num_layers', 1)
+
+    @classmethod
+    def fromargs(cls, args):
+        return cls(vars(args))
+
+    def _get_param(self, d, param, default):
+        if param not in d:
+            print('WARNING: {} not set, using default value {}'.
+                  format(param, default))
+            return default
+        return d[param]
+
 
 class EncoderCNN(nn.Module):
     def __init__(self, embed_size):

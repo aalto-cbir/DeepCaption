@@ -8,19 +8,20 @@ import pickle
 from data_loader import get_loader 
 from build_vocab import Vocabulary
 from datetime import datetime
-from model import EncoderCNN, DecoderRNN
+from model import ModelParams, EncoderCNN, DecoderRNN
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def save_models(basename, encoder, decoder, optimizer, epoch, step):
+def save_models(args, params, encoder, decoder, optimizer, epoch, step):
+    bn = args.model_basename
     if step==0:
-        file_name = '{}-{}-final.ckpt'.format(basename, epoch+1)
+        file_name = '{}-{}-final.ckpt'.format(bn, epoch+1)
         epoch += epoch # set to start of next epoch
     else:
-        file_name = '{}-{}-{}.ckpt'.format(basename, epoch+1, step+1)
+        file_name = '{}-{}-{}.ckpt'.format(bn, epoch+1, step+1)
 
     state = {
         'epoch': epoch,
@@ -28,17 +29,23 @@ def save_models(basename, encoder, decoder, optimizer, epoch, step):
         'encoder': encoder.state_dict(),
         'decoder': decoder.state_dict(),
         'optimizer': optimizer.state_dict(),
-        
+        'embed_size': params.embed_size,
+        'hidden_size': params.hidden_size,
+        'num_layers': params.num_layers,
     }
 
     torch.save(state, os.path.join(args.model_path, file_name))
 
     
-def load_models(model_path, encoder, decoder, optimizer):
+def load_models(args, model_path, encoder, decoder, optimizer):
     state = torch.load(model_path)
     encoder.load_state_dict(state['encoder'])
     decoder.load_state_dict(state['decoder'])
     optimizer.load_state_dict(state['optimizer'])
+
+    va = vars(args)
+    for a in 'embed_size', 'hidden_size', 'num_layers':
+        assert state[a] == va[a]
     return state['epoch'], state['step']
 
 
@@ -65,10 +72,12 @@ def main(args):
                              transform, args.batch_size,
                              shuffle=True, num_workers=args.num_workers) 
 
+    params = ModelParams.fromargs(args)
+    
     # Build the models
-    encoder = EncoderCNN(args.embed_size).to(device)
-    decoder = DecoderRNN(args.embed_size, args.hidden_size, len(vocab), 
-                         args.num_layers).to(device)
+    encoder = EncoderCNN(params.embed_size).to(device)
+    decoder = DecoderRNN(params.embed_size, params.hidden_size, len(vocab), 
+                         params.num_layers).to(device)
 
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
@@ -113,11 +122,11 @@ def main(args):
                 
             # Save the model checkpoints
             if args.save_step and (i+1) % args.save_step == 0:
-                save_models(args.model_basename, encoder, decoder, optimizer, epoch, i)
+                save_models(args, params, encoder, decoder, optimizer, epoch, i)
 
         start_step = 0
 
-        save_models(args.model_basename, encoder, decoder, optimizer, epoch, 0)
+        save_models(args, params, encoder, decoder, optimizer, epoch, 0)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

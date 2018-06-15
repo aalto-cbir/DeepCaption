@@ -1,7 +1,6 @@
 import argparse
 import glob
 import json
-# import matplotlib.pyplot as plt
 import numpy as np 
 import pickle
 import re
@@ -10,7 +9,7 @@ import torch
 
 from PIL import Image
 from build_vocab import Vocabulary
-from model import EncoderCNN, DecoderRNN
+from model import ModelParams, EncoderCNN, DecoderRNN
 from torchvision import transforms 
 from tqdm import tqdm
 from os.path import basename, splitext
@@ -54,17 +53,20 @@ def main(args):
 
     # Build models
     print('Bulding models.')
-    encoder = EncoderCNN(args.embed_size).eval()  # eval mode (batchnorm uses moving mean/variance)
-    decoder = DecoderRNN(args.embed_size, args.hidden_size, len(vocab), args.num_layers)
+
+    state = torch.load(args.model)
+    params = ModelParams(state)
+
+    # We set encoder to eval mode (BN uses moving mean/variance)
+    encoder = EncoderCNN(params.embed_size).eval() 
+    decoder = DecoderRNN(params.embed_size, params.hidden_size, len(vocab),
+                         params.num_layers)
     encoder = encoder.to(device)
     decoder = decoder.to(device)
 
     # Load the trained model parameters
-    print('Reading trained encoder model from {}'.format(args.encoder_path))
-    encoder.load_state_dict(torch.load(args.encoder_path))
-
-    print('Reading trained decoder model from {}'.format(args.decoder_path))
-    decoder.load_state_dict(torch.load(args.decoder_path))
+    encoder.load_state_dict(state['encoder'])
+    decoder.load_state_dict(state['decoder'])
 
     output_data = []
     file_list = glob.glob(args.image_dir + '/*.jpg')
@@ -108,16 +110,15 @@ def main(args):
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--image_dir', type=str, default='data/val2014', help='input image dir for generating captions')
-    parser.add_argument('--encoder_path', type=str, default='models/encoder-5-3000.ckpt', help='path for trained encoder')
-    parser.add_argument('--decoder_path', type=str, default='models/decoder-5-3000.ckpt', help='path for trained decoder')
-    parser.add_argument('--vocab_path', type=str, default='data/vocab.pkl', help='path for vocabulary wrapper')
-    parser.add_argument('--output_file', type=str, default='output.json', help='path for output JSON')
+    parser.add_argument('--image_dir', type=str, default='data/val2014', 
+                        help='input image dir for generating captions')
+    parser.add_argument('--model', type=str, required=True,
+                        help='path to existing model')
+    parser.add_argument('--vocab_path', type=str, default='data/vocab.pkl', 
+                        help='path for vocabulary wrapper')
+    parser.add_argument('--output_file', type=str, default='output.json', 
+                        help='path for output JSON')
     parser.add_argument('--verbose', help='verbose output', action='store_true')
     
-    # Model parameters (should be same as paramters in train.py)
-    parser.add_argument('--embed_size', type=int , default=256, help='dimension of word embedding vectors')
-    parser.add_argument('--hidden_size', type=int , default=512, help='dimension of lstm hidden states')
-    parser.add_argument('--num_layers', type=int , default=1, help='number of layers in lstm')
     args = parser.parse_args()
     main(args)
