@@ -26,7 +26,7 @@ def fix_caption(caption):
     m = re.match(r'^<start> (.*?)( <end>)?$', caption)
     if m is None:
         print('ERROR: unexpected caption format: "{}"'.format(caption))
-        sys.exit(1)              
+        return caption.capitalize()
 
     ret = m.group(1)
     ret = re.sub(r'\s([.,])(\s|$)',r'\1\2', ret)
