@@ -1,6 +1,7 @@
 #!/bin/bash
 
-COCOEVAL=~/src/coco-caption/cocoEval.py
+PYTHON2=/appl/opt/python/2.7.10-gcc493-shared/bin/python2
+COCOEVAL=~/appl_taito/coco-caption/cocoEval.py
 RESULTS_JSON=$1
 
 if [ -z "$RESULTS_JSON" ]; then
@@ -10,5 +11,5 @@ fi
 
 OUTPUT_FNAME="$(basename $RESULTS_JSON .json).result"
 
-$COCOEVAL $RESULTS_JSON | tee $OUTPUT_FNAME
+$PYTHON2 $COCOEVAL $RESULTS_JSON | tee $OUTPUT_FNAME
 echo "Wrote $OUTPUT_FNAME"
