@@ -45,6 +45,10 @@ def load_image(image_path, transform=None):
     return image
 
 def main(args):
+    # Create model directory
+    if not os.path.exists(args.results_path):
+        os.makedirs(args.results_path)
+
     # Image preprocessing
     transform = transforms.Compose([
         transforms.ToTensor(), 
@@ -128,6 +132,8 @@ if __name__ == '__main__':
                         help='path for vocabulary wrapper')
     parser.add_argument('--output_file', type=str, help='path for output JSON')
     parser.add_argument('--verbose', help='verbose output', action='store_true')
+    parser.add_argument('--results_path', type=str, default='results/' , 
+                        help='path for saving results')
     
     args = parser.parse_args()
     main(args)
