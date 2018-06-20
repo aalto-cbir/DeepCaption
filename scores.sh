@@ -2,14 +2,21 @@
 
 PYTHON2=/appl/opt/python/2.7.10-gcc493-shared/bin/python2
 COCOEVAL=~/appl_taito/coco-caption/cocoEval.py
-RESULTS_JSON=$1
 
-if [ -z "$RESULTS_JSON" ]; then
-    echo "Usage: $0 results.json"
+if [ -z "$*" ]; then
+    echo "Usage: $0 results1.json results2.json ..."
     exit 1
 fi
 
-OUTPUT_FNAME="$(basename $RESULTS_JSON .json).result"
+for RESULTS_JSON in "$@"
+do
+    BASENAME=$(basename $RESULTS_JSON .json)
+    OUTPUT_FNAME="${BASENAME}.result"
+    echo -n "${BASENAME} "
 
-$PYTHON2 $COCOEVAL $RESULTS_JSON | tee $OUTPUT_FNAME
-echo "Wrote $OUTPUT_FNAME"
+    $PYTHON2 $COCOEVAL $RESULTS_JSON &> $OUTPUT_FNAME
+
+    METEOR=$(grep "METEOR:" $OUTPUT_FNAME | tail -n1)
+    CIDER=$(grep "CIDEr:" $OUTPUT_FNAME | tail -n1)
+    echo "${METEOR} ${CIDER}"
+done
