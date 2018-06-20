@@ -82,12 +82,13 @@ def main(args):
     N = len(file_list)
     print('Directory {} contains {} files.'.format(args.image_dir, N))
     for i, image_file in tqdm(enumerate(file_list), disable=args.verbose):
-        m = re.search(r'0*(\d+)$', basename(image_file))
-        if m is None:
-            print('Unable to parse COCO image_id from filename {}!'.format(image_file))
-            sys.exit(1)
-        image_id = int(m.group(1))
-        assert image_id > 0
+        bn = basename(image_file)
+        m = re.search(r'0*(\d+)$', bn)
+        if m is not None:
+            image_id = int(m.group(1))
+            assert image_id > 0
+        else:
+            image_id = bn
 
         if args.verbose:
             print('[{:.2%}] Reading [{}] as {} ...'.format(i / N, image_id, image_file))
