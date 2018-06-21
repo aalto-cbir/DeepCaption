@@ -137,4 +137,11 @@ if __name__ == '__main__':
                         help='path for saving results')
     
     args = parser.parse_args()
+    begin = datetime.now()
+    print('Started evaluation at {}, with parameters:'.format(begin))
+    for k, v in vars(args).items(): print('[args] {}={}'.format(k, v))
+
     main(args)
+
+    end = datetime.now()
+    print('Evaluation ended at {}. Total time: {}.'.format(end, end-begin))

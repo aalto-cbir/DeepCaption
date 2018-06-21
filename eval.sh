@@ -5,6 +5,7 @@ if [ -z "$*" ]; then
     exit 1
 fi
 
+set -o verbose
 for MODEL in "$@"
 do
     sbatch --time=0-5 submit.sh eval.py --model ${MODEL}
