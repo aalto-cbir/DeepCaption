@@ -35,7 +35,9 @@ def resize_images(image_dir, output_dir, create_zip, size):
                   .format(i + 1, num_images, output_dir))
 
     if create_zip:
-        shutil.make_archive(output_dir, 'zip', output_dir)
+        # Note that shutil.make_archive has issues with Python versions prior 3.5
+        shutil.make_archive(output_dir, 'zip', os.path.dirname(output_dir),
+                            os.path.basename(output_dir))
 
 
 def main(args):
