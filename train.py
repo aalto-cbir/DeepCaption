@@ -30,6 +30,7 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
         'embed_size': params.embed_size,
         'hidden_size': params.hidden_size,
         'num_layers': params.num_layers,
+        'dropout': params.dropout
     }
 
     torch.save(state, os.path.join(args.model_path, file_name))
@@ -72,9 +73,8 @@ def main(args):
         start_epoch = args.force_epoch-1
     
     # Build the models
-    encoder = EncoderCNN(params.embed_size).to(device)
-    decoder = DecoderRNN(params.embed_size, params.hidden_size, len(vocab), 
-                         params.num_layers).to(device)
+    encoder = EncoderCNN(params).to(device)
+    decoder = DecoderRNN(params, len(vocab)).to(device)
     if state:
         encoder.load_state_dict(state['encoder'])
         decoder.load_state_dict(state['decoder'])
@@ -140,8 +140,10 @@ if __name__ == '__main__':
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int , default=512, 
                         help='dimension of lstm hidden states')
-    parser.add_argument('--num_layers', type=int , default=1, 
+    parser.add_argument('--num_layers', type=int, default=1, 
                         help='number of layers in lstm')
+    parser.add_argument('--dropout', type=float, default=0,
+                        help='dropout for the LSTM')
 
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
