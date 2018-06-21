@@ -8,6 +8,7 @@ class ModelParams:
         self.embed_size = self._get_param(d, 'embed_size', 256)
         self.hidden_size = self._get_param(d, 'hidden_size', 512)
         self.num_layers = self._get_param(d, 'num_layers', 1)
+        self.dropout = self._get_param(d, 'dropout', 0)
 
     @classmethod
     def fromargs(cls, args):
@@ -22,14 +23,14 @@ class ModelParams:
 
 
 class EncoderCNN(nn.Module):
-    def __init__(self, embed_size):
+    def __init__(self, p):
         """Load the pretrained ResNet-152 and replace top fc layer."""
         super(EncoderCNN, self).__init__()
         resnet = models.resnet152(pretrained=True)
         modules = list(resnet.children())[:-1]      # delete the last fc layer.
         self.resnet = nn.Sequential(*modules)
-        self.linear = nn.Linear(resnet.fc.in_features, embed_size)
-        self.bn = nn.BatchNorm1d(embed_size, momentum=0.01)
+        self.linear = nn.Linear(resnet.fc.in_features, p.embed_size)
+        self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
         
     def forward(self, images):
         """Extract feature vectors from input images."""
@@ -41,12 +42,13 @@ class EncoderCNN(nn.Module):
 
 
 class DecoderRNN(nn.Module):
-    def __init__(self, embed_size, hidden_size, vocab_size, num_layers, max_seq_length=20):
+    def __init__(self, p, vocab_size, max_seq_length=20):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
-        self.embed = nn.Embedding(vocab_size, embed_size)
-        self.lstm = nn.LSTM(embed_size, hidden_size, num_layers, batch_first=True)
-        self.linear = nn.Linear(hidden_size, vocab_size)
+        self.embed = nn.Embedding(vocab_size, p.embed_size)
+        self.lstm = nn.LSTM(p.embed_size, p.hidden_size, p.num_layers,
+                            dropout=p.dropout, batch_first=True)
+        self.linear = nn.Linear(p.hidden_size, vocab_size)
         self.max_seg_length = max_seq_length
         
     def forward(self, features, captions, lengths):

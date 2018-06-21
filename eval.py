@@ -67,9 +67,8 @@ def main(args):
     params = ModelParams(state)
 
     # We set encoder to eval mode (BN uses moving mean/variance)
-    encoder = EncoderCNN(params.embed_size).eval() 
-    decoder = DecoderRNN(params.embed_size, params.hidden_size, len(vocab),
-                         params.num_layers)
+    encoder = EncoderCNN(params).eval() 
+    decoder = DecoderRNN(params, len(vocab))
     encoder = encoder.to(device)
     decoder = decoder.to(device)
 
@@ -78,9 +77,17 @@ def main(args):
     decoder.load_state_dict(state['decoder'])
 
     output_data = []
-    file_list = glob.glob(args.image_dir + '/*.jpg')
+    file_list = []
+
+    if args.image_files is not None:
+        file_list += args.image_files
+
+    if args.image_dir is not None:
+        file_list += glob.glob(args.image_dir + '/*.jpg')
+        file_list += glob.glob(args.image_dir + '/*.png')
+    
     N = len(file_list)
-    print('Directory {} contains {} files.'.format(args.image_dir, N))
+    print('Processing {} image files.'.format(N))
     for i, image_file in tqdm(enumerate(file_list), disable=args.verbose):
         bn = basename(image_file)
         m = re.search(r'0*(\d+)$', bn)
@@ -115,17 +122,24 @@ def main(args):
 
         output_data.append({'caption': sentence, 'image_id': image_id})
 
-    if not args.output_file:
+    output_file = None
+    if not args.output_file and not args.print_results:
         output_file = basename(args.model) + '.json'
     else:
         output_file = args.output_file
-        
-    json.dump(output_data, open(output_file, 'w'))
+
+    if output_file:
+        json.dump(output_data, open(output_file, 'w'))
+
+    if args.print_results:
+        for d in output_data:
+            print('{}: {}'.format(d['image_id'], d['caption']))
         
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--image_dir', type=str, default='data/val2014', 
+    parser.add_argument('image_files', type=str, nargs='*')
+    parser.add_argument('--image_dir', type=str,
                         help='input image dir for generating captions')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
@@ -135,11 +149,16 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', help='verbose output', action='store_true')
     parser.add_argument('--results_path', type=str, default='results/' , 
                         help='path for saving results')
-    
+    parser.add_argument('--print_results', action='store_true')
+
     args = parser.parse_args()
+    if not args.image_files and not args.image_dir:
+        args.image_dir = 'data/val2014'
+    
     begin = datetime.now()
     print('Started evaluation at {}, with parameters:'.format(begin))
     for k, v in vars(args).items(): print('[args] {}={}'.format(k, v))
+
 
     main(args)
 
