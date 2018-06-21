@@ -8,8 +8,9 @@ def resize_image(image, size):
     try:
         return image.resize(size, Image.ANTIALIAS)
     except OSError as e:
-        print ("WARNING: unable to resize image {}: {}".format(image, str(e)))
+        print("WARNING: unable to resize image {}: {}".format(image, str(e)))
         return None
+
 
 def resize_images(image_dir, output_dir, size):
     """Resize the images in 'image_dir' and save into 'output_dir'."""
@@ -28,9 +29,10 @@ def resize_images(image_dir, output_dir, size):
                 img = resize_image(img, size)
                 if img is not None:
                     img.save(output_path, img.format)
-        if (i+1) % 100 == 0:
-            print ("[{}/{}] Resized the images and saved into '{}'."
-                   .format(i+1, num_images, output_dir))
+        if (i + 1) % 100 == 0:
+            print("[{}/{}] Resized the images and saved into '{}'."
+                  .format(i + 1, num_images, output_dir))
+
 
 def main(args):
     image_dir = args.image_dir
