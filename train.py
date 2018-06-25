@@ -10,7 +10,6 @@ import sys
 import zipfile
 
 from data_loader import get_loader
-from build_vocab import Vocabulary
 from datetime import datetime
 from model import ModelParams, EncoderCNN, DecoderRNN
 from torch.nn.utils.rnn import pack_padded_sequence
@@ -49,6 +48,7 @@ def main(args):
         if not os.path.exists(data_prefix):
             os.makedirs(data_prefix)
         with zipfile.ZipFile(args.image_dir, 'r') as zipped_images:
+            print(f"Extracting {args.image_dir} to {data_prefix}")
             zipped_images.extractall(data_prefix)
             unzipped_dir = os.path.basename(args.image_dir).split('.')[0]
             args.image_dir = data_prefix + unzipped_dir
@@ -64,11 +64,12 @@ def main(args):
 
     # Load vocabulary wrapper
     with open(args.vocab_path, 'rb') as f:
+        print(f"Extracting vocabulary from {args.vocab_path}")
         vocab = pickle.load(f)
 
     # Build data loader
-    data_loader = get_loader(args.dataset, args.image_dir, args.caption_path, vocab,
-                             transform, args.batch_size,
+    data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
+                             vocab, transform, args.batch_size,
                              shuffle=True, num_workers=args.num_workers)
 
     state = None

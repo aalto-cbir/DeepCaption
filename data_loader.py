@@ -2,6 +2,7 @@ import torch
 import torch.utils.data as data
 import os
 import nltk
+import sys
 from PIL import Image
 
 
@@ -50,6 +51,29 @@ class CocoDataset(data.Dataset):
         return len(self.ids)
 
 
+class VistDataset(data.Dataset):
+    """VIST Dataset compatible with torch.utils.data.DataLoader."""
+
+    def __init__(self, root, json, vocab, transform=None):
+        """Set the path for images, captions and vocabulary wrapper.
+
+        Args:
+            root: image directory.
+            json: VIST annotation file path.
+            vocab: vocabulary wrapper.
+            transform: image transformer.
+        """
+        pass
+
+    def __getitem__(self, index):
+        """Returns one data pair (image and caption)."""
+        image, target = None
+        return image, target
+
+    def __len__(self):
+        return None
+
+
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption).
 
@@ -82,23 +106,29 @@ def collate_fn(data):
     return images, targets, lengths
 
 
-def get_loader(dataset, root, json, vocab, transform, batch_size, shuffle, num_workers):
+def get_loader(dataset_name, root, json, vocab, transform, batch_size,
+               shuffle, num_workers):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     dataset = None
 
-    if dataset == 'coco':
+    if dataset_name == 'coco':
         # COCO caption dataset
+        print("Importing COCO dataset...")
         dataset = CocoDataset(root=root,
                               json=json,
                               vocab=vocab,
                               transform=transform)
+    else:
+        print("Invalid dataset specified...")
+        sys.exit(1)
 
     # Data loader:
     # This will return (images, captions, lengths) for each iteration.
     # images: a tensor of shape (batch_size, 3, 224, 224).
     # captions: a tensor of shape (batch_size, padded_length).
-    # lengths: a list indicating valid length for each caption. length is (batch_size).
+    # lengths: a list indicating valid length for each caption.
+    # length is (batch_size).
     data_loader = torch.utils.data.DataLoader(dataset=dataset,
                                               batch_size=batch_size,
                                               shuffle=shuffle,
