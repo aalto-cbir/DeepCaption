@@ -152,8 +152,15 @@ if __name__ == '__main__':
     parser.add_argument('--print_results', action='store_true')
 
     args = parser.parse_args()
-
     if not args.image_files and not args.image_dir:
         args.image_dir = 'data/val2014'
     
+    begin = datetime.now()
+    print('Started evaluation at {}, with parameters:'.format(begin))
+    for k, v in vars(args).items(): print('[args] {}={}'.format(k, v))
+
+
     main(args)
+
+    end = datetime.now()
+    print('Evaluation ended at {}. Total time: {}.'.format(end, end-begin))
