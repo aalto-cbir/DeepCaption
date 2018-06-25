@@ -56,7 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', type=str, default='./data/resized2014',
                         help='directory for saving resized images')
     parser.add_argument('--create_zip', type=int, default=0,
-                        help='create zip archive with resized images,'
+                        help='set to 1 to create zip archive with resized images,'
                         'save ZIP file as "\{output_dir\}.zip"')
     parser.add_argument('--image_size', type=int, default=256,
                         help='size for image after processing')
