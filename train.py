@@ -43,7 +43,7 @@ def main(args):
     if not os.path.exists(args.model_path):
         os.makedirs(args.model_path)
 
-    # Unzip training images to /tmp/data if image_dir argument points to ZIP file:
+    # Unzip training images to /tmp/data if image_dir argument points to zip file:
     if zipfile.is_zipfile(args.image_dir):
         data_prefix = '/tmp/data'
         if not os.path.exists(data_prefix):
@@ -67,7 +67,7 @@ def main(args):
         vocab = pickle.load(f)
 
     # Build data loader
-    data_loader = get_loader(args.image_dir, args.caption_path, vocab,
+    data_loader = get_loader(args.dataset, args.image_dir, args.caption_path, vocab,
                              transform, args.batch_size,
                              shuffle=True, num_workers=args.num_workers)
 
@@ -130,6 +130,8 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='coco',
+                        help='which dataset to use')
     parser.add_argument('--load_model', type=str,
                         help='existing model, for continuing training')
     parser.add_argument('--model_basename', type=str, default='model',
@@ -142,7 +144,7 @@ if __name__ == '__main__':
                         help='path for vocabulary wrapper')
     parser.add_argument('--image_dir', type=str, default='data/resized2014',
                         help='directory for resized images'
-                        'if "image_dir" ends with ".zip" extract zip file '
+                        'if "image_dir" points to zip archive - extract '
                         'to /tmp/ , use the extracted images to train')
     parser.add_argument('--caption_path', type=str,
                         default='data/annotations/captions_train2014.json',
