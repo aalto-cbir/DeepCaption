@@ -153,7 +153,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    if args.image_files is None and args.image_dir is None:
+    if not args.image_files and not args.image_dir:
         args.image_dir = 'data/val2014'
     
     main(args)
