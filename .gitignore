@@ -1,8 +1,9 @@
-/__pycache__
+__pycache__
 *.pyc
-/data
-/models
+data/
+models/
 *~
-/*.json
-/*.result
-/results/
+*.json
+*.result
+results/
+*.sublime*
