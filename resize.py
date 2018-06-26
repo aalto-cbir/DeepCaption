@@ -51,9 +51,11 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--image_dir', type=str, default='./data/train2014',
+    parser.add_argument('--image_dir', type=str,
+                        default='datasets/data/COCO/train2014',
                         help='directory for train images')
-    parser.add_argument('--output_dir', type=str, default='./data/resized2014',
+    parser.add_argument('--output_dir', type=str,
+                        default='datasets/processed/COCO/train2014_resized',
                         help='directory for saving resized images')
     parser.add_argument('--create_zip', type=int, default=0,
                         help='set to 1 to create zip archive with resized images,'

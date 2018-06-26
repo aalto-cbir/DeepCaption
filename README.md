@@ -43,7 +43,7 @@ $ ./download.sh
 
 #### COCO
 
-Link to COCO dataset inside project:
+Link to COCO dataset:
 
 ```bash
 $ ln -s /path/to/coco datasets/data/COCO
@@ -54,12 +54,12 @@ Build vocabulary and resize images:
 
 ```bash
 $ python build_vocab.py --dataset coco --caption_path datasets/data/COCO/annotations/captions_train2014.json --vocab_path datasets/processed/COCO/vocab.pkl 
-$ python resize.py
+$ python resize.py --image_dir datasets/data/COCO/train2014 --output_dir datasets/processed/COCO/train2014_resized
 ```
 
 #### VIST
 
-Link to VIST dataset inside project:
+Link to VIST dataset:
 
 ```bash
 $ ln -s /path/to/vist datasets/data/vist
@@ -70,10 +70,8 @@ Build vocabulary and resize images:
 
 ```bash
 $ python build_vocab.py --dataset vist --caption_path datasets/data/vist/dii/train.description-in-isolation.json --vocab_path datasets/processed/vist/vocab.pkl 
-$ python resize.py
+$ python resize.py --image_dir datasets/data/vist/images/train --output_dir datasets/processed/vist/train_resized
 ```
-
-
 
 #### 4. Train the model
 

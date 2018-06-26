@@ -8,6 +8,7 @@ import os
 import pickle
 import sys
 import zipfile
+from build_vocab import Vocabulary
 
 from data_loader import get_loader
 from datetime import datetime
@@ -68,6 +69,7 @@ def main(args):
         vocab = pickle.load(f)
 
     # Build data loader
+    print(f"Loading dataset: {args.dataset}")
     data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
                              vocab, transform, args.batch_size,
                              shuffle=True, num_workers=args.num_workers)
@@ -141,14 +143,16 @@ if __name__ == '__main__':
                         help='path for saving trained models')
     parser.add_argument('--crop_size', type=int, default=224,
                         help='size for randomly cropping images')
-    parser.add_argument('--vocab_path', type=str, default='data/vocab.pkl',
+    parser.add_argument('--vocab_path', type=str,
+                        default='datasets/processed/COCO/vocab.pkl',
                         help='path for vocabulary wrapper')
-    parser.add_argument('--image_dir', type=str, default='data/resized2014',
+    parser.add_argument('--image_dir', type=str,
+                        default='datasets/processed/COCO/train2014_resized',
                         help='directory for resized images'
                         'if "image_dir" points to zip archive - extract '
                         'to /tmp/ , use the extracted images to train')
     parser.add_argument('--caption_path', type=str,
-                        default='data/annotations/captions_train2014.json',
+                        default='datasets/data/COCO/annotations/captions_train2014.json',
                         help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for prining log info')

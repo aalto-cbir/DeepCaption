@@ -3,24 +3,25 @@ import torch.utils.data as data
 import os
 import nltk
 import sys
+import json
 from PIL import Image
 
 
 class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json, vocab, transform=None):
+    def __init__(self, root, json_file, vocab, transform=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
             root: image directory.
-            json: coco annotation file path.
+            json_file: coco annotation file path.
             vocab: vocabulary wrapper.
             transform: image transformer.
         """
         from pycocotools.coco import COCO
         self.root = root
-        self.coco = COCO(json)
+        self.coco = COCO(json_file)
         self.ids = list(self.coco.anns.keys())
         self.vocab = vocab
         self.transform = transform
@@ -52,26 +53,60 @@ class CocoDataset(data.Dataset):
 
 
 class VistDataset(data.Dataset):
-    """VIST Dataset compatible with torch.utils.data.DataLoader."""
+    """VIST Custom Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json, vocab, transform=None):
+    def __init__(self, root, json_file, vocab, transform=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
             root: image directory.
-            json: VIST annotation file path.
+            json_file: VIST annotation file path.
             vocab: vocabulary wrapper.
             transform: image transformer.
         """
-        pass
+        self.root = root
+
+        self.image_ids = [str(file).split('.')[0] for file in os.listdir(root)]
+
+        with open(json_file) as raw_data:
+            json_data = json.load(raw_data)
+            self.annotations_data = json_data['annotations']
+
+        print(self.image_ids)
+        self.image_to_caption = {}
+        for ann_data in self.annotations_data:
+            image_id = ann_data[0]['photo_flickr_id']
+            if image_id in self.image_ids:
+                self.image_to_caption[image_id] = ann_data[0]['text']
+
+        self.vocab = vocab
+        self.transform = transform
 
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
-        image, target = None
+        vocab = self.vocab
+        image_id = self.image_ids[index]
+        caption = self.image_to_caption[image_id]
+
+        image_path = os.path.join(self.root, str(image_id) + '.jpg')
+        if os.path.isfile(image_path):
+            image = Image.open(image_path).convert('RGB')
+        else:
+            image_path = os.path.join(self.root, str(image_id) + '.png')
+            image = Image.open(image_path).convert('RGB')
+
+        if self.transform is not None:
+            image = self.transform(image)
+
+        # Convert caption (string) to word ids.
+        tokens = nltk.tokenize.word_tokenize(str(caption).lower())
+        caption = [vocab('<start>'), vocab('<end>')]
+        caption.extend([vocab(token) for token in tokens])
+        target = torch.Tensor(caption)
         return image, target
 
     def __len__(self):
-        return None
+        return len(self.image_ids)
 
 
 def collate_fn(data):
@@ -106,22 +141,19 @@ def collate_fn(data):
     return images, targets, lengths
 
 
-def get_loader(dataset_name, root, json, vocab, transform, batch_size,
+def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
                shuffle, num_workers):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
-    dataset = None
-
     if dataset_name == 'coco':
-        # COCO caption dataset
-        print("Importing COCO dataset...")
-        dataset = CocoDataset(root=root,
-                              json=json,
-                              vocab=vocab,
-                              transform=transform)
+        _dataset = CocoDataset
+    elif dataset_name == 'vist':
+        _dataset = VistDataset
     else:
         print("Invalid dataset specified...")
         sys.exit(1)
+
+    dataset = _dataset(root=root, json_file=json_file, vocab=vocab, transform=transform)
 
     # Data loader:
     # This will return (images, captions, lengths) for each iteration.
