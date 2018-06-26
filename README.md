@@ -40,10 +40,40 @@ $ ./download.sh
 
 #### 3. Preprocessing
 
+
+#### COCO
+
+Link to COCO dataset inside project:
+
 ```bash
-$ python build_vocab.py   
+$ ln -s /path/to/coco datasets/data/COCO
+$ mkdir -p datasets/processed/COCO
+````
+
+Build vocabulary and resize images:
+
+```bash
+$ python build_vocab.py --dataset coco --caption_path datasets/data/COCO/annotations/captions_train2014.json --vocab_path datasets/processed/COCO/vocab.pkl 
 $ python resize.py
 ```
+
+#### VIST
+
+Link to VIST dataset inside project:
+
+```bash
+$ ln -s /path/to/vist datasets/data/vist
+$ mkdir -p datasets/processed/vist
+````
+
+Build vocabulary and resize images:
+
+```bash
+$ python build_vocab.py --dataset vist --caption_path datasets/data/vist/dii/train.description-in-isolation.json --vocab_path datasets/processed/vist/vocab.pkl 
+$ python resize.py
+```
+
+
 
 #### 4. Train the model
 
