@@ -69,7 +69,7 @@ def main(args):
 
     # We set encoder to eval mode (BN uses moving mean/variance)
     encoder = EncoderCNN(params).eval() 
-    decoder = DecoderRNN(params, len(vocab))
+    decoder = DecoderRNN(params, len(vocab)).eval()
     encoder = encoder.to(device)
     decoder = decoder.to(device)
 
@@ -89,7 +89,8 @@ def main(args):
     
     N = len(file_list)
     print('Processing {} image files.'.format(N))
-    for i, image_file in tqdm(enumerate(file_list), disable=args.verbose):
+    show_progress = sys.stderr.isatty() and not args.verbose
+    for i, image_file in tqdm(enumerate(file_list), disable=not show_progress):
         bn = basename(image_file)
         m = re.search(r'0*(\d+)$', bn)
         if m is not None:
@@ -159,7 +160,7 @@ if __name__ == '__main__':
     begin = datetime.now()
     print('Started evaluation at {}, with parameters:'.format(begin))
     for k, v in vars(args).items(): print('[args] {}={}'.format(k, v))
-
+    sys.stdout.flush()
 
     main(args)
 
