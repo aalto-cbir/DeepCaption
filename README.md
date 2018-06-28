@@ -1,9 +1,8 @@
 # Image captioning
 
-Simple baseline image captioning based on the tutorial by yunjey:
-https://github.com/yunjey/pytorch-tutorial/tree/master/tutorials/03-advanced/image_captioning
+Simple baseline image captioning based on [tutorial by yunjey](https://github.com/yunjey/pytorch-tutorial/tree/master/tutorials/03-advanced/image_captioning)
 
-The goal of image captioning is to convert a given input image into a natural language description. The encoder-decoder framework is widely used for this task. The image encoder is a convolutional neural network (CNN). In this tutorial, we used [resnet-152](https://arxiv.org/abs/1512.03385) model pretrained on the [ILSVRC-2012-CLS](http://www.image-net.org/challenges/LSVRC/2012/) image classification dataset. The decoder is a long short-term memory (LSTM) network. 
+The goal of image captioning is to convert a given input image into a natural language description. The encoder-decoder framework is widely used for this task. The image encoder is a convolutional neural network (CNN). Baseline code uses [resnet-152](https://arxiv.org/abs/1512.03385) model pretrained on the [ILSVRC-2012-CLS](http://www.image-net.org/challenges/LSVRC/2012/) image classification dataset. The decoder is a long short-term memory (LSTM) network. 
 
 ![alt text](png/model.png)
 
@@ -11,14 +10,11 @@ The goal of image captioning is to convert a given input image into a natural la
 For the encoder part, the pretrained CNN extracts the feature vector from a given input image. The feature vector is linearly transformed to have the same dimension as the input dimension of the LSTM network. For the decoder part, source and target texts are predefined. For example, if the image description is **"Giraffes standing next to each other"**, the source sequence is a list containing **['\<start\>', 'Giraffes', 'standing', 'next', 'to', 'each', 'other']** and the target sequence is a list containing **['Giraffes', 'standing', 'next', 'to', 'each', 'other', '\<end\>']**. Using these source and target sequences and the feature vector, the LSTM decoder is trained as a language model conditioned on the feature vector.
 
 #### Test phase
-In the test phase, the encoder part is almost same as the training phase. The only difference is that batchnorm layer uses moving average and variance instead of mini-batch statistics. This can be easily implemented using [encoder.eval()](https://github.com/yunjey/pytorch-tutorial/blob/master/tutorials/03-advanced/image_captioning/sample.py#L37). For the decoder part, there is a significant difference between the training phase and the test phase. In the test phase, the LSTM decoder can't see the image description. To deal with this problem, the LSTM decoder feeds back the previosly generated word to the next input. This can be implemented using a [for-loop](https://github.com/yunjey/pytorch-tutorial/blob/master/tutorials/03-advanced/image_captioning/model.py#L48).
-
-
+In the test phase, the encoder part is almost same as the training phase. The only difference is that batchnorm layer uses moving average and variance instead of mini-batch statistics. This can be easily implemented using [encoder.eval()](sample.py#L37). For the decoder part, there is a significant difference between the training phase and the test phase. In the test phase, the LSTM decoder can't see the image description. To deal with this problem, the LSTM decoder feeds back the previosly generated word to the next input. This can be implemented using a [for-loop](model.py#L48).
 
 ## Usage 
 
-
-#### 1. Clone the repositories
+### 1. Clone the repositories
 ```bash
 $ git clone https://github.com/pdollar/coco.git
 $ cd coco/PythonAPI/
@@ -26,20 +22,11 @@ $ make
 $ python setup.py build
 $ python setup.py install
 $ cd ../../
-$ git clone https://github.com/yunjey/pytorch-tutorial.git
-$ cd pytorch-tutorial/tutorials/03-advanced/image_captioning/
+$ git clone git@version.aalto.fi:CBIR/image_captioning.git
+$ cd image_captioning
 ```
 
-#### 2. Download the dataset
-
-```bash
-$ pip install -r requirements.txt
-$ chmod +x download.sh
-$ ./download.sh
-```
-
-#### 3. Preprocessing
-
+### 2. Create links to the datasets you plan to use for training / evaluation
 
 #### COCO
 
@@ -48,15 +35,7 @@ Link to COCO dataset:
 ```bash
 $ ln -s /path/to/coco datasets/data/COCO
 $ mkdir -p datasets/processed/COCO
-````
-
-Build vocabulary and resize images:
-
-```bash
-$ python build_vocab.py --dataset coco --caption_path datasets/data/COCO/annotations/captions_train2014.json --vocab_path datasets/processed/COCO/vocab.pkl 
-$ python resize.py --image_dir datasets/data/COCO/train2014 --output_dir datasets/processed/COCO/train2014_resized
 ```
-
 #### VIST
 
 Link to VIST dataset:
@@ -64,19 +43,35 @@ Link to VIST dataset:
 ```bash
 $ ln -s /path/to/vist datasets/data/vist
 $ mkdir -p datasets/processed/vist
-````
+```
+
+
+### 3. Preprocessing
 
 Build vocabulary and resize images:
 
+#### COCO
+
 ```bash
-$ python build_vocab.py --dataset vist --caption_path datasets/data/vist/dii/train.description-in-isolation.json --vocab_path datasets/processed/vist/vocab.pkl 
-$ python resize.py --image_dir datasets/data/vist/images/train --output_dir datasets/processed/vist/train_resized
+$ python build_vocab.py --dataset coco --caption_path datasets/data/COCO/annotations/captions_train2014.json --vocab_path datasets/processed/COCO/vocab.pkl 
+$ python resize.py --image_dir datasets/data/COCO/train2014 --output_dir datasets/processed/COCO/train2014_resized --create_zip
 ```
 
-#### 4. Train the model
+_Note:_ An optional `--create_zip` parameter zips the resized images directory.
+
+#### VIST
 
 ```bash
-$ python train.py    
+$ python build_vocab.py --dataset vist --caption_path datasets/data/vist/dii/train.description-in-isolation.json --vocab_path datasets/processed/vist/vocab.pkl 
+$ python resize.py --image_dir datasets/data/vist/images/train_full --output_dir datasets/processed/vist/train_full_resized --create_zip
+```
+
+### 4. Train the model
+
+#### COCO 
+
+```bash
+$ python train.py --dataset coco --image_dir path/to/coco/resized.zip --caption_path datasets/data/COCO/annotations/captions_train2014.json --vocab_path datasets/processed/COCO/vocab.pkl --model_basename model-coco
 ```
 
 #### 5. Test the model 
@@ -84,9 +79,4 @@ $ python train.py
 ```bash
 $ python sample.py --image='png/example.png'
 ```
-
-<br>
-
-## Pretrained model
-If you do not want to train the model from scratch, you can use a pretrained model. You can download the pretrained model [here](https://www.dropbox.com/s/ne0ixz5d58ccbbz/pretrained_model.zip?dl=0) and the vocabulary file [here](https://www.dropbox.com/s/26adb7y9m98uisa/vocap.zip?dl=0). You should extract pretrained_model.zip to `./models/` and vocab.pkl to `./data/` using `unzip` command.
 
