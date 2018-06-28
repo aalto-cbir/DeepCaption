@@ -10,6 +10,7 @@ import re
 import sys
 import torch
 
+from datetime import datetime
 from PIL import Image
 from build_vocab import Vocabulary
 from model import ModelParams, EncoderCNN, DecoderRNN
