@@ -3,6 +3,8 @@
 #SBATCH --gres=gpu:p100:1
 #SBATCH --mem=8GB
 #SBATCH --time=0-1
+#SBATCH --mail-user=mats.sjoberg@aalto.fi
+#SBATCH --mail-type=FAIL,REQUEUE,TIME_LIMIT_80
 
 # Set billing project
 newgrp mvsjober
