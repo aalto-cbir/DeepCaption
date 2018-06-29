@@ -76,7 +76,16 @@ $ python train.py --dataset coco --image_dir path/to/coco/resized.zip --caption_
 
 #### 5. Test the model 
 
+#### VIST
+
 ```bash
-$ python sample.py --image='png/example.png'
+$ python eval.py --image_dir image_samples --model models/model-coco-ep5.ckpt --vocab_path datasets/processed/COCO/vocab.pkl --verbose
+```
+
+
+#### VIST
+
+```bash
+$ python eval.py --image_dir image_samples --model models/model-vist-ep5.ckpt --vocab_path datasets/processed/vist/vocab.pkl --verbose
 ```
 
