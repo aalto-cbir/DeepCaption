@@ -8,7 +8,7 @@ import os
 import pickle
 import sys
 import zipfile
-from build_vocab import Vocabulary
+from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
 
 from data_loader import get_loader
 from datetime import datetime
@@ -39,20 +39,42 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
 
 
 def main(args):
+    if not os.path.exists(args.image_dir):
+        print(f"Image directory or ZIP file not found at {args.image_dir}. Exiting...")
+        sys.exit(1)
+
+    if not os.path.exists(args.vocab_path):
+        print(f"Vocabulary file not found at {args.vocab_path}. Exiting...")
+        sys.exit(1)
+
+    if not os.path.exists(args.caption_path):
+        print(f"Caption file not found at {args.caption_path}. Exiting...")
+        sys.exit(1)
+
     # Create model directory
     if not os.path.exists(args.model_path):
         os.makedirs(args.model_path)
 
     # Unzip training images to /tmp/data if image_dir argument points to zip file:
     if zipfile.is_zipfile(args.image_dir):
-        data_prefix = '/tmp/data'
-        if not os.path.exists(data_prefix):
-            os.makedirs(data_prefix)
+        # Check if $TMPDIR envirnoment variable is set and use that
+        env_tmp = os.environ.get('TMPDIR')
+        # Also check if the environment variable points to '/tmp/some/dir' to avoid
+        # nasty surprises
+        if env_tmp and os.path.commonprefix([os.path.abspath(env_tmp), '/tmp']) == '/tmp':
+            tmp_root = os.path.abspath(env_tmp)
+        else:
+            tmp_root = '/tmp'
+
+        extract_path = os.path.join(tmp_root, args.tmp_dir_prefix)
+
+        if not os.path.exists(extract_path):
+            os.makedirs(extract_path)
         with zipfile.ZipFile(args.image_dir, 'r') as zipped_images:
-            print(f"Extracting {args.image_dir} to {data_prefix}")
-            zipped_images.extractall(data_prefix)
+            print(f"Extracting training data from {args.image_dir} to {extract_path}")
+            zipped_images.extractall(extract_path)
             unzipped_dir = os.path.basename(args.image_dir).split('.')[0]
-            args.image_dir = data_prefix + unzipped_dir
+            args.image_dir = os.path.join(extract_path, unzipped_dir)
 
     # Image preprocessing, normalization for the pretrained resnet
     transform = transforms.Compose([
@@ -88,6 +110,8 @@ def main(args):
         start_epoch = args.force_epoch - 1
 
     # Build the models
+    print(f'Using device: {device.type}')
+    print('Initializing model...')
     encoder = EncoderCNN(params).to(device)
     decoder = DecoderRNN(params, len(vocab)).to(device)
     if state:
@@ -105,6 +129,7 @@ def main(args):
 
     # Train the models
     total_step = len(data_loader)
+    print('Start Training...')
     for epoch in range(start_epoch, args.num_epochs):
         for i, (images, captions, lengths) in enumerate(data_loader):
             # Set mini-batch dataset
@@ -151,6 +176,8 @@ if __name__ == '__main__':
                         help='directory for resized images'
                         'if "image_dir" points to zip archive - extract '
                         'to /tmp/ , use the extracted images to train')
+    parser.add_argument('--tmp_dir_prefix', type=str, default='image_captioning',
+                        help='where in /tmp folder to store project data')
     parser.add_argument('--caption_path', type=str,
                         default='datasets/data/COCO/annotations/captions_train2014.json',
                         help='path for train annotation json file')
@@ -182,7 +209,7 @@ if __name__ == '__main__':
     for k, v in vars(args).items():
         print('[args] {}={}'.format(k, v))
 
-    main(args)
+    main(args=args)
 
     end = datetime.now()
     print('Training ended at {}. Total training time: {}.'.format(end, end - begin))
