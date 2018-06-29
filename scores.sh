@@ -1,7 +1,16 @@
 #!/bin/bash
 
-PYTHON2=/appl/opt/python/2.7.10-gcc493-shared/bin/python2
-COCOEVAL=~/appl_taito/coco-caption/cocoEval.py
+PYTHON2=python2
+
+if [[ $(hostname -s) == taito* ]]; then
+    PYTHON2=/appl/opt/python/2.7.10-gcc493-shared/bin/python2
+    COCOEVAL=~/appl_taito/coco-caption/cocoEval.py
+elif [[ $(hostname -s) == cs-299 ]]; then 
+    COCOEVAL=~/src/coco-caption/cocoEval.py
+else
+    echo "You need to specify the location of cocoEval.py in the script..."
+    exit 1
+fi
 
 if [ -z "$*" ]; then
     echo "Usage: $0 results1.json results2.json ..."
