@@ -69,26 +69,27 @@ class VistDataset(data.Dataset):
         self.vocab = vocab
         self.transform = transform
 
+        # Get the list of available images:
         images = [str(file).split('.')[0] for file in os.listdir(root)]
 
         with open(json_file) as raw_data:
             json_data = json.load(raw_data)
-            self.annotations_data = json_data['annotations']
+            self.anns = json_data['annotations']
 
-        self.image_to_caption = {}
-        for ann_data in self.annotations_data:
-            image_id = ann_data[0]['photo_flickr_id']
+        self.captions = []
+
+        for ann in self.anns:
+            image_id = ann[0]['photo_flickr_id']
             if image_id in images:
-                self.image_to_caption[image_id] = ann_data[0]['text']
+                self.captions.append([image_id, ann[0]['text']])
 
-        self.image_ids = list(self.image_to_caption.keys())
-        print(f"... {len(self.image_ids)} images loaded ...")
+        print(f"... {len(self.captions)} images loaded ...")
 
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
         vocab = self.vocab
-        image_id = self.image_ids[index]
-        caption = self.image_to_caption[image_id]
+        image_id = self.captions[index][0]
+        caption = self.captions[index][1]
 
         image_path = os.path.join(self.root, str(image_id) + '.jpg')
         if os.path.isfile(image_path):
@@ -110,7 +111,7 @@ class VistDataset(data.Dataset):
         return image, target
 
     def __len__(self):
-        return len(self.image_ids)
+        return len(self.captions)
 
 
 def collate_fn(data):
