@@ -25,6 +25,7 @@ class CocoDataset(data.Dataset):
         self.ids = list(self.coco.anns.keys())
         self.vocab = vocab
         self.transform = transform
+        print(f"... {len(self.ids)} images loaded ...")
 
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
@@ -65,22 +66,23 @@ class VistDataset(data.Dataset):
             transform: image transformer.
         """
         self.root = root
+        self.vocab = vocab
+        self.transform = transform
 
-        self.image_ids = [str(file).split('.')[0] for file in os.listdir(root)]
+        images = [str(file).split('.')[0] for file in os.listdir(root)]
 
         with open(json_file) as raw_data:
             json_data = json.load(raw_data)
             self.annotations_data = json_data['annotations']
 
-        print(self.image_ids)
         self.image_to_caption = {}
         for ann_data in self.annotations_data:
             image_id = ann_data[0]['photo_flickr_id']
-            if image_id in self.image_ids:
+            if image_id in images:
                 self.image_to_caption[image_id] = ann_data[0]['text']
 
-        self.vocab = vocab
-        self.transform = transform
+        self.image_ids = list(self.image_to_caption.keys())
+        print(f"... {len(self.image_ids)} images loaded ...")
 
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
@@ -100,8 +102,10 @@ class VistDataset(data.Dataset):
 
         # Convert caption (string) to word ids.
         tokens = nltk.tokenize.word_tokenize(str(caption).lower())
-        caption = [vocab('<start>'), vocab('<end>')]
+        caption = []
+        caption.append(vocab('<start>'))
         caption.extend([vocab(token) for token in tokens])
+        caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
         return image, target
 
