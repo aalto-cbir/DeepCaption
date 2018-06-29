@@ -1,12 +1,12 @@
 __pycache__
 *.pyc
-models/
+/models
 *~
 *.json
 *.result
-results/
+/results
 *.sublime*
-datasets/data/*
-!datasets/data/README.md
-datasets/processed/
+/datasets/data/*
+!/datasets/data/README.md
+/datasets/processed
 .DS_Store
