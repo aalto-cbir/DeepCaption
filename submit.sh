@@ -5,7 +5,7 @@
 #SBATCH --time=0-1
 
 # Set billing project
-newgrp mvsjober
+# newgrp mvsjober
 
 # Load modules
 # module purge
