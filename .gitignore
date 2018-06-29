@@ -9,3 +9,4 @@ results/
 datasets/data/*
 !datasets/data/README.md
 datasets/processed/
+.DS_Store
