@@ -25,7 +25,7 @@ class CocoDataset(data.Dataset):
         self.ids = list(self.coco.anns.keys())
         self.vocab = vocab
         self.transform = transform
-        print(f"... {len(self.ids)} images loaded ...")
+        print("... {} images loaded ...".format(len(self.ids)))
 
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
@@ -83,7 +83,7 @@ class VistDataset(data.Dataset):
             if image_id in images:
                 self.captions.append([image_id, ann[0]['text']])
 
-        print(f"... {len(self.captions)} images loaded ...")
+        print("... {} images loaded ...".format(len(self.captions)))
 
     def __getitem__(self, index):
         """Returns one data pair (image and caption)."""
