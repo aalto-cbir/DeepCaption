@@ -3,24 +3,24 @@
 import argparse
 import glob
 import json
-import numpy as np 
 import os
 import pickle
 import re
 import sys
-import torch
 
 from datetime import datetime
 from PIL import Image
-from build_vocab import Vocabulary
+
+import torch
 from model import ModelParams, EncoderCNN, DecoderRNN
-from torchvision import transforms 
+from torchvision import transforms
 from tqdm import tqdm
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def basename(fname):
+    fname.split(':')
     return os.path.splitext(os.path.basename(fname))[0]
 
 def fix_caption(caption):
@@ -52,10 +52,10 @@ def main(args):
 
     # Image preprocessing
     transform = transforms.Compose([
-        transforms.ToTensor(), 
-        transforms.Normalize((0.485, 0.456, 0.406), 
+        transforms.ToTensor(),
+        transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
-    
+
     # Load vocabulary wrapper
     print('Reading vocabulary from {}.'.format(args.vocab_path))
     with open(args.vocab_path, 'rb') as f:
@@ -136,8 +136,7 @@ def main(args):
     if args.print_results:
         for d in output_data:
             print('{}: {}'.format(d['image_id'], d['caption']))
-        
-    
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('image_files', type=str, nargs='*')
@@ -145,18 +144,18 @@ if __name__ == '__main__':
                         help='input image dir for generating captions')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
-    parser.add_argument('--vocab_path', type=str, default='data/vocab.pkl', 
+    parser.add_argument('--vocab_path', type=str, default='datasets/processed/COCO/vocab.pkl',
                         help='path for vocabulary wrapper')
     parser.add_argument('--output_file', type=str, help='path for output JSON')
     parser.add_argument('--verbose', help='verbose output', action='store_true')
-    parser.add_argument('--results_path', type=str, default='results/' , 
+    parser.add_argument('--results_path', type=str, default='results/',
                         help='path for saving results')
     parser.add_argument('--print_results', action='store_true')
 
     args = parser.parse_args()
     if not args.image_files and not args.image_dir:
-        args.image_dir = 'data/val2014'
-    
+        args.image_dir = 'datasets/data/COCO/val2014'
+
     begin = datetime.now()
     print('Started evaluation at {}, with parameters:'.format(begin))
     for k, v in vars(args).items(): print('[args] {}={}'.format(k, v))
