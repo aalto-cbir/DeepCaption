@@ -26,7 +26,7 @@ def resize_images(image_dir, output_dir, create_zip, size):
 
     # Run the job on several cores to speed it up:
     num_cores = min(4, multiprocessing.cpu_count())
-    print(f'Using {num_cores} CPU cores')
+    print('Using {} CPU cores'.format(num_cores))
     with pymp.Parallel(num_cores) as p:
         for i in p.range(0, num_images):
             image = images[i]
@@ -45,7 +45,7 @@ def resize_images(image_dir, output_dir, create_zip, size):
                       .format(i + 1, num_images, output_dir))
 
     if create_zip:
-        print(f"Creating a zip file: {output_dir + '.zip'}")
+        print("Creating a zip file: {}".format(output_dir + '.zip'))
         # Note that shutil.make_archive has issues with Python versions prior 3.5
         shutil.make_archive(output_dir, 'zip', os.path.dirname(output_dir),
                             os.path.basename(output_dir))

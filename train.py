@@ -40,15 +40,15 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
 
 def main(args):
     if not os.path.exists(args.image_dir):
-        print(f"Image directory or ZIP file not found at {args.image_dir}. Exiting...")
+        print("Image directory or ZIP file not found at {}. Exiting...".format(args.image_dir))
         sys.exit(1)
 
     if not os.path.exists(args.vocab_path):
-        print(f"Vocabulary file not found at {args.vocab_path}. Exiting...")
+        print("Vocabulary file not found at {}. Exiting...".format(args.vocab_path))
         sys.exit(1)
 
     if not os.path.exists(args.caption_path):
-        print(f"Caption file not found at {args.caption_path}. Exiting...")
+        print("Caption file not found at {}. Exiting...".format(args.caption_path))
         sys.exit(1)
 
     # Create model directory
@@ -71,7 +71,7 @@ def main(args):
         if not os.path.exists(extract_path):
             os.makedirs(extract_path)
         with zipfile.ZipFile(args.image_dir, 'r') as zipped_images:
-            print(f"Extracting training data from {args.image_dir} to {extract_path}")
+            print("Extracting training data from {} to {}".format(args.image_dir, extract_path))
             zipped_images.extractall(extract_path)
             unzipped_dir = os.path.basename(args.image_dir).split('.')[0]
             args.image_dir = os.path.join(extract_path, unzipped_dir)
@@ -87,11 +87,11 @@ def main(args):
 
     # Load vocabulary wrapper
     with open(args.vocab_path, 'rb') as f:
-        print(f"Extracting vocabulary from {args.vocab_path}")
+        print("Extracting vocabulary from {}".format(args.vocab_path))
         vocab = pickle.load(f)
 
     # Build data loader
-    print(f"Loading dataset: {args.dataset}")
+    print("Loading dataset: {}".format(args.dataset))
     data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
                              vocab, transform, args.batch_size,
                              shuffle=True, num_workers=args.num_workers)
@@ -110,7 +110,7 @@ def main(args):
         start_epoch = args.force_epoch - 1
 
     # Build the models
-    print(f'Using device: {device.type}')
+    print('Using device: {}'.format(device.type))
     print('Initializing model...')
     encoder = EncoderCNN(params).to(device)
     decoder = DecoderRNN(params, len(vocab)).to(device)

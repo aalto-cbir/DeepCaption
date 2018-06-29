@@ -7,7 +7,7 @@
 #SBATCH --mail-type=FAIL,REQUEUE,TIME_LIMIT_80
 
 # Set billing project
-newgrp mvsjober
+# newgrp mvsjober
 
 # Load modules
 # module purge
