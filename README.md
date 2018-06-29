@@ -4,8 +4,6 @@ Simple baseline image captioning based on [tutorial by yunjey](https://github.co
 
 The goal of image captioning is to convert a given input image into a natural language description. The encoder-decoder framework is widely used for this task. The image encoder is a convolutional neural network (CNN). Baseline code uses [resnet-152](https://arxiv.org/abs/1512.03385) model pretrained on the [ILSVRC-2012-CLS](http://www.image-net.org/challenges/LSVRC/2012/) image classification dataset. The decoder is a long short-term memory (LSTM) network. 
 
-![alt text](png/model.png)
-
 #### Training phase
 For the encoder part, the pretrained CNN extracts the feature vector from a given input image. The feature vector is linearly transformed to have the same dimension as the input dimension of the LSTM network. For the decoder part, source and target texts are predefined. For example, if the image description is **"Giraffes standing next to each other"**, the source sequence is a list containing **['\<start\>', 'Giraffes', 'standing', 'next', 'to', 'each', 'other']** and the target sequence is a list containing **['Giraffes', 'standing', 'next', 'to', 'each', 'other', '\<end\>']**. Using these source and target sequences and the feature vector, the LSTM decoder is trained as a language model conditioned on the feature vector.
 
@@ -76,12 +74,11 @@ $ python train.py --dataset coco --image_dir path/to/coco/resized.zip --caption_
 
 #### 5. Test the model 
 
-#### VIST
+#### COCO
 
 ```bash
 $ python eval.py --image_dir image_samples --model models/model-coco-ep5.ckpt --vocab_path datasets/processed/COCO/vocab.pkl --verbose
 ```
-
 
 #### VIST
 
