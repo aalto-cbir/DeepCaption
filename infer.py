@@ -19,9 +19,11 @@ from tqdm import tqdm
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+
 def basename(fname):
     fname.split(':')
     return os.path.splitext(os.path.basename(fname))[0]
+
 
 def fix_caption(caption):
     m = re.match(r'^<start> (.*?)( <end>)?$', caption)
@@ -30,8 +32,9 @@ def fix_caption(caption):
         return caption.capitalize()
 
     ret = m.group(1)
-    ret = re.sub(r'\s([.,])(\s|$)',r'\1\2', ret)
+    ret = re.sub(r'\s([.,])(\s|$)', r'\1\2', ret)
     return ret.capitalize()
+
 
 def load_image(image_path, transform=None):
     image = Image.open(image_path)
@@ -39,11 +42,12 @@ def load_image(image_path, transform=None):
     if image.mode != 'RGB':
         print('WARNING: converting {} to RGB'.format(image_path))
         image = image.convert('RGB')
-    
+
     if transform is not None:
         image = transform(image).unsqueeze(0)
-    
+
     return image
+
 
 def main(args):
     # Create model directory
@@ -68,7 +72,7 @@ def main(args):
     params = ModelParams(state)
 
     # We set encoder to eval mode (BN uses moving mean/variance)
-    encoder = EncoderCNN(params).eval() 
+    encoder = EncoderCNN(params).eval()
     decoder = DecoderRNN(params, len(vocab)).eval()
     encoder = encoder.to(device)
     decoder = decoder.to(device)
@@ -86,7 +90,7 @@ def main(args):
     if args.image_dir is not None:
         file_list += glob.glob(args.image_dir + '/*.jpg')
         file_list += glob.glob(args.image_dir + '/*.png')
-    
+
     N = len(file_list)
     print('Processing {} image files.'.format(N))
     show_progress = sys.stderr.isatty() and not args.verbose
@@ -108,7 +112,8 @@ def main(args):
         # Generate an caption from the image
         feature = encoder(image_tensor)
         sampled_ids = decoder.sample(feature)
-        sampled_ids = sampled_ids[0].cpu().numpy()          # (1, max_seq_length) -> (max_seq_length)
+        # (1, max_seq_length) -> (max_seq_length)
+        sampled_ids = sampled_ids[0].cpu().numpy()
 
         # Convert word_ids to words
         sampled_caption = []
@@ -137,6 +142,7 @@ def main(args):
         for d in output_data:
             print('{}: {}'.format(d['image_id'], d['caption']))
 
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('image_files', type=str, nargs='*')
@@ -158,10 +164,11 @@ if __name__ == '__main__':
 
     begin = datetime.now()
     print('Started evaluation at {}, with parameters:'.format(begin))
-    for k, v in vars(args).items(): print('[args] {}={}'.format(k, v))
+    for k, v in vars(args).items():
+        print('[args] {}={}'.format(k, v))
     sys.stdout.flush()
 
     main(args)
 
     end = datetime.now()
-    print('Evaluation ended at {}. Total time: {}.'.format(end, end-begin))
+    print('Evaluation ended at {}. Total time: {}.'.format(end, end - begin))
