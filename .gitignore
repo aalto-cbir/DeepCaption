@@ -9,4 +9,6 @@ __pycache__
 /datasets/data/*
 !/datasets/data/README.md
 /datasets/processed
+/datasets/cococaption
 .DS_Store
+submit.sh
