@@ -94,10 +94,10 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='coco',
                         help='which dataset to use')
     parser.add_argument('--caption_path', type=str,
-                        default='datasets/data/COCO/annotations/captions_train2014.json',
+                        default='/scratch/cs/imagedb/picsom/databases/COCO/download/annotations/captions_train2014.json',
                         help='path for train annotation file')
     parser.add_argument('--vocab_path', type=str,
-                        default='datasets/processed/COCO/vocab.pkl',
+                        default='./vocab_train.pkl',
                         help='path for saving vocabulary wrapper')
     parser.add_argument('--threshold', type=int, default=4,
                         help='minimum word count threshold')

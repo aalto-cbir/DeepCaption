@@ -62,13 +62,13 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--image_dir', type=str,
-                        default='datasets/data/COCO/images/train2014',
+                        default='/scratch/cs/imagedb/picsom/databases/COCO/download/images/train2014',
                         help='directory for train images')
     parser.add_argument('--class_filter', type=str, default=None,
                         help='path to (optional) new-line separated file '
                         'listing ids of images to include')
     parser.add_argument('--output_dir', type=str,
-                        default='datasets/processed/COCO/train2014_resized',
+                        default='/scratch/cs/imagedb/picsom/databases/COCO/download/images/resized_train2014',
                         help='directory for saving resized images')
     parser.add_argument('--create_zip', action="store_true",
                         help='save ZIP file as "\{output_dir\}.zip"')
