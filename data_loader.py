@@ -103,8 +103,7 @@ class VistDataset(data.Dataset):
 
         # Convert caption (string) to word ids.
         tokens = nltk.tokenize.word_tokenize(str(caption).lower())
-        caption = []
-        caption.append(vocab('<start>'))
+        caption = [vocab('<start>')]
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
@@ -112,6 +111,86 @@ class VistDataset(data.Dataset):
 
     def __len__(self):
         return len(self.captions)
+
+
+class VistSeqDataset(data.Dataset):
+    """VIST Custom Dataset for sequence processing, compatible with torch.utils.data.DataLoader."""
+
+    def __init__(self, root, json_file, vocab, transform=None):
+        """Set the path for images, captions and vocabulary wrapper.
+
+        Args:
+            root: image directory.
+            json_file: VIST annotation file path.
+            vocab: vocabulary wrapper.
+            transform: image transformer.
+        """
+        self.root = root
+        self.vocab = vocab
+        self.transform = transform
+
+        # Get the list of available images:
+        images = [str(file).split('.')[0] for file in os.listdir(root)]
+
+        with open(json_file) as raw_data:
+            json_data = json.load(raw_data)
+            self.anns = json_data['annotations']
+
+        seq_idx = 0
+        self.data_hold = []
+        while seq_idx < len(self.anns):
+            current_story_id = self.anns[seq_idx][0]['story_id']
+            _seq_idx = seq_idx
+            current_story = str()
+            current_sequence = []
+            bad_for_testing = False
+            while _seq_idx < len(self.anns) and self.anns[_seq_idx][0]['story_id'] == current_story_id:
+                current_story += self.anns[_seq_idx][0]['text']
+                current_sequence.append(self.anns[_seq_idx][0]['photo_flickr_id'])
+
+                # local testing purpose (needs to be removed)
+                if self.anns[_seq_idx][0]['photo_flickr_id'] not in images:
+                    bad_for_testing = True
+
+                _seq_idx += 1
+
+            seq_idx = _seq_idx
+            # local testing purpose (needs to be removed)
+            if not bad_for_testing:
+                self.data_hold.append([current_sequence, current_story])
+
+        print("... {} sequences loaded ...".format(len(self.data_hold)))
+
+    def __getitem__(self, index):
+        """Returns one data pair (image and caption)."""
+        vocab = self.vocab
+        image_ids = self.data_hold[index][0]
+        story = self.data_hold[index][1]
+
+        sequence = []
+        for image_id in image_ids:
+            image_path = os.path.join(self.root, str(image_id) + '.jpg')
+            if os.path.isfile(image_path):
+                image = Image.open(image_path).convert('RGB')
+            else:
+                image_path = os.path.join(self.root, str(image_id) + '.png')
+                image = Image.open(image_path).convert('RGB')
+
+            if self.transform is not None:
+                image = self.transform(image)
+
+            sequence.append(image)
+
+        # Convert caption (string) to word ids.
+        tokens = nltk.tokenize.word_tokenize(str(story).lower())
+        story = [vocab('<start>')]
+        story.extend([vocab(token) for token in tokens])
+        story.append(vocab('<end>'))
+        target = torch.Tensor(story)
+        return sequence, target
+
+    def __len__(self):
+        return len(self.data_hold)
 
 
 def collate_fn(data):
@@ -154,6 +233,13 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
         _dataset = CocoDataset
     elif dataset_name == 'vist':
         _dataset = VistDataset
+    elif dataset_name == 'vist-seq':
+        _dataset = VistSeqDataset
+        dataset = _dataset(root=root, json_file=json_file, vocab=vocab, transform=transform)
+        return torch.utils.data.DataLoader(dataset=dataset,
+                                           batch_size=batch_size,
+                                           shuffle=shuffle,
+                                           num_workers=num_workers)
     else:
         print("Invalid dataset specified...")
         sys.exit(1)

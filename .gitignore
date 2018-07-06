@@ -1,3 +1,5 @@
+*.idea/
+resources*
 __pycache__
 *.pyc
 /models

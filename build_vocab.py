@@ -46,7 +46,7 @@ def build_vocab(dataset, json_file, threshold):
 
             if (i + 1) % 1000 == 0:
                 print("[{}/{}] Tokenized the captions.".format(i + 1, len(ids)))
-    elif dataset == 'vist':
+    elif 'vist' in dataset:
         with open(json_file) as raw_data:
             json_data = json.load(raw_data)
             annotations = json_data['annotations']
