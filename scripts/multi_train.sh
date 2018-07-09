@@ -5,7 +5,7 @@
 # - each subsequent row = corresponding values
 #
 if [ -z "$*" ]; then
-    echo "Usage: $0 path/to/params.csv --common_model_param1 val1 ... --common_model_paramN valN"
+    echo "Usage: $0 path/to/params.csv --common_param1 val1 ... --common_paramN valN"
     exit 1
 fi
 
