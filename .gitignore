@@ -12,3 +12,4 @@ __pycache__
 /datasets/cococaption
 .DS_Store
 submit.sh
+.idea
