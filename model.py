@@ -8,7 +8,9 @@ class ModelParams:
         self.embed_size = self._get_param(d, 'embed_size', 256)
         self.hidden_size = self._get_param(d, 'hidden_size', 512)
         self.num_layers = self._get_param(d, 'num_layers', 1)
+        self.batch_size = self._get_param(d, 'batch_size', 128)
         self.dropout = self._get_param(d, 'dropout', 0)
+        self.learning_rate = self._get_param(d, 'learning_rate', 0.001)
 
     @classmethod
     def fromargs(cls, args):
