@@ -1,11 +1,18 @@
 import argparse
+import os
 import pickle
+import sys
+import torch
+import zipfile
 
 from torchvision import transforms
 
 import build_vocab
 import resize
 from data_loader import get_loader
+
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if __name__ == '__main__':
     print('main')
@@ -25,7 +32,7 @@ if __name__ == '__main__':
     # build_vocab.main(args)
     print('building vocab complete')
 
-    parser = argparse.ArgumentParser()
+    # parser = argparse.ArgumentParser()
     # parser.add_argument('--image_dir', type=str,
     #                     default='resources/images/train',
     #                     help='directory for train images')
@@ -116,3 +123,16 @@ if __name__ == '__main__':
         print('story shape: ', batch[1].shape)
         break
     print('Go design your model!')
+
+    print('Using device: {}'.format(device.type))
+    print('Initializing model...')
+    params = ModelParams.fromargs(args)
+    encoderCNN = EncoderCNN(params).to(device)
+    decoder = DecoderRNN(params, len(vocab)).to(device)
+
+    print('Start Training...')
+    for epoch in range(0, args.num_epochs):
+        for batch_id, batch in enumerate(data_loader):
+            print('processing batch:', batch_id)
+            sequence = batch[0]
+            story = batch[1]
