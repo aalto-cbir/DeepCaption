@@ -23,6 +23,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def get_file_name(args, params, epoch):
+    """Create filename based on parameters supplied"""
     bn = args.model_basename
     file_name = '{}-es{}-hs{}-nl{}-bs{}-lr{}-da{}-ep{}.ckpt'.format(bn,
                                                                     params.embed_size,
