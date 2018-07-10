@@ -46,7 +46,6 @@ class CocoDataset(data.Dataset):
         caption.append(vocab('<start>'))
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
-        caption.append(int(img_id))
         target = torch.Tensor(caption)
         return image, target
 
@@ -144,7 +143,6 @@ def collate_fn(data):
     for i, cap in enumerate(captions):
         end = lengths[i]
         targets[i, :end] = cap[:end]
-    lengths = [cap[-1] for cap in captions]
     return images, targets, lengths
 
 

@@ -94,7 +94,7 @@ def main(args):
     print("Loading dataset: {}".format(args.dataset))
     data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
                              vocab, transform, args.batch_size,
-                             shuffle=False, num_workers=args.num_workers)
+                             shuffle=True, num_workers=args.num_workers)
 
     state = None
     params = ModelParams.fromargs(args)
@@ -130,7 +130,6 @@ def main(args):
     # Train the models
     total_step = len(data_loader)
     print('Start Training...')
-    features_path = '/scratch/cs/imagedb/picsom/databases/COCO/features/resnet-152/COCO_train2014_000000'
     for epoch in range(start_epoch, args.num_epochs):
         for i, (images, captions, lengths) in enumerate(data_loader):
             # Set mini-batch dataset
@@ -140,27 +139,21 @@ def main(args):
 
             # Forward, backward and optimize
             features = encoder(images)
-            #print('features shape: ', features.shape)
-            #print('captions shape: ', captions.shape)
-            #print('image_id: ', lengths[0].data.item())
-            #break
-            with open(features_path + str(lengths[0].data.item()).split('.')[0] + '.pkl', 'wb') as f:
-                pickle.dump(vocab, f)
-            #outputs = decoder(features, captions, lengths)
-            #loss = criterion(outputs, targets)
-            #decoder.zero_grad()
-            #encoder.zero_grad()
-            #loss.backward()
-            #optimizer.step()
+            outputs = decoder(features, captions, lengths)
+            loss = criterion(outputs, targets)
+            decoder.zero_grad()
+            encoder.zero_grad()
+            loss.backward()
+            optimizer.step()
 
             # Print log info
-            #if (i + 1) % args.log_step == 0:
-             #   print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Perplexity: {:5.4f}'
-             #         .format(epoch + 1, args.num_epochs, i + 1, total_step,
-             #                 loss.item(), np.exp(loss.item())))
-             #   sys.stdout.flush()
+            if (i + 1) % args.log_step == 0:
+                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Perplexity: {:5.4f}'
+                      .format(epoch + 1, args.num_epochs, i + 1, total_step,
+                              loss.item(), np.exp(loss.item())))
+                sys.stdout.flush()
 
-        #save_models(args, params, encoder, decoder, optimizer, epoch)
+        save_models(args, params, encoder, decoder, optimizer, epoch)
 
 
 if __name__ == '__main__':
@@ -176,17 +169,17 @@ if __name__ == '__main__':
     parser.add_argument('--crop_size', type=int, default=224,
                         help='size for randomly cropping images')
     parser.add_argument('--vocab_path', type=str,
-                        default='./vocab_train.pkl',
+                        default='datasets/processed/COCO/vocab.pkl',
                         help='path for vocabulary wrapper')
     parser.add_argument('--image_dir', type=str,
-                        default='/scratch/cs/imagedb/picsom/databases/COCO/download/images/resized_train2014',
+                        default='datasets/processed/COCO/train2014_resized',
                         help='directory for resized images'
                         'if "image_dir" points to zip archive - extract '
                         'to /tmp/ , use the extracted images to train')
     parser.add_argument('--tmp_dir_prefix', type=str, default='image_captioning',
                         help='where in /tmp folder to store project data')
     parser.add_argument('--caption_path', type=str,
-                        default='/scratch/cs/imagedb/picsom/databases/COCO/download/annotations/captions_train2014.json',
+                        default='datasets/data/COCO/annotations/captions_train2014.json',
                         help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for prining log info')
@@ -204,8 +197,8 @@ if __name__ == '__main__':
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
                         help='Force start epoch (for broken model files...)')
-    parser.add_argument('--num_epochs', type=int, default=1)
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--num_epochs', type=int, default=5)
+    parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--learning_rate', type=float, default=0.001)
 
