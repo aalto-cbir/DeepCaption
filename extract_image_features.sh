@@ -1,5 +1,14 @@
 #!/bin/bash
 
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH -p gpu
+#SBATCH -t 01:00:00
+#SBATCH -J gpu_job
+#SBATCH --gres=gpu:p100:1
+#SBATCH --mem-per-cpu=32000
+#SBATCH
+
 date
 printf "\n"
 
@@ -16,12 +25,6 @@ fi
 if [[ ${environment} = *"triton"* ]]; then
     echo "setting things for Triton!"
 
-    #SBATCH -N 1
-    #SBATCH -n 1
-    #SBATCH -t 01:00:00
-    #SBATCH --gres=gpu:teslap100:1
-    #SBATCH --mem-per-cpu=32000
-
     module purge
     module load anaconda3/5.1.0-gpu CUDA/9.0.176 cuDNN/6.0-CUDA-8.0.61
 
@@ -32,16 +35,9 @@ if [[ ${environment} = *"triton"* ]]; then
 elif [[ ${environment} = *"taito"* ]]; then
     echo "setting things for Taito!"
 
-    #SBATCH -N 1
-    #SBATCH -n 1
-    #SBATCH -p gpu
-    #SBATCH -t 01:00:00
-    #SBATCH -J gpu_job
-    #SBATCH --gres=gpu:p100:1
-    #SBATCH --mem-per-cpu=32000
-
-    module purge
     module load intelconda/python3.6-2018.3
+    cd /proj/memad/COCO/image_captioning/
+
 
     if [ -z "$2" ]; then
         echo "No images location, defaulting to COCO train-2014 images"
@@ -71,10 +67,11 @@ echo "Features location: $features_location"
 
 if [ -z "$4" ]; then
     echo "Images will be resized"
-    python resize.py --image_dir ${images_location} --output_dir "./resized_temp"
+    srun python resize.py --image_dir ${images_location} --output_dir "./resized_temp"
     OUT=$?
     if [ ${OUT} -eq 0 ];then
-        echo "end: resizing complete"
+	echo "end: resizing complete"
+	images_location="./resized_temp/"
     else
         echo "something broke: resizing"
         exit 42
@@ -83,7 +80,7 @@ else
     echo "Image resizing will be skipped"
 fi
 
-python feature_extractor.py --output_dir ${features_location}
+srun python feature_extractor.py --image_dir ${images_location} --output_dir ${features_location}
 
 OUT=$?
 if [ ${OUT} -eq 0 ];then

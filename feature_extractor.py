@@ -50,8 +50,6 @@ def extract_features(image_paths, encoder, output_dir, batch_size=4):
 
 
 def main(args):
-    # TODO: sell
-
     if args.extractor == 'resnet-152':
         params = ModelParams.fromargs(args)
         encoder = EncoderCNN(params).to(device)
