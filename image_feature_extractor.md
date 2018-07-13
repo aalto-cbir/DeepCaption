@@ -1,7 +1,7 @@
 ### Info:
-- Available extractors: resnet-152
-- Features dimension: [1,2048] (without batch normalization), [1,256] (feature vector is linearly transformed to have the same dimension as the input dimension of the LSTM network)
-- Required data: images
+- Available extractors: **resnet-152**
+- Features dimension: `(1,2048)` - without batch normalization, `(1,256)` - feature vector is linearly transformed to have the same dimension as the input dimension of the LSTM network
+- Required data: images (currently supports **.jpg, .png**)
 
 ### Usage:
 Invoke the `extract_image_features.sh` script the following way:
@@ -24,4 +24,10 @@ sbatch extract_image_features.sh taito /proj/memad/COCO/resized_train2014/ ./fea
 - Valid environments that can be passed for now are `taito/triton`
 - Features are saved as pickle (`.pkl`) files per image (image name is used as the name of the output file)
 
-Other job trigger related details can be inferred from: https://version.aalto.fi/gitlab/CBIR/image_captioning/blob/image_feature_extractor/extract_image_features.sh
+Other job trigger related details can be inferred from: 
+https://version.aalto.fi/gitlab/CBIR/image_captioning/blob/image_feature_extractor/extract_image_features.sh
+
+### InProgress:
+
+- Making **InceptionV3**, **AlexNET** available
+- Unveiling options to customize extractors (different layers, dimensionality of the features)
