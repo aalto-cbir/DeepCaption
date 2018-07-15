@@ -13,7 +13,7 @@ params_mapping = {'es': 'embed_size',
                   'ep': 'epoch',
                   'bs': 'batch_size',
                   'lr': 'learning_rate',
-                  'da': 'dropout'}       
+                  'da': 'dropout'}
 
 
 def params_from_file_name(filename):
@@ -41,7 +41,7 @@ def main(args):
         filename = os.path.basename(file)
         params = params_from_file_name(filename)
         data_row = {}
-        data_row.update({'name': filename.split('.')[0]})
+        data_row.update({'name': '.'.join(filename.split('.')[:-1])})
         data_row.update(params)
         data_row.update(results)
 
