@@ -112,7 +112,8 @@ def main(args):
     print("Loading dataset: {}".format(args.dataset))
     data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
                              vocab, transform, args.batch_size,
-                             shuffle=True, num_workers=args.num_workers)
+                             shuffle=True, num_workers=args.num_workers,
+                             subset=args.subset)
 
     state = None
     params = ModelParams.fromargs(args)
