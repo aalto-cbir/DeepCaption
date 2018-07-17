@@ -58,6 +58,16 @@ def build_vocab(dataset, json_file, threshold):
 
             if (i + 1) % 1000 == 0:
                 print("[{}/{}] Tokenized the captions.".format(i + 1, len(annotations)))
+    elif dataset == 'msrvtt':
+        with open(json_file, 'r') as fp:
+            j = json.load(fp)
+            sentences = j['sentences']
+            for i, s in enumerate(sentences):
+                caption = str(s['caption'])
+                tokens = nltk.tokenize.word_tokenize(caption.lower())
+                counter.update(tokens)
+                if (i + 1) % 1000 == 0:
+                    print("[{}/{}] Tokenized the captions.".format(i + 1, len(sentences)))
     else:
         print("Invalid dataset specified...")
         sys.exit(1)

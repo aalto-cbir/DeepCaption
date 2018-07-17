@@ -133,6 +133,71 @@ class VistDataset(data.Dataset):
         return len(self.data_hold)
 
 
+class MSRVTTDataset(data.Dataset):
+    """MSR-VTT Custom Dataset compatible with torch.utils.data.DataLoader."""
+
+    def __init__(self, root, json_file, vocab, transform=None):
+        """Set the path for images, captions and vocabulary wrapper.
+
+        Args:
+            root: image directory.
+            json_file: path to train_val_videodatainfo.json.
+            vocab: vocabulary wrapper.
+            transform: image transformer.
+        """
+        self.root = root
+        self.vocab = vocab
+        self.transform = transform
+
+        self.captions = []
+        train_vids = set()
+
+        with open(json_file, 'r') as fp:
+            j = json.load(fp)
+            for v in j['videos']:
+                if v['split'] == 'train':
+                    train_vids.add(v['video_id'])
+
+            for s in j['sentences']:
+                vid = s['video_id']
+                if vid in train_vids:
+                    self.captions.append((vid, s['caption']))
+
+        print("... {} images, {} captions loaded ...".format(
+            len(train_vids), len(self.captions)))
+
+    def __getitem__(self, index):
+        """Returns one data pair (image and caption)."""
+        # ann_id = self.ids[index]
+        # caption = coco.anns[ann_id]['caption']
+        # img_id = coco.anns[ann_id]['image_id']
+        # path = coco.loadImgs(img_id)[0]['file_name']
+
+        vid = self.captions[index][0]
+        caption = self.captions[index][1]
+
+        assert vid[:5] == 'video'
+        vid_idx = int(vid[5:])
+        path = '{:04}:kf1.jpeg'.format(vid_idx)
+
+        image = Image.open(os.path.join(self.root, path)).convert('RGB')
+        if self.transform is not None:
+            image = self.transform(image)
+
+        # Convert caption (string) to word ids.
+        vocab = self.vocab
+        tokens = nltk.tokenize.word_tokenize(str(caption).lower())
+        caption = []
+        caption.append(vocab('<start>'))
+        caption.extend([vocab(token) for token in tokens])
+        caption.append(vocab('<end>'))
+        target = torch.Tensor(caption)
+        return image, target
+
+    def __len__(self):
+        return len(self.captions)
+
+
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption).
 
@@ -201,10 +266,14 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
                shuffle, num_workers, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
-    if dataset_name == 'coco':
+    dn = dataset_name.lower()
+
+    if dn == 'coco':
         _dataset = CocoDataset
-    elif dataset_name == 'vist-seq':
+    elif 'vist' in dn:
         _dataset = VistDataset
+    elif dn == 'msrvtt' or dn == 'msr-vtt':
+        _dataset = MSRVTTDataset
     else:
         print("Invalid dataset specified...")
         sys.exit(1)
