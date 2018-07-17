@@ -117,9 +117,9 @@ def main(args):
             # print('shape of input to EncoderRNN: ', input_sequence_features.shape)
             context_vector = encoder_rnn(input_sequence_features)
             # print('shape of sequence context vector: ', context_vector.shape)
+            captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths, batch_first=True)[0]
             # print('shape of targets: ', targets.shape)
-            captions = captions.to(device)
             outputs = decoder(context_vector, captions, lengths)
             # print('shape of decoder output: ', outputs.shape)
 
