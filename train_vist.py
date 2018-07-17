@@ -4,6 +4,7 @@ import pickle
 import sys
 import torch
 import numpy as np
+from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
 
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
@@ -118,6 +119,7 @@ def main(args):
             # print('shape of sequence context vector: ', context_vector.shape)
             targets = pack_padded_sequence(captions, lengths, batch_first=True)[0]
             # print('shape of targets: ', targets.shape)
+            captions = captions.to(device)
             outputs = decoder(context_vector, captions, lengths)
             # print('shape of decoder output: ', outputs.shape)
 
