@@ -67,7 +67,7 @@ echo "Features location: $features_location"
 
 if [ -z "$4" ]; then
     echo "Images will be resized"
-    srun python resize.py --image_dir ${images_location} --output_dir "./resized_temp"
+    srun python resize.py --image_dir ${images_location} --output_dir "./resized_temp" --image_size 224
     OUT=$?
     if [ ${OUT} -eq 0 ];then
 	echo "end: resizing complete"
