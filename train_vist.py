@@ -8,7 +8,7 @@ import numpy as np
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
-from data_loader import get_loader
+from data_loader import get_loader, collate_fn_vist
 
 # Device configuration
 from model_vist import DecoderRNN, ModelParams, EncoderCNN, EncoderRNN
@@ -61,7 +61,7 @@ def main(args):
     # Build data loader
     data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
                              vocab, transform, args.batch_size,
-                             shuffle=True, num_workers=args.num_workers)
+                             shuffle=True, num_workers=args.num_workers, _collate_fn=collate_fn_vist)
 
     print('data load complete, verifying size', len(data_loader))
 
@@ -108,23 +108,18 @@ def main(args):
         for i, (images, captions, lengths) in enumerate(data_loader):
             # forward pass
             sequence_data = torchify_image(images[0])
-            print('shape of image data: ', sequence_data.shape)
-
+            # print('shape of image data: ', sequence_data.shape)
             sequence_features = encoder_cnn(sequence_data)
-            print('shape of image features: ', sequence_features.shape)
-
+            # print('shape of image features: ', sequence_features.shape)
             input_sequence_features = sequence_features.unsqueeze(0)
             input_sequence_features = input_sequence_features.view(1, 1, -1)
-            print('shape of input to EncoderRNN: ', input_sequence_features.shape)
-
+            # print('shape of input to EncoderRNN: ', input_sequence_features.shape)
             context_vector = encoder_rnn(input_sequence_features)
-            print('shape of sequence context vector: ', context_vector.shape)
-
+            # print('shape of sequence context vector: ', context_vector.shape)
             targets = pack_padded_sequence(captions, lengths, batch_first=True)[0]
-            print('shape of targets: ', targets.shape)
-
+            # print('shape of targets: ', targets.shape)
             outputs = decoder(context_vector, captions, lengths)
-            print('shape of decoder output: ', outputs.shape)
+            # print('shape of decoder output: ', outputs.shape)
 
             # backward pass and optimize
             loss = criterion(outputs, targets)
@@ -170,7 +165,7 @@ if __name__ == '__main__':
     parser.add_argument('--caption_path', type=str,
                         default='resources/sis/train.story-in-sequence.json',
                         help='path for train annotation json file')
-    parser.add_argument('--log_step', type=int, default=1,
+    parser.add_argument('--log_step', type=int, default=5,
                         help='step size for prining log info')
 
     # Model parameters
@@ -186,7 +181,7 @@ if __name__ == '__main__':
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
                         help='Force start epoch (for broken model files...)')
-    parser.add_argument('--num_epochs', type=int, default=1)
+    parser.add_argument('--num_epochs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--learning_rate', type=float, default=0.001)
