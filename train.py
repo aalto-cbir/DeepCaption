@@ -118,19 +118,19 @@ def main(args):
     params = ModelParams.fromargs(args)
     start_epoch = 0
 
-    # Intelligently resume from the newest trained epic matching supplied configuration:
+    # Intelligently resume from the newest trained epoch matching supplied configuration:
     if args.resume:
-        print("Attempting to resume from latest epic matching supplied parameters...")
-        # Get a matching filename without the epic part
-        model_no_epic = get_file_name(args, params, 0).split('ep')[0]
+        print("Attempting to resume from latest epoch matching supplied parameters...")
+        # Get a matching filename without the epoch part
+        model_no_epoch = get_file_name(args, params, 0).split('ep')[0]
 
         # Files matching model:
-        full_path_prefix = os.path.join(args.model_path, model_no_epic)
+        full_path_prefix = os.path.join(args.model_path, model_no_epoch)
         matching_files = glob.glob(full_path_prefix + 'ep*.ckpt')
 
         print("Looking for: {}".format(full_path_prefix + 'ep*.ckpt'))
 
-        # get a file name with a largest matching epic:
+        # get a file name with a largest matching epoch:
         file_regex = full_path_prefix + 'ep([0-9]*).ckpt'
         r = re.compile(file_regex)
         last_epoch = -1
@@ -233,7 +233,8 @@ if __name__ == '__main__':
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for prining log info')
     parser.add_argument('--resume', action="store_true",
-                        help="Resume from largest epic checkpoint matching current parameters")
+                        help="Resume from largest epoch checkpoint matching \
+                        current parameters")
 
     # Model parameters
     parser.add_argument('--embed_size', type=int, default=256,
