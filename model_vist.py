@@ -1,7 +1,8 @@
 import torch
-import torch.nn as nn
-import torchvision.models as models
+
+from torch import nn
 from torch.nn.utils.rnn import pack_padded_sequence
+from torchvision import models
 
 
 class ModelParams:
@@ -9,13 +10,15 @@ class ModelParams:
         self.embed_size = self._get_param(d, 'embed_size', 256)
         self.hidden_size = self._get_param(d, 'hidden_size', 512)
         self.num_layers = self._get_param(d, 'num_layers', 1)
+        self.input_size = self._get_param(d, 'input_size', 5 * self.embed_size)
         self.dropout = self._get_param(d, 'dropout', 0)
 
     @classmethod
     def fromargs(cls, args):
         return cls(vars(args))
 
-    def _get_param(self, d, param, default):
+    @staticmethod
+    def _get_param(d, param, default):
         if param not in d:
             print('WARNING: {} not set, using default value {}'.
                   format(param, default))
@@ -43,21 +46,34 @@ class EncoderCNN(nn.Module):
 
 
 class EncoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, n_layers=1, dropout=0.1):
+    def __init__(self, p):
+        """
+        initialize lstm cell for reading image sequences
+        :param p: model parameters
+        """
         super(EncoderRNN, self).__init__()
+        self.lstm_cell = nn.LSTM(input_size=p.input_size,
+                                 hidden_size=p.embed_size,
+                                 num_layers=p.num_layers,
+                                 batch_first=True)
 
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.n_layers = n_layers
-        self.dropout = dropout
+    def forward(self, sequence_features):
+        """
+        read image sequence features and output context vector
+        :param sequence_features: image features extracted using a pre-trained model
+        :return: last cell hidden state as sequence-context-vector
+        """
+        sequence_features = sequence_features.unsqueeze(0)
+        sequence_features = sequence_features.view(1, 1, -1)
+        # print('shape of input to EncoderRNN: ', sequence_features.shape)
 
-        self.input = nn.Linear(1, )
-
-        self.lstm = nn.LSTM(hidden_size, hidden_size, n_layers, dropout=self.dropout)
+        hiddens, h_n = self.lstm_cell(sequence_features)
+        # print('shape of context vector: ', hiddens[-1].shape)
+        return hiddens[-1]
 
 
 class DecoderRNN(nn.Module):
-    def __init__(self, p, vocab_size, max_seq_length=20):
+    def __init__(self, p, vocab_size, max_seq_length=100):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
         self.embed = nn.Embedding(vocab_size, p.embed_size)
@@ -69,6 +85,7 @@ class DecoderRNN(nn.Module):
     def forward(self, features, captions, lengths):
         """Decode image feature vectors and generates captions."""
         embeddings = self.embed(captions)
+        # print('shape of embeddings: ', embeddings.shape)
         embeddings = torch.cat((features.unsqueeze(1), embeddings), 1)
         packed = pack_padded_sequence(embeddings, lengths, batch_first=True)
         hiddens, _ = self.lstm(packed)

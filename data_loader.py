@@ -214,7 +214,7 @@ def collate_fn(data):
     images, captions = zip(*data)
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
-    images = torch.stack(images, 0)
+    # images = torch.stack(images, 0)
 
     # Merge captions (from tuple of 1D tensor to 2D tensor).
     lengths = [len(cap) for cap in captions]
@@ -239,7 +239,8 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
         return torch.utils.data.DataLoader(dataset=dataset,
                                            batch_size=batch_size,
                                            shuffle=shuffle,
-                                           num_workers=num_workers)
+                                           num_workers=num_workers,
+                                           collate_fn=collate_fn)
     else:
         print("Invalid dataset specified...")
         sys.exit(1)
