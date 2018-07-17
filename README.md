@@ -66,23 +66,74 @@ $ python resize.py --image_dir datasets/data/vist/images/train_full --output_dir
 
 ### 4. Train the model
 
-#### COCO 
+Example of training a single model with default parameters on COCO dataset:
 
 ```bash
 $ python train.py --dataset coco --image_dir path/to/coco/resized.zip --caption_path datasets/data/COCO/annotations/captions_train2014.json --vocab_path datasets/processed/COCO/vocab.pkl --model_basename model-coco
 ```
 
-#### 5. Test the model 
+It is also possible to train multiple models in multi-node environments using `scripts/multi_train.sh` helper script. This script takes as an argument a path to a CSV file with combinations of command line parameters. Example of such file available at [scripts/input/train_params.csv](train_params.csv). The header row in the CSV corresponds to the names of the command line parameters, each row corresponds to one model to be trained. Parameters other than the path to the CSV file are applied to each model being trained:
+
+```bash
+$ scripts/multi_train.sh scripts/input/train_params.csv --dataset coco --image_dir path/to/coco/resized.zip --caption_path datasets/data/COCO/annotations/captions_train2014.json --vocab_path datasets/processed/COCO/vocab.pkl --model_basename model-coco
+```
+
+### 5. Infer from model
+
+As with training, it is possible to perform inference either on a single model:
+```bash
+$ python infer.py --image_dir datasets/data/COCO/images/val2014 --model models/model-coco-ep5.ckpt --vocab_path datasets/processed/COCO/vocab.pkl --verbose
+```
+
+Or with multiple models supplied as command line arguments to the helper script:
+
+```bash
+$ scripts/multi_infer.sh model1 model2 ... modelN --image_dir datasets/data/COCO/images/val2014 --vocab_path datasets/processed/COCO/vocab.pkl
+```
+
+### 6. Evaluate the model
 
 #### COCO
 
-```bash
-$ python eval.py --image_dir image_samples --model models/model-coco-ep5.ckpt --vocab_path datasets/processed/COCO/vocab.pkl --verbose
-```
+COCO evaluation library works only with Python 2. Therefore you will need to make sure that you are running the below code in an environment that supports this.
 
-#### VIST
+1) Link to coco-caption library:
 
 ```bash
-$ python eval.py --image_dir image_samples --model models/model-vist-ep5.ckpt --vocab_path datasets/processed/vist/vocab.pkl --verbose
+$ git clone https://github.com/tylin/coco-caption ~/workdir/coco-caption
+$ cd image_captioning
+$ ln -s path/to/coco-caption/pycocoevalcap datasets/
 ```
+
+2) Install PyCocoTools for Python2 (your Python2 environment may requires loading modules):
+
+```bash
+$ module purge
+$ module load python-env/2.7.10
+$ pip2 install pycocotools --user
+```
+
+3) modify the file `pycocoevalcap/eval.py` to remove other metrics other than METEOR and CIDEr, on lines 39-45.
+
+Once the setup steps above are done, you can perform evaluation on a json file that corresponds to one particular model:
+
+```bash
+$ python eval_coco.py path/to/result/captions.json --ground_truth datasets/data/COCO/annotations/captions_val2014.json
+```
+By default the above command creates a file containing METEOR and CIDEr score in JSON formatted file having an extension `*.eval`
+
+If you want to evaluate multiple files at the same time, a helper script `scripts/multi_eval.sh` can be used:
+
+```bash
+$ scripts/multi_eval.sh coco2014 path/to/result_dir1/*.json path/to/result_dir2/*.json
+```
+The above command creates an `*.eval` files corresponding to each model being evaluated.
+
+Finally, to simplify generating user readable output, an `eval2csv.py` script combines the produced `*.eval` files into a single, easy to parse and read CSV file:
+
+```bash
+$ python eval2csv.py --evaluations_dir path/containing/eval_files --output_file output_file.csv 
+```
+
+
 

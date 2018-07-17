@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 import os
+import glob
+import re
 import pickle
 import sys
 import zipfile
@@ -20,9 +22,22 @@ from torchvision import transforms
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def save_models(args, params, encoder, decoder, optimizer, epoch):
+def get_file_name(args, params, epoch):
+    """Create filename based on parameters supplied"""
     bn = args.model_basename
-    file_name = '{}-ep{}.ckpt'.format(bn, epoch + 1)
+    file_name = '{}-es{}-hs{}-nl{}-bs{}-lr{}-da{}-ep{}.ckpt'.format(bn,
+                                                                    params.embed_size,
+                                                                    params.hidden_size,
+                                                                    params.num_layers,
+                                                                    params.batch_size,
+                                                                    params.learning_rate,
+                                                                    params.dropout,
+                                                                    epoch + 1)
+    return file_name
+
+
+def save_models(args, params, encoder, decoder, optimizer, epoch):
+    file_name = get_file_name(args, params, epoch)
 
     state = {
         'epoch': epoch + 1,
@@ -32,6 +47,8 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
         'embed_size': params.embed_size,
         'hidden_size': params.hidden_size,
         'num_layers': params.num_layers,
+        'batch_size': params.batch_size,
+        'learning_rate': params.learning_rate,
         'dropout': params.dropout
     }
 
@@ -71,7 +88,8 @@ def main(args):
         if not os.path.exists(extract_path):
             os.makedirs(extract_path)
         with zipfile.ZipFile(args.image_dir, 'r') as zipped_images:
-            print("Extracting training data from {} to {}".format(args.image_dir, extract_path))
+            print("Extracting training data from {} to {}".format(
+                args.image_dir, extract_path))
             zipped_images.extractall(extract_path)
             unzipped_dir = os.path.basename(args.image_dir).split('.')[0]
             args.image_dir = os.path.join(extract_path, unzipped_dir)
@@ -100,12 +118,43 @@ def main(args):
     params = ModelParams.fromargs(args)
     start_epoch = 0
 
+    # Intelligently resume from the newest trained epoch matching supplied configuration:
+    if args.resume:
+        print("Attempting to resume from latest epoch matching supplied parameters...")
+        # Get a matching filename without the epoch part
+        model_no_epoch = get_file_name(args, params, 0).split('ep')[0]
+
+        # Files matching model:
+        full_path_prefix = os.path.join(args.model_path, model_no_epoch)
+        matching_files = glob.glob(full_path_prefix + 'ep*.ckpt')
+
+        print("Looking for: {}".format(full_path_prefix + 'ep*.ckpt'))
+
+        # get a file name with a largest matching epoch:
+        file_regex = full_path_prefix + 'ep([0-9]*).ckpt'
+        r = re.compile(file_regex)
+        last_epoch = -1
+
+        for file in matching_files:
+            m = r.match(file)
+            if m:
+                matched_epoch = int(m.group(1))
+                if matched_epoch > last_epoch:
+                    last_epoch = matched_epoch
+
+        if last_epoch is not -1:
+            args.load_model = '{}ep{}.ckpt'.format(full_path_prefix, last_epoch)
+            print('Found matching model: {}'.format(args.load_model))
+        else:
+            print("Warning: Failed to intelligently resume...")
+
     if args.load_model:
         state = torch.load(args.load_model)
         params = ModelParams(state)
         start_epoch = state['epoch']
         print('Loading model {} at epoch {}.'.format(args.load_model,
                                                      start_epoch))
+
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
 
@@ -183,6 +232,9 @@ if __name__ == '__main__':
                         help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for prining log info')
+    parser.add_argument('--resume', action="store_true",
+                        help="Resume from largest epoch checkpoint matching \
+                        current parameters")
 
     # Model parameters
     parser.add_argument('--embed_size', type=int, default=256,
@@ -191,7 +243,7 @@ if __name__ == '__main__':
                         help='dimension of lstm hidden states')
     parser.add_argument('--num_layers', type=int, default=1,
                         help='number of layers in lstm')
-    parser.add_argument('--dropout', type=float, default=0,
+    parser.add_argument('--dropout', type=float, default=0.0,
                         help='dropout for the LSTM')
 
     # Training parameters
