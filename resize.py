@@ -38,7 +38,10 @@ def resize_images(image_dir, output_dir, create_zip, size):
             img = cv2.imread(os.path.join(image_dir, image))
             if img is not None:
                 img = resize_image(img, size)
-                cv2.imwrite(output_path, img)
+                try:
+                    cv2.imwrite(output_path, img)
+                except Exception:
+                    print('unable to save: ', image)
 
             if (i + 1) % 100 == 0:
                 print("[{}/{}] Resized the images and saved into '{}'."
