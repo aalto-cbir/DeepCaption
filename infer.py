@@ -91,19 +91,20 @@ def main(args):
 
     if args.image_dir is not None:
         file_list += glob.glob(args.image_dir + '/*.jpg')
+        file_list += glob.glob(args.image_dir + '/*.jpeg')
         file_list += glob.glob(args.image_dir + '/*.png')
 
     N = len(file_list)
     print('Processing {} image files.'.format(N))
     show_progress = sys.stderr.isatty() and not args.verbose
     for i, image_file in tqdm(enumerate(file_list), disable=not show_progress):
-        bn = basename(image_file)
-        m = re.search(r'0*(\d+)$', bn)
-        if m is not None:
-            image_id = int(m.group(1))
-            assert image_id > 0
-        else:
-            image_id = bn
+        image_id = basename(image_file)
+
+        if image_id.startswith("COCO"):
+            m = re.search(r'0*(\d+)$', image_id)
+            if m is not None:
+                image_id = int(m.group(1))
+                assert image_id > 0
 
         if args.verbose:
             print('[{:.2%}] Reading [{}] as {} ...'.format(i / N, image_id, image_file))
