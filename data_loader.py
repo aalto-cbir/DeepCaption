@@ -90,7 +90,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
                     if img_id == d['image_id']:
                         self.paragraphs.append({
                             'image_id': img_id,
-                            'paragraph': d['paragraph']
+                            'caption': d['paragraph']
                         })
                         break
         # Otherwise load all images in json_file:
@@ -99,7 +99,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
             for d in dataset:
                 self.paragraphs.append({
                     'image_id': d['image_id'],
-                    'paragraph': d['paragraph']
+                    'caption': d['paragraph']
                 })
 
         print("... {} images loaded ...".format(len(self.paragraphs)))
@@ -107,7 +107,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
     def __getitem__(self, index):
         """Returns one data pair (image and paragraph)."""
         vocab = self.vocab
-        par = self.paragraphs[index]['paragraph']
+        cap = self.paragraphs[index]['caption']
         img_id = self.paragraphs[index]['image_id']
         img_path = os.path.join(self.root, str(img_id) + '.jpg')
 
@@ -116,12 +116,12 @@ class VisualGenomeIM2PDataset(data.Dataset):
             image = self.transform(image)
 
         # Convert caption (string) to word ids.
-        tokens = nltk.tokenize.word_tokenize(str(par).lower())
-        paragraph = []
-        paragraph.append(vocab('<start>'))
-        paragraph.extend([vocab(token) for token in tokens])
-        paragraph.append(vocab('<end>'))
-        target = torch.Tensor(paragraph)
+        tokens = nltk.tokenize.word_tokenize(str(cap).lower())
+        caption = []
+        caption.append(vocab('<start>'))
+        caption.extend([vocab(token) for token in tokens])
+        caption.append(vocab('<end>'))
+        target = torch.Tensor(caption)
         return image, target
 
     def __len__(self):
@@ -230,7 +230,7 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
         _dataset = CocoDataset
     elif dataset_name == 'vist':
         _dataset = VistDataset
-    elif dataset_name == 'visualgenome_im2p':
+    elif dataset_name == 'vgim2p':
         _dataset = VisualGenomeIM2PDataset
     else:
         print("Invalid dataset specified...")
