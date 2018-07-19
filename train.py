@@ -235,8 +235,13 @@ if __name__ == '__main__':
     parser.add_argument('--resume', action="store_true",
                         help="Resume from largest epoch checkpoint matching \
                         current parameters")
-
+    
     # Model parameters
+    parser.add_argument('--features', type=str, default='resnet152',
+                        help='features to use as comma separated list, '
+                        'features ending with .npy are assumed to be '
+                        'precalculated features read from the named npy file, '
+                        'e.g., resnet152,foo.npy')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
