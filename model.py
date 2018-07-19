@@ -12,6 +12,7 @@ class ModelParams:
         self.batch_size = self._get_param(d, 'batch_size', 128)
         self.dropout = self._get_param(d, 'dropout', 0)
         self.learning_rate = self._get_param(d, 'learning_rate', 0.001)
+        self.features = self._get_param(d, 'features', 'resnet152').split(',')
 
     @classmethod
     def fromargs(cls, args):
@@ -59,15 +60,27 @@ class EncoderCNN(nn.Module):
     def __init__(self, p):
         """Load a pretrained CNN and replace top fc layer."""
         super(EncoderCNN, self).__init__()
-        self.features = FeatureExtractor('resnet152')
-        
-        self.linear = nn.Linear(self.features.output_dim, p.embed_size)
+
+        total_output_dim = 0
+        self.extractors = nn.ModuleList()
+        for feat_name in p.features:
+            extractor = FeatureExtractor(feat_name)
+            self.extractors.append(extractor)
+            total_output_dim += extractor.output_dim
+            
+        self.linear = nn.Linear(total_output_dim, p.embed_size)
         self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
         
     def forward(self, images):
         """Extract feature vectors from input images."""
         with torch.no_grad():
-            features = self.features(images)
+            feat_outputs = []
+            # Extract features with each extractor
+            for i, extractor in enumerate(self.extractors):
+                feat_outputs.append(extractor(images))
+            # Concatenate features
+            features = torch.cat(feat_outputs, 1)
+        # Apply FC layer and batch normalization
         features = self.bn(self.linear(features))
         return features
 
@@ -76,7 +89,7 @@ class EncoderCNN(nn.Module):
         fixed_states = []
         for key, value in state_dict.items():
             if key.startswith('resnet.'):
-                key = 'features.extractor.' + key[7:]
+                key = 'extractors.0.extractor.' + key[7:]
             fixed_states.append((key, value))
 
         fixed_state_dict = OrderedDict(fixed_states)
