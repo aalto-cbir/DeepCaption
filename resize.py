@@ -18,8 +18,7 @@ def resize_image(image, size):
 def resize_images(image_dir, output_dir, create_zip, size):
     """Resize the images in 'image_dir' and save into 'output_dir'.
     'create_zip' tells whether we need to create a ZIP archive"""
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
 
     images = os.listdir(image_dir)
     num_images = len(images)
