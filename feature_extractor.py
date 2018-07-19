@@ -8,42 +8,18 @@ import torch.nn as nn
 from PIL import Image
 from torchvision import transforms, models
 
-from model import ModelParams, EncoderCNN
+from model import ModelParams, EncoderCNN, FeatureExtractor
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# Magical values from here:
+# https://pytorch.org/docs/stable/torchvision/models.html
 transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.485, 0.456, 0.406),
                          (0.229, 0.224, 0.225))])
-image_types = ('*.jpg', '*.png')
-
-
-class Extractor(nn.Module):
-    def __init__(self, model_name):
-        """Load the pretrained model and replaces top fc layer."""
-        super(Extractor, self).__init__()
-
-        if model_name == 'alexnet':
-            print('using AlexNet ... features shape (256 * 6 * 6, ) ')
-            model = models.alexnet(pretrained=True)
-        elif model_name == 'densenet201':
-            print('using DenseNet 201 ... features shape (1920, 7, 7, ) ')
-            model = models.densenet201(pretrained=True)
-        else:
-            print('using resnet 152 ... features shape (2048, ) ')
-            model = models.resnet152(pretrained=True)
-
-        modules = list(model.children())[:-1]
-        self.extractor = nn.Sequential(*modules)
-
-    def forward(self, images):
-        """Extract feature vectors from input images."""
-        with torch.no_grad():
-            features = self.extractor(images)
-        features = features.reshape(features.size(0), -1)
-        return features
+image_types = ('*.jpg', '*.png', '*.jpeg')
 
 
 def torchify_image(batch):
@@ -70,7 +46,7 @@ def extract_features(image_paths, extractor, output_dir, batch_size=4):
 
 
 def main(args):
-    extractor = Extractor(args.extractor).to(device)
+    extractor = FeatureExtractor(args.extractor, True).to(device)
 
     image_paths = []
     for image_type in image_types:

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 from torch.nn.utils.rnn import pack_padded_sequence
+from collections import OrderedDict
 
 class ModelParams:
     def __init__(self, d):
@@ -23,24 +24,63 @@ class ModelParams:
             return default
         return d[param]
 
+class FeatureExtractor(nn.Module):
+    def __init__(self, model_name, debug=False):
+        """Load the pretrained model and replace top fc layer."""
+        super(FeatureExtractor, self).__init__()
+
+        if model_name == 'alexnet':
+            if debug:
+                print('Using AlexNet, features shape 256 x 6 x 6')
+            model = models.alexnet(pretrained=True)
+            self.output_dim = 256*6*6
+        elif model_name == 'densenet201':
+            if debug:
+                print('Using DenseNet 201, features shape 1920 x 7 x 7')
+            model = models.densenet201(pretrained=True)
+            self.output_dim = 1920*7*7
+        else:
+            if debug:
+                print('Using resnet 152, features shape 2048')
+            model = models.resnet152(pretrained=True)
+            self.output_dim = 2048
+
+        modules = list(model.children())[:-1]
+        self.extractor = nn.Sequential(*modules)
+
+    def forward(self, images):
+        """Extract feature vectors from input images."""
+        with torch.no_grad():
+            features = self.extractor(images)
+        return features.reshape(features.size(0), -1)
+
 
 class EncoderCNN(nn.Module):
     def __init__(self, p):
-        """Load the pretrained ResNet-152 and replace top fc layer."""
+        """Load a pretrained CNN and replace top fc layer."""
         super(EncoderCNN, self).__init__()
-        resnet = models.resnet152(pretrained=True)
-        modules = list(resnet.children())[:-1]      # delete the last fc layer.
-        self.resnet = nn.Sequential(*modules)
-        self.linear = nn.Linear(resnet.fc.in_features, p.embed_size)
+        self.features = FeatureExtractor('resnet152')
+        
+        self.linear = nn.Linear(self.features.output_dim, p.embed_size)
         self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
         
     def forward(self, images):
         """Extract feature vectors from input images."""
         with torch.no_grad():
-            features = self.resnet(images)
-        features = features.reshape(features.size(0), -1)
+            features = self.features(images)
         features = self.bn(self.linear(features))
         return features
+
+    # hack to be able to load old state files which used the "resnet." prefix
+    def load_state_dict(self, state_dict, strict=True):
+        fixed_states = []
+        for key, value in state_dict.items():
+            if key.startswith('resnet.'):
+                key = 'features.extractor.' + key[7:]
+            fixed_states.append((key, value))
+
+        fixed_state_dict = OrderedDict(fixed_states)
+        super(EncoderCNN, self).load_state_dict(fixed_state_dict, strict)
 
 
 class DecoderRNN(nn.Module):
