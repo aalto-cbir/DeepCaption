@@ -210,6 +210,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='coco',
                         help='which dataset to use')
+    parser.add_argument('--subset', type=str, default=None,
+                        help='file defining the subset of training images')
     parser.add_argument('--load_model', type=str,
                         help='existing model, for continuing training')
     parser.add_argument('--model_basename', type=str, default='model',
@@ -232,7 +234,7 @@ if __name__ == '__main__':
                         default='datasets/data/COCO/annotations/captions_train2014.json',
                         help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
-                        help='step size for prining log info')
+                        help='step size for printing log info')
     parser.add_argument('--resume', action="store_true",
                         help="Resume from largest epoch checkpoint matching \
                         current parameters")
