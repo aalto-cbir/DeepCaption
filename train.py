@@ -49,7 +49,9 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
         'num_layers': params.num_layers,
         'batch_size': params.batch_size,
         'learning_rate': params.learning_rate,
-        'dropout': params.dropout
+        'dropout': params.dropout,
+        'external_features': params.external_features,
+        'internal_features': params.internal_features,
     }
 
     torch.save(state, os.path.join(args.model_path, file_name))
@@ -151,7 +153,9 @@ def main(args):
 
     if args.load_model:
         state = torch.load(args.load_model)
+        external_features = params.external_features
         params = ModelParams(state)
+        params.external_features = external_features
         start_epoch = state['epoch']
         print('Loading model {} at epoch {}.'.format(args.load_model,
                                                      start_epoch))
