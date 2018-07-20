@@ -12,7 +12,7 @@ import sys
 import zipfile
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
 
-from data_loader import get_loader
+from data_loader import get_loader, ExternalFeature
 from datetime import datetime
 from model import ModelParams, EncoderCNN, DecoderRNN
 from torch.nn.utils.rnn import pack_padded_sequence
@@ -158,6 +158,14 @@ def main(args):
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
 
+    # Construct external feature loaders
+    ef_loaders = []
+    params.external_features_total_dim = 0
+    for fn in params.external_features:
+        ef = ExternalFeature(fn)
+        ef_loaders.append(ef)
+        params.external_features_total_dim += ef.vdim()
+
     # Build the models
     print('Using device: {}'.format(device.type))
     print('Initializing model...')
@@ -180,14 +188,18 @@ def main(args):
     total_step = len(data_loader)
     print('Start Training...')
     for epoch in range(start_epoch, args.num_epochs):
-        for i, (images, captions, lengths) in enumerate(data_loader):
+        for i, (images, captions, lengths, image_ids) in enumerate(data_loader):
             # Set mini-batch dataset
             images = images.to(device)
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths, batch_first=True)[0]
 
+            # Get the features batches from each of the external features
+            ef_batches = [ef.get_batch(image_ids).to(device)
+                          for ef in ef_loaders]
+            
             # Forward, backward and optimize
-            features = encoder(images)
+            features = encoder(images, ef_batches)
             outputs = decoder(features, captions, lengths)
             loss = criterion(outputs, targets)
             decoder.zero_grad()

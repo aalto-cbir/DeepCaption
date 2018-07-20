@@ -6,6 +6,21 @@ import sys
 import json
 from PIL import Image
 
+class ExternalFeature:
+    def __init__(self, filename):
+        import h5py
+        self.f = h5py.File(os.path.expanduser(filename), 'r')
+        self.data = self.f['data']
+
+    def vdim(self):
+        return self.data.shape[1]
+
+    def get_batch(self, indices):
+        data_rows = []
+        for i in indices:
+            data_rows.append(self.data[i])
+        return torch.tensor(data_rows)
+
 
 class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
@@ -25,16 +40,18 @@ class CocoDataset(data.Dataset):
         self.ids = list(self.coco.anns.keys())
         self.vocab = vocab
         self.transform = transform
-        print("... {} images loaded ...".format(len(self.ids)))
+        print("COCO info loaded for {} images.".format(len(self.ids)))
 
     def __getitem__(self, index):
-        """Returns one data pair (image and caption)."""
+        """Returns one training sample as a tuple (image, caption, image_id)."""
         coco = self.coco
         vocab = self.vocab
         ann_id = self.ids[index]
         caption = coco.anns[ann_id]['caption']
         img_id = coco.anns[ann_id]['image_id']
         path = coco.loadImgs(img_id)[0]['file_name']
+
+        print(index, img_id, path)
 
         image = Image.open(os.path.join(self.root, path)).convert('RGB')
         if self.transform is not None:
@@ -47,7 +64,7 @@ class CocoDataset(data.Dataset):
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
-        return image, target
+        return image, target, img_id
 
     def __len__(self):
         return len(self.ids)
@@ -86,7 +103,8 @@ class VistDataset(data.Dataset):
         print("... {} images loaded ...".format(len(self.captions)))
 
     def __getitem__(self, index):
-        """Returns one data pair (image and caption)."""
+        """Returns one training sample as a tuple (image, caption, image_id)."""
+
         vocab = self.vocab
         image_id = self.captions[index][0]
         caption = self.captions[index][1]
@@ -108,7 +126,7 @@ class VistDataset(data.Dataset):
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
-        return image, target
+        return image, target, image_id
 
     def __len__(self):
         return len(self.captions)
@@ -144,11 +162,12 @@ class MSRVTTDataset(data.Dataset):
                 if vid in train_vids:
                     self.captions.append((vid, s['caption']))
 
-        print("... {} images, {} captions loaded ...".format(
+        print("MSR-VTT info loaded for {} images, {} captions.".format(
             len(train_vids), len(self.captions)))
 
     def __getitem__(self, index):
-        """Returns one data pair (image and caption)."""
+        """Returns one training sample as a tuple (image, caption, image_id)."""
+
         # ann_id = self.ids[index]
         # caption = coco.anns[ann_id]['caption']
         # img_id = coco.anns[ann_id]['image_id']
@@ -173,7 +192,8 @@ class MSRVTTDataset(data.Dataset):
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
-        return image, target
+
+        return image, target, vid_idx
 
     def __len__(self):
         return len(self.captions)
@@ -197,7 +217,7 @@ def collate_fn(data):
     """
     # Sort a data list by caption length (descending order).
     data.sort(key=lambda x: len(x[1]), reverse=True)
-    images, captions = zip(*data)
+    images, captions, indices = zip(*data)
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
@@ -208,7 +228,7 @@ def collate_fn(data):
     for i, cap in enumerate(captions):
         end = lengths[i]
         targets[i, :end] = cap[:end]
-    return images, targets, lengths
+    return images, targets, lengths, indices
 
 
 def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,

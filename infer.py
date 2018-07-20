@@ -73,7 +73,6 @@ def main(args):
     state = torch.load(args.model)
     params = ModelParams(state)
 
-    # We set encoder to eval mode (BN uses moving mean/variance)
     encoder = EncoderCNN(params).eval()
     decoder = DecoderRNN(params, len(vocab)).eval()
     encoder = encoder.to(device)
@@ -112,10 +111,9 @@ def main(args):
         image = load_image(image_file, transform)
         image_tensor = image.to(device)
 
-        # Generate an caption from the image
+        # Generate a caption from the image
         feature = encoder(image_tensor)
         sampled_ids = decoder.sample(feature)
-        # (1, max_seq_length) -> (max_seq_length)
         sampled_ids = sampled_ids[0].cpu().numpy()
 
         # Convert word_ids to words
