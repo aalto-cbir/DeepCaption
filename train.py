@@ -112,7 +112,8 @@ def main(args):
     print("Loading dataset: {}".format(args.dataset))
     data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
                              vocab, transform, args.batch_size,
-                             shuffle=True, num_workers=args.num_workers)
+                             shuffle=True, num_workers=args.num_workers,
+                             subset=args.subset)
 
     state = None
     params = ModelParams.fromargs(args)
@@ -221,6 +222,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='coco',
                         help='which dataset to use')
+    parser.add_argument('--subset', type=str, default=None,
+                        help='file defining the subset of training images')
     parser.add_argument('--load_model', type=str,
                         help='existing model, for continuing training')
     parser.add_argument('--model_basename', type=str, default='model',
@@ -243,11 +246,11 @@ if __name__ == '__main__':
                         default='datasets/data/COCO/annotations/captions_train2014.json',
                         help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
-                        help='step size for prining log info')
+                        help='step size for printing log info')
     parser.add_argument('--resume', action="store_true",
                         help="Resume from largest epoch checkpoint matching \
                         current parameters")
-    
+
     # Model parameters
     parser.add_argument('--features', type=str, default='resnet152',
                         help='features to use as comma separated list, '
