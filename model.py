@@ -97,14 +97,13 @@ class EncoderCNN(nn.Module):
 
 
 class DecoderRNN(nn.Module):
-    def __init__(self, p, vocab_size, max_seq_length=20):
+    def __init__(self, p, vocab_size):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
         self.embed = nn.Embedding(vocab_size, p.embed_size)
         self.lstm = nn.LSTM(p.embed_size, p.hidden_size, p.num_layers,
                             dropout=p.dropout, batch_first=True)
         self.linear = nn.Linear(p.hidden_size, vocab_size)
-        self.max_seg_length = max_seq_length
         
     def forward(self, features, captions, lengths):
         """Decode image feature vectors and generates captions."""
@@ -115,11 +114,11 @@ class DecoderRNN(nn.Module):
         outputs = self.linear(hiddens[0])
         return outputs
     
-    def sample(self, features, states=None):
+    def sample(self, features, states=None, max_seq_length=20):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
         inputs = features.unsqueeze(1)
-        for i in range(self.max_seg_length):
+        for i in range(max_seq_length):
             hiddens, states = self.lstm(inputs, states)          # hiddens: (batch_size, 1, hidden_size)
             outputs = self.linear(hiddens.squeeze(1))            # outputs:  (batch_size, vocab_size)
             _, predicted = outputs.max(1)                        # predicted: (batch_size)
