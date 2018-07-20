@@ -36,7 +36,7 @@ def save_models(args, params, encoder_cnn, encoder_rnn, decoder, optimizer, epoc
     torch.save(state, os.path.join(args.model_path, file_name))
 
 
-def torchify_image(batch):
+def torchify_sequence(batch):
     final_tensor = torch.tensor([])
     for image in batch:
         image = image.unsqueeze(0)
@@ -106,9 +106,9 @@ def main(args):
     total_step = len(data_loader)
     print('Start Training...')
     for epoch in range(start_epoch, args.num_epochs):
-        for i, (images, captions, lengths) in enumerate(data_loader):
+        for i, (images, captions, lengths, story_id) in enumerate(data_loader):
             # forward pass
-            sequence_data = torchify_image(images[0])
+            sequence_data = torchify_sequence(images[0])
             # print('shape of image data: ', sequence_data.shape)
             sequence_features = encoder_cnn(sequence_data)
             # print('shape of image features: ', sequence_features.shape)
@@ -165,7 +165,7 @@ if __name__ == '__main__':
     parser.add_argument('--tmp_dir_prefix', type=str, default='image_captioning',
                         help='where in /tmp folder to store project data')
     parser.add_argument('--caption_path', type=str,
-                        default='resources/sis/train.story-in-sequence.json',
+                        default='resources/sis/val.story-in-sequence.json',
                         help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=5,
                         help='step size for prining log info')

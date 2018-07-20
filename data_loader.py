@@ -7,16 +7,33 @@ import json
 from PIL import Image
 
 
+class ExternalFeature:
+    def __init__(self, filename):
+        import h5py
+        self.f = h5py.File(os.path.expanduser(filename), 'r')
+        self.data = self.f['data']
+
+    def vdim(self):
+        return self.data.shape[1]
+
+    def get_batch(self, indices):
+        data_rows = []
+        for i in indices:
+            data_rows.append(self.data[i])
+        return torch.tensor(data_rows)
+
+
 class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_file, vocab, transform=None):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
             root: image directory.
             json_file: coco annotation file path.
             vocab: vocabulary wrapper.
+            subset: file defining a further subset of the dataset to be used
             transform: image transformer.
         """
         from pycocotools.coco import COCO
@@ -25,16 +42,18 @@ class CocoDataset(data.Dataset):
         self.ids = list(self.coco.anns.keys())
         self.vocab = vocab
         self.transform = transform
-        print("... {} images loaded ...".format(len(self.ids)))
+        print("COCO info loaded for {} images.".format(len(self.ids)))
 
     def __getitem__(self, index):
-        """Returns one data pair (image and caption)."""
+        """Returns one training sample as a tuple (image, caption, image_id)."""
         coco = self.coco
         vocab = self.vocab
         ann_id = self.ids[index]
         caption = coco.anns[ann_id]['caption']
         img_id = coco.anns[ann_id]['image_id']
         path = coco.loadImgs(img_id)[0]['file_name']
+
+        print(index, img_id, path)
 
         image = Image.open(os.path.join(self.root, path)).convert('RGB')
         if self.transform is not None:
@@ -47,22 +66,97 @@ class CocoDataset(data.Dataset):
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
-        return image, target
+        return image, target, img_id
 
     def __len__(self):
         return len(self.ids)
 
 
+class VisualGenomeIM2PDataset(data.Dataset):
+    """Visual Genome / MS COCO Paragraph-length caption dataset"""
+
+    def __init__(self, root, json_file, vocab, subset=None, transform=None):
+        """Set the path for images, captions and vocabulary wrapper.
+        Args:
+            root: image directory.
+            json_file: coco annotation file path.
+            vocab: vocabulary wrapper.
+            subset: file defining a further subset of the dataset to be used
+            transform: image transformer.
+        """
+        self.root = root
+        self.vocab = vocab
+        self.transform = transform
+
+        self.paragraphs = []
+
+        print("Loading Visual Genome Paragraph captioning data from {} ...".
+              format(json_file))
+
+        with open(json_file) as data_raw:
+            dataset = json.load(data_raw)
+
+        # Assuming subset file is a json array, as provided in
+        # https://cs.stanford.edu/people/ranjaykrishna/im2p/index.html
+        # If subset is defined, load only selected image/paragraph pairs:
+        if subset:
+            print("Loading data subset from {} ...".format(subset))
+            with open(subset) as subset_raw:
+                subset_ids = json.load(subset_raw)
+            for d in dataset:
+                for img_id in subset_ids:
+                    if img_id == d['image_id']:
+                        self.paragraphs.append({
+                            'image_id': img_id,
+                            'caption': d['paragraph']
+                        })
+                        break
+        # Otherwise load all images in json_file:
+        else:
+            print("Loading all data...")
+            for d in dataset:
+                self.paragraphs.append({
+                    'image_id': d['image_id'],
+                    'caption': d['paragraph']
+                })
+
+        print("... {} images loaded ...".format(len(self.paragraphs)))
+
+    def __getitem__(self, index):
+        """Returns one data pair (image and paragraph)."""
+        vocab = self.vocab
+        cap = self.paragraphs[index]['caption']
+        img_id = self.paragraphs[index]['image_id']
+        img_path = os.path.join(self.root, str(img_id) + '.jpg')
+
+        image = Image.open(img_path).convert('RGB')
+        if self.transform is not None:
+            image = self.transform(image)
+
+        # Convert caption (string) to word ids.
+        tokens = nltk.tokenize.word_tokenize(str(cap).lower())
+        caption = []
+        caption.append(vocab('<start>'))
+        caption.extend([vocab(token) for token in tokens])
+        caption.append(vocab('<end>'))
+        target = torch.Tensor(caption)
+        return image, target
+
+    def __len__(self):
+        return len(self.paragraphs)
+
+
 class VistDataset(data.Dataset):
     """VIST Custom Dataset for sequence processing, compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_file, vocab, transform=None):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
             root: image directory.
             json_file: VIST annotation file path.
             vocab: vocabulary wrapper.
+            subset: file defining a further subset of the dataset to be used
             transform: image transformer.
         """
         self.root = root
@@ -78,6 +172,7 @@ class VistDataset(data.Dataset):
 
         seq_idx = 0
         self.data_hold = []
+        self.story_ids = []
         while seq_idx < len(self.anns):
             current_story_id = self.anns[seq_idx][0]['story_id']
             _seq_idx = seq_idx
@@ -98,11 +193,13 @@ class VistDataset(data.Dataset):
             # local testing purpose (needs to be removed)
             if not bad_for_testing:
                 self.data_hold.append([current_sequence, current_story])
+                self.story_ids.append(current_story_id)
 
-        print("... {} sequences loaded ...".format(len(self.data_hold)))
+        print("... {} sequences loaded ...".format(len(self.story_ids)))
 
     def __getitem__(self, index):
-        """Returns one data pair (image and caption)."""
+        """Returns one training sample as a tuple (image, caption, image_id)."""
+
         vocab = self.vocab
         image_ids = self.data_hold[index][0]
         story = self.data_hold[index][1]
@@ -127,7 +224,7 @@ class VistDataset(data.Dataset):
         story.extend([vocab(token) for token in tokens])
         story.append(vocab('<end>'))
         target = torch.Tensor(story)
-        return sequence, target
+        return sequence, target, self.story_ids[index]
 
     def __len__(self):
         return len(self.data_hold)
@@ -136,7 +233,7 @@ class VistDataset(data.Dataset):
 class MSRVTTDataset(data.Dataset):
     """MSR-VTT Custom Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_file, vocab, transform=None):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -163,11 +260,12 @@ class MSRVTTDataset(data.Dataset):
                 if vid in train_vids:
                     self.captions.append((vid, s['caption']))
 
-        print("... {} images, {} captions loaded ...".format(
+        print("MSR-VTT info loaded for {} images, {} captions.".format(
             len(train_vids), len(self.captions)))
 
     def __getitem__(self, index):
-        """Returns one data pair (image and caption)."""
+        """Returns one training sample as a tuple (image, caption, image_id)."""
+
         # ann_id = self.ids[index]
         # caption = coco.anns[ann_id]['caption']
         # img_id = coco.anns[ann_id]['image_id']
@@ -192,7 +290,8 @@ class MSRVTTDataset(data.Dataset):
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
-        return image, target
+
+        return image, target, vid_idx
 
     def __len__(self):
         return len(self.captions)
@@ -216,7 +315,7 @@ def collate_fn(data):
     """
     # Sort a data list by caption length (descending order).
     data.sort(key=lambda x: len(x[1]), reverse=True)
-    images, captions = zip(*data)
+    images, captions, indices = zip(*data)
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
@@ -227,7 +326,7 @@ def collate_fn(data):
     for i, cap in enumerate(captions):
         end = lengths[i]
         targets[i, :end] = cap[:end]
-    return images, targets, lengths
+    return images, targets, lengths, indices
 
 
 def collate_fn_vist(data):
@@ -248,7 +347,7 @@ def collate_fn_vist(data):
     """
     # Sort a data list by caption length (descending order).
     data.sort(key=lambda x: len(x[1]), reverse=True)
-    images, captions = zip(*data)
+    images, captions, story_ids = zip(*data)
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
     # images = torch.stack(images, 0)
@@ -259,11 +358,11 @@ def collate_fn_vist(data):
     for i, cap in enumerate(captions):
         end = lengths[i]
         targets[i, :end] = cap[:end]
-    return images, targets, lengths
+    return images, targets, lengths, story_ids
 
 
 def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
-               shuffle, num_workers, _collate_fn=collate_fn):
+               shuffle, num_workers, subset=None, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     dn = dataset_name.lower()
@@ -272,13 +371,16 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
         _dataset = CocoDataset
     elif 'vist' in dn:
         _dataset = VistDataset
+    elif dn == 'vgim2p':
+        _dataset = VisualGenomeIM2PDataset
     elif dn == 'msrvtt' or dn == 'msr-vtt':
         _dataset = MSRVTTDataset
     else:
         print("Invalid dataset specified...")
         sys.exit(1)
 
-    dataset = _dataset(root=root, json_file=json_file, vocab=vocab, transform=transform)
+    dataset = _dataset(root=root, json_file=json_file, vocab=vocab,
+                       subset=subset, transform=transform)
 
     # Data loader:
     # This will return (images, captions, lengths) for each iteration.
@@ -292,3 +394,32 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
                                               num_workers=num_workers,
                                               collate_fn=_collate_fn)
     return data_loader
+
+
+if __name__ == '__main__':
+    # Test loading dataset!
+    from pprint import pprint
+    import pickle
+    from build_vocab import Vocabulary
+
+    vg_root = 'datasets/data/VisualGenome'
+    vocab_path = 'datasets/processed/COCO/vocab.pkl'
+    with open(vocab_path, 'rb') as f:
+        print("Extracting vocabulary from {}".format(vocab_path))
+        vocab = pickle.load(f)
+
+    # Load VG Paragraph training subset:
+    vgim2p_subset = VisualGenomeIM2PDataset(root=vg_root + '/1.2/VG/1.2/images',
+                                            json_file=vg_root + '/im2p/paragraphs_v1.json',
+                                            vocab=vocab,
+                                            subset=vg_root + '/im2p/train_split.json')
+    pprint(vgim2p_subset[0])
+    pprint(vgim2p_subset[10000])
+    pprint(vgim2p_subset[-1])
+    # Load VG Paragraph full dataset:
+    vgim2p_full = VisualGenomeIM2PDataset(root=vg_root + '/1.2/VG/1.2/images',
+                                          json_file=vg_root + '/im2p/paragraphs_v1.json',
+                                          vocab=vocab)
+    pprint(vgim2p_full[0])
+    pprint(vgim2p_full[10000])
+    pprint(vgim2p_full[-1])

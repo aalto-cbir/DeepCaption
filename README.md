@@ -57,6 +57,12 @@ $ python resize.py --image_dir datasets/data/COCO/train2014 --output_dir dataset
 
 _Note:_ An optional `--create_zip` parameter zips the resized images directory.
 
+#### VisualGenome - Paragraph Captioning
+
+```bash
+$ python resize.py --image_dir datasets/data/VisualGenome/1.2/VG/1.2/images --output_dir datasets/processed/VisualGenome/resized_im2p_train --create_zip --subset datasets/processed/VisualGenome/im2p_train_split
+```
+
 #### VIST
 
 ```bash
@@ -70,6 +76,12 @@ Example of training a single model with default parameters on COCO dataset:
 
 ```bash
 $ python train.py --dataset coco --image_dir path/to/coco/resized.zip --caption_path datasets/data/COCO/annotations/captions_train2014.json --vocab_path datasets/processed/COCO/vocab.pkl --model_basename model-coco
+```
+
+Example of finetuning an existing model (trained on COCO) with a new dataset - VisualGenome Paragraph captions:
+
+```bash
+$ python train.py --dataset vgim2p --load_model models/run1/model-es256-hs512-nl2-bs128-lr0.001-da0.2-ep10.ckpt --num_epics 15 --model_basename coco-vg_im2p
 ```
 
 It is also possible to train multiple models in multi-node environments using `scripts/multi_train.sh` helper script. This script takes as an argument a path to a CSV file with combinations of command line parameters. Example of such file available at [scripts/input/train_params.csv](train_params.csv). The header row in the CSV corresponds to the names of the command line parameters, each row corresponds to one model to be trained. Parameters other than the path to the CSV file are applied to each model being trained:
@@ -90,6 +102,12 @@ Or with multiple models supplied as command line arguments to the helper script:
 ```bash
 $ scripts/multi_infer.sh model1 model2 ... modelN --image_dir datasets/data/COCO/images/val2014 --vocab_path datasets/processed/COCO/vocab.pkl
 ```
+
+Inference also supports the following flags:
+* `--subset` - file containing list of image ids to include from the directory supplied in `--image_dir`
+* `--max_seq_length` - maximum length of decoded caption (in words)
+* `--no_repeat_sentences` - remove repeating sentences if they occur immediately after each other
+* `--only_complete_senteces` - remove the last sentence if it does not end with a period (and thus is likely to be truncated)
 
 ### 6. Evaluate the model
 
