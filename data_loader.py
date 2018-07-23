@@ -6,6 +6,7 @@ import sys
 import json
 from PIL import Image
 
+
 class ExternalFeature:
     def __init__(self, filename):
         import h5py
@@ -144,7 +145,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
 
 class VistDataset(data.Dataset):
-    """VIST Custom Dataset compatible with torch.utils.data.DataLoader."""
+    """VIST Custom Dataset for sequence processing, compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None):
         """Set the path for images, captions and vocabulary wrapper.
@@ -167,43 +168,64 @@ class VistDataset(data.Dataset):
             json_data = json.load(raw_data)
             self.anns = json_data['annotations']
 
-        self.captions = []
+        seq_idx = 0
+        self.data_hold = []
+        self.story_ids = []
+        while seq_idx < len(self.anns):
+            current_story_id = self.anns[seq_idx][0]['story_id']
+            _seq_idx = seq_idx
+            current_story = str()
+            current_sequence = []
+            bad_for_testing = False
+            while _seq_idx < len(self.anns) and self.anns[_seq_idx][0]['story_id'] == current_story_id:
+                current_story += self.anns[_seq_idx][0]['text']
+                current_sequence.append(self.anns[_seq_idx][0]['photo_flickr_id'])
 
-        for ann in self.anns:
-            image_id = ann[0]['photo_flickr_id']
-            if image_id in images:
-                self.captions.append([image_id, ann[0]['text']])
+                # local testing purpose (needs to be removed)
+                if self.anns[_seq_idx][0]['photo_flickr_id'] not in images:
+                    bad_for_testing = True
 
-        print("... {} images loaded ...".format(len(self.captions)))
+                _seq_idx += 1
+
+            seq_idx = _seq_idx
+            # local testing purpose (needs to be removed)
+            if not bad_for_testing:
+                self.data_hold.append([current_sequence, current_story])
+                self.story_ids.append(current_story_id)
+
+        print("... {} sequences loaded ...".format(len(self.story_ids)))
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
 
         vocab = self.vocab
-        image_id = self.captions[index][0]
-        caption = self.captions[index][1]
+        image_ids = self.data_hold[index][0]
+        story = self.data_hold[index][1]
 
-        image_path = os.path.join(self.root, str(image_id) + '.jpg')
-        if os.path.isfile(image_path):
-            image = Image.open(image_path).convert('RGB')
-        else:
-            image_path = os.path.join(self.root, str(image_id) + '.png')
-            image = Image.open(image_path).convert('RGB')
+        sequence = []
+        for image_id in image_ids:
+            image_path = os.path.join(self.root, str(image_id) + '.jpg')
+            if os.path.isfile(image_path):
+                image = Image.open(image_path).convert('RGB')
+            else:
+                image_path = os.path.join(self.root, str(image_id) + '.png')
+                image = Image.open(image_path).convert('RGB')
 
-        if self.transform is not None:
-            image = self.transform(image)
+            if self.transform is not None:
+                image = self.transform(image)
+
+            sequence.append(image)
 
         # Convert caption (string) to word ids.
-        tokens = nltk.tokenize.word_tokenize(str(caption).lower())
-        caption = []
-        caption.append(vocab('<start>'))
-        caption.extend([vocab(token) for token in tokens])
-        caption.append(vocab('<end>'))
-        target = torch.Tensor(caption)
-        return image, target, image_id
+        tokens = nltk.tokenize.word_tokenize(str(story).lower())
+        story = [vocab('<start>')]
+        story.extend([vocab(token) for token in tokens])
+        story.append(vocab('<end>'))
+        target = torch.Tensor(story)
+        return sequence, target, self.story_ids[index]
 
     def __len__(self):
-        return len(self.captions)
+        return len(self.data_hold)
 
 
 class MSRVTTDataset(data.Dataset):
@@ -305,15 +327,47 @@ def collate_fn(data):
     return images, targets, lengths, indices
 
 
+def collate_fn_vist(data):
+    """Creates mini-batch tensors from the list of tuples (image, caption).
+
+    We should build custom collate_fn rather than using default collate_fn,
+    because merging caption (including padding) is not supported in default.
+
+    Args:
+        data: list of tuple (image, caption).
+            - image: torch tensor of shape (3, 256, 256).
+            - caption: torch tensor of shape (?); variable length.
+
+    Returns:
+        images: torch tensor of shape (batch_size, 3, 256, 256).
+        targets: torch tensor of shape (batch_size, padded_length).
+        lengths: list; valid length for each padded caption.
+    """
+    # Sort a data list by caption length (descending order).
+    data.sort(key=lambda x: len(x[1]), reverse=True)
+    images, captions, story_ids = zip(*data)
+
+    # Merge images (from tuple of 3D tensor to 4D tensor).
+    # images = torch.stack(images, 0)
+
+    # Merge captions (from tuple of 1D tensor to 2D tensor).
+    lengths = [len(cap) for cap in captions]
+    targets = torch.zeros(len(captions), max(lengths)).long()
+    for i, cap in enumerate(captions):
+        end = lengths[i]
+        targets[i, :end] = cap[:end]
+    return images, targets, lengths, story_ids
+
+
 def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
-               shuffle, num_workers, subset=None):
+               shuffle, num_workers, subset=None, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     dn = dataset_name.lower()
 
     if dn == 'coco':
         _dataset = CocoDataset
-    elif dn == 'vist':
+    elif 'vist' in dn:
         _dataset = VistDataset
     elif dn == 'vgim2p':
         _dataset = VisualGenomeIM2PDataset
@@ -336,7 +390,7 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
                                               batch_size=batch_size,
                                               shuffle=shuffle,
                                               num_workers=num_workers,
-                                              collate_fn=collate_fn)
+                                              collate_fn=_collate_fn)
     return data_loader
 
 
@@ -344,7 +398,7 @@ if __name__ == '__main__':
     # Test loading dataset!
     from pprint import pprint
     import pickle
-    from build_vocab import Vocabulary 
+    from build_vocab import Vocabulary
 
     vg_root = 'datasets/data/VisualGenome'
     vocab_path = 'datasets/processed/COCO/vocab.pkl'

@@ -20,8 +20,7 @@ def resize_image(image, size):
 def resize_images(image_dir, output_dir, create_zip, size):
     """Resize the images in 'image_dir' and save into 'output_dir'.
     'create_zip' tells whether we need to create a ZIP archive"""
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
 
     images = os.listdir(image_dir)
     num_images = len(images)
@@ -73,12 +72,10 @@ def resize_images(image_dir, output_dir, create_zip, size):
                 else:
                     print('image {} not found or corrupted'.format(os.path.join(image_dir, image)))
 
-                #if (i + 1) % 100 == 0:
+                # if (i + 1) % 100 == 0:
                 #    print("[{}/{}] Resized the images and saved into '{}'."
                 #          .format(i + 1, num_images, output_dir))
                 pbar.update(1)
-
-
 
     if create_zip:
         print("Creating a zip file: {}".format(output_dir + '.zip'))
@@ -102,7 +99,7 @@ if __name__ == '__main__':
                         help='directory for train images')
     parser.add_argument('--subset', type=str, default=None,
                         help='path to (optional) new-line separated file '
-                        'listing ids of images to include')
+                             'listing ids of images to include')
     parser.add_argument('--output_dir', type=str,
                         default='datasets/processed/COCO/train2014_resized',
                         help='directory for saving resized images')

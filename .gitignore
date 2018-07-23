@@ -1,4 +1,5 @@
-*.idea/*
+*.idea/
+resources*
 __pycache__
 *.pyc
 /models
@@ -15,3 +16,5 @@ __pycache__
 submit.sh
 .idea
 datasets/pycocoevalcap
+*.pkl
+/logs
