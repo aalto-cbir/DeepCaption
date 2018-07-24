@@ -17,10 +17,7 @@ class ExternalFeature:
         return self.data.shape[1]
 
     def get_batch(self, indices):
-        data_rows = []
-        for i in indices:
-            data_rows.append(self.data[i])
-        return torch.tensor(data_rows)
+        return torch.tensor([self.data[i] for i in indices])
 
     @classmethod
     def loaders(cls, features):
@@ -273,11 +270,6 @@ class MSRVTTDataset(data.Dataset):
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
-
-        # ann_id = self.ids[index]
-        # caption = coco.anns[ann_id]['caption']
-        # img_id = coco.anns[ann_id]['image_id']
-        # path = coco.loadImgs(img_id)[0]['file_name']
 
         vid = self.captions[index][0]
         caption = self.captions[index][1]
