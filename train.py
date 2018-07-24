@@ -10,13 +10,14 @@ import re
 import pickle
 import sys
 import zipfile
-from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
 
-from data_loader import get_loader, ExternalFeature
 from datetime import datetime
-from model import ModelParams, EncoderCNN, DecoderRNN
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
+
+from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
+from data_loader import get_loader, ExternalFeature
+from model import ModelParams, EncoderCNN, DecoderRNN
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -25,14 +26,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def get_file_name(args, params, epoch):
     """Create filename based on parameters supplied"""
     bn = args.model_basename
-    file_name = '{}-es{}-hs{}-nl{}-bs{}-lr{}-da{}-ep{}.ckpt'.format(bn,
-                                                                    params.embed_size,
-                                                                    params.hidden_size,
-                                                                    params.num_layers,
-                                                                    params.batch_size,
-                                                                    params.learning_rate,
-                                                                    params.dropout,
-                                                                    epoch + 1)
+    file_name = ('{}-es{}-hs{}-nl{}-bs{}-lr{}-da{}-ep{}.ckpt'.
+                 format(bn, params.embed_size, params.hidden_size,
+                        params.num_layers, params.batch_size,
+                        params.learning_rate, params.dropout, epoch + 1))
     return file_name
 
 
@@ -50,38 +47,45 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
         'batch_size': params.batch_size,
         'learning_rate': params.learning_rate,
         'dropout': params.dropout,
-        'external_features': params.external_features,
-        'internal_features': params.internal_features,
+        'features': params.features,
+        'persist_features': params.persist_features,
     }
 
-    torch.save(state, os.path.join(args.model_path, file_name))
+    model_path = os.path.join(args.model_path, file_name)
+    torch.save(state, model_path)
+    print('Saved model as {}'.format(model_path))
 
 
 def main(args):
     if not os.path.exists(args.image_dir):
-        print("Image directory or ZIP file not found at {}. Exiting...".format(args.image_dir))
+        print("Image directory or ZIP file not found at {}. Exiting...".
+              format(args.image_dir))
         sys.exit(1)
 
     if not os.path.exists(args.vocab_path):
-        print("Vocabulary file not found at {}. Exiting...".format(args.vocab_path))
+        print("Vocabulary file not found at {}. Exiting...".
+              format(args.vocab_path))
         sys.exit(1)
 
     if not os.path.exists(args.caption_path):
-        print("Caption file not found at {}. Exiting...".format(args.caption_path))
+        print("Caption file not found at {}. Exiting...".
+              format(args.caption_path))
         sys.exit(1)
 
     # Create model directory
     if not os.path.exists(args.model_path):
         os.makedirs(args.model_path)
 
-    # Unzip training images to /tmp/data if image_dir argument points to zip file:
+    # Unzip training images to /tmp/data if image_dir argument points
+    # to zip file:
     if zipfile.is_zipfile(args.image_dir):
         # Check if $TMPDIR envirnoment variable is set and use that
         env_tmp = os.environ.get('TMPDIR')
-        # Also check if the environment variable points to '/tmp/some/dir' to avoid
-        # nasty surprises
-        if env_tmp and os.path.commonprefix([os.path.abspath(env_tmp), '/tmp']) == '/tmp':
-            tmp_root = os.path.abspath(env_tmp)
+        # Also check if the environment variable points to
+        # '/tmp/some/dir' to avoid nasty surprises
+        env_tmp_abs = os.path.abspath(env_tmp)
+        if env_tmp and os.path.commonprefix([env_tmp_abs, '/tmp']) == '/tmp':
+            tmp_root = env_tmp_abs
         else:
             tmp_root = '/tmp'
 
@@ -121,9 +125,11 @@ def main(args):
     params = ModelParams.fromargs(args)
     start_epoch = 0
 
-    # Intelligently resume from the newest trained epoch matching supplied configuration:
+    # Intelligently resume from the newest trained epoch matching
+    # supplied configuration:
     if args.resume:
-        print("Attempting to resume from latest epoch matching supplied parameters...")
+        print('Attempting to resume from latest epoch matching supplied '
+              'parameters...')
         # Get a matching filename without the epoch part
         model_no_epoch = get_file_name(args, params, 0).split('ep')[0]
 
@@ -153,9 +159,11 @@ def main(args):
 
     if args.load_model:
         state = torch.load(args.load_model)
-        external_features = params.external_features
+        external_features = params.features.external
         params = ModelParams(state)
-        params.external_features = external_features
+        if params.features.external != external_features:
+            print('WARNING: external features changed: ',
+                  params.features.external, external_features)
         start_epoch = state['epoch']
         print('Loading model {} at epoch {}.'.format(args.load_model,
                                                      start_epoch))
@@ -165,16 +173,16 @@ def main(args):
 
     # Construct external feature loaders
     ef_loaders = []
-    params.external_features_total_dim = 0
-    for fn in params.external_features:
+    external_features_dim = 0
+    for fn in params.features.external:
         ef = ExternalFeature(fn)
         ef_loaders.append(ef)
-        params.external_features_total_dim += ef.vdim()
+        external_features_dim += ef.vdim()
 
     # Build the models
     print('Using device: {}'.format(device.type))
     print('Initializing model...')
-    encoder = EncoderCNN(params).to(device)
+    encoder = EncoderCNN(params, external_features_dim).to(device)
     decoder = DecoderRNN(params, len(vocab)).to(device)
     if state:
         encoder.load_state_dict(state['encoder'])
@@ -197,12 +205,13 @@ def main(args):
             # Set mini-batch dataset
             images = images.to(device)
             captions = captions.to(device)
-            targets = pack_padded_sequence(captions, lengths, batch_first=True)[0]
+            targets = pack_padded_sequence(captions, lengths,
+                                           batch_first=True)[0]
 
             # Get the features batches from each of the external features
             ef_batches = [ef.get_batch(image_ids).to(device)
                           for ef in ef_loaders]
-            
+
             # Forward, backward and optimize
             features = encoder(images, ef_batches)
             outputs = decoder(features, captions, lengths)
@@ -244,7 +253,8 @@ if __name__ == '__main__':
                         help='directory for resized images'
                         'if "image_dir" points to zip archive - extract '
                         'to /tmp/ , use the extracted images to train')
-    parser.add_argument('--tmp_dir_prefix', type=str, default='image_captioning',
+    parser.add_argument('--tmp_dir_prefix', type=str,
+                        default='image_captioning',
                         help='where in /tmp folder to store project data')
     parser.add_argument('--caption_path', type=str,
                         default='datasets/data/COCO/annotations/captions_train2014.json',
@@ -257,10 +267,15 @@ if __name__ == '__main__':
 
     # Model parameters
     parser.add_argument('--features', type=str, default='resnet152',
-                        help='features to use as comma separated list, '
+                        help='features to use as the initial input for the '
+                        'caption generator, given as comma separated list, '
+                        'multiple features are concatenated, '
                         'features ending with .npy are assumed to be '
                         'precalculated features read from the named npy file, '
-                        'e.g., resnet152,foo.npy')
+                        'example: "resnet152,foo.npy"')
+    parser.add_argument('--persist_features', type=str, default='',
+                        help='features accessible in all caption generation '
+                        'steps, given as comma separated list')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
@@ -288,4 +303,5 @@ if __name__ == '__main__':
     main(args=args)
 
     end = datetime.now()
-    print('Training ended at {}. Total training time: {}.'.format(end, end - begin))
+    print('Training ended at {}. Total training time: {}.'.
+          format(end, end - begin))

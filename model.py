@@ -1,8 +1,12 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
+
+from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence
-from collections import OrderedDict
+
+Features = namedtuple('Features', 'external, internal')
+
 
 class ModelParams:
     def __init__(self, d):
@@ -12,20 +16,9 @@ class ModelParams:
         self.batch_size = self._get_param(d, 'batch_size', 128)
         self.dropout = self._get_param(d, 'dropout', 0)
         self.learning_rate = self._get_param(d, 'learning_rate', 0.001)
-        features = self._get_param(d, 'features', 'resnet152').split(',')
+        self.features = self._get_features(d, 'features', 'resnet152')
+        self.persist_features = self._get_features(d, 'persist_features', '')
 
-        self.external_features = []
-        self.internal_features = []
-        for fn in features:
-            if fn.endswith('.h5'):
-                self.external_features.append(fn)
-            else:
-                self.internal_features.append(fn)
-
-        # this needs to be loaded externally ...
-        self.external_features_total_dim = 0
-
-                
     @classmethod
     def fromargs(cls, args):
         return cls(vars(args))
@@ -36,6 +29,25 @@ class ModelParams:
                   format(param, default))
             return default
         return d[param]
+
+    def _get_features(self, d, param, default):
+        p = self._get_param(d, param, default)
+
+        # If it's already of type Features, just return it
+        if hasattr(p, 'internal'):
+            return p
+
+        features = p.split(',')
+
+        ext_feat = []
+        int_feat = []
+        for fn in features:
+            if fn.endswith('.h5'):
+                ext_feat.append(fn)
+            else:
+                int_feat.append(fn)
+
+        return Features(ext_feat, int_feat)
 
 
 class FeatureExtractor(nn.Module):
@@ -72,26 +84,28 @@ class FeatureExtractor(nn.Module):
 
 
 class EncoderCNN(nn.Module):
-    def __init__(self, p):
+    def __init__(self, p, external_features_dim=0):
         """Load a pretrained CNN and replace top fc layer."""
         super(EncoderCNN, self).__init__()
 
         # We keep track of the sum of the dimensionalities of the
         # concatenated features
-        total_output_dim = p.external_features_total_dim
+        total_output_dim = external_features_dim
 
         # Construct the "internal" feature extractors, i.e., those
         # that use (pretrained) pytorch models
         self.extractors = nn.ModuleList()
-        for fn in p.internal_features:
+        for fn in p.features.internal:
             extractor = FeatureExtractor(fn)
             self.extractors.append(extractor)
             total_output_dim += extractor.output_dim
 
+        print('EncoderCNN: total feature dim={}'.format(total_output_dim))
+
         # Add FC layer on top of features to get the desired output dimension
         self.linear = nn.Linear(total_output_dim, p.embed_size)
         self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
-        
+
     def forward(self, images, external_feature_batches):
         """Extract feature vectors from input images."""
         with torch.no_grad():
