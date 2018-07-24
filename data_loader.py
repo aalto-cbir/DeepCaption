@@ -22,6 +22,16 @@ class ExternalFeature:
             data_rows.append(self.data[i])
         return torch.tensor(data_rows)
 
+    @classmethod
+    def loaders(cls, features):
+        ef_loaders = []
+        feat_dim = 0
+        for fn in features:
+            ef = cls(fn)
+            ef_loaders.append(ef)
+            feat_dim += ef.vdim()
+        return (ef_loaders, feat_dim)
+
 
 class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""

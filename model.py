@@ -37,7 +37,7 @@ class ModelParams:
         if hasattr(p, 'internal'):
             return p
 
-        features = p.split(',')
+        features = p.split(',') if p else []
 
         ext_feat = []
         int_feat = []
@@ -48,6 +48,10 @@ class ModelParams:
                 int_feat.append(fn)
 
         return Features(ext_feat, int_feat)
+
+    def __str__(self):
+        return '\n'.join(['[ModelParams] {}={}'.format(k, v) for k, v in
+                self.__dict__.items()])
 
 
 class FeatureExtractor(nn.Module):
@@ -82,28 +86,32 @@ class FeatureExtractor(nn.Module):
             features = self.extractor(images)
         return features.reshape(features.size(0), -1)
 
+    @classmethod
+    def list(cls, internal_features):
+        el = nn.ModuleList()
+        total_dim = 0
+        for fn in internal_features:
+            e = cls(fn)
+            el.append(e)
+            total_dim += e.output_dim
+        return el, total_dim
+
 
 class EncoderCNN(nn.Module):
-    def __init__(self, p, external_features_dim=0):
+    def __init__(self, p, ext_features_dim=0):
         """Load a pretrained CNN and replace top fc layer."""
         super(EncoderCNN, self).__init__()
 
-        # We keep track of the sum of the dimensionalities of the
-        # concatenated features
-        total_output_dim = external_features_dim
+        (self.extractors,
+         int_features_dim) = FeatureExtractor.list(p.features.internal)
 
-        # Construct the "internal" feature extractors, i.e., those
-        # that use (pretrained) pytorch models
-        self.extractors = nn.ModuleList()
-        for fn in p.features.internal:
-            extractor = FeatureExtractor(fn)
-            self.extractors.append(extractor)
-            total_output_dim += extractor.output_dim
+        # Sum of the dimensionalities of the concatenated features
+        total_feat_dim = ext_features_dim + int_features_dim
 
-        print('EncoderCNN: total feature dim={}'.format(total_output_dim))
+        print('EncoderCNN: total feature dim={}'.format(total_feat_dim))
 
         # Add FC layer on top of features to get the desired output dimension
-        self.linear = nn.Linear(total_output_dim, p.embed_size)
+        self.linear = nn.Linear(total_feat_dim, p.embed_size)
         self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
 
     def forward(self, images, external_feature_batches):
@@ -134,33 +142,63 @@ class EncoderCNN(nn.Module):
 
 
 class DecoderRNN(nn.Module):
-    def __init__(self, p, vocab_size):
+    def __init__(self, p, vocab_size, ext_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
         self.embed = nn.Embedding(vocab_size, p.embed_size)
-        self.lstm = nn.LSTM(p.embed_size, p.hidden_size, p.num_layers,
-                            dropout=p.dropout, batch_first=True)
+
+        (self.extractors,
+         int_features_dim) = FeatureExtractor.list(p.persist_features.internal)
+        # Sum of the dimensionalities of the concatenated features
+        total_feat_dim = ext_features_dim + int_features_dim
+
+        print('DecoderCNN: total feature dim={}'.format(total_feat_dim))
+
+        self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
+                            p.num_layers, dropout=p.dropout, batch_first=True)
         self.linear = nn.Linear(p.hidden_size, vocab_size)
-        
-    def forward(self, features, captions, lengths):
+
+    def forward(self, features, captions, lengths, images,
+                external_feature_batches):
         """Decode image feature vectors and generates captions."""
+
+        # First, construct embeddings input, with initial feature as
+        # the first: (batch_size, 1 + longest caption length, embed_size)
         embeddings = self.embed(captions)
-        embeddings = torch.cat((features.unsqueeze(1), embeddings), 1)
-        packed = pack_padded_sequence(embeddings, lengths, batch_first=True) 
+        embeddings = torch.cat([features.unsqueeze(1), embeddings], 1)
+
+        seq_length = embeddings.size()[1]
+
+        with torch.no_grad():
+            feat_outputs = []
+            # Extract features with each extractor
+            for extractor in self.extractors:
+                feat_outputs.append(extractor(images))
+            for ext_feat in external_feature_batches:
+                feat_outputs.append(ext_feat)
+            # Concatenate features
+            persist_features = torch.cat(feat_outputs, 1)
+            # Get into shape: batch_size, seq_length, embed_size
+            persist_features = (persist_features.unsqueeze(1).
+                                expand(-1, seq_length, -1))
+
+        embeddings = torch.cat([embeddings, persist_features], 2)
+
+        packed = pack_padded_sequence(embeddings, lengths, batch_first=True)
         hiddens, _ = self.lstm(packed)
         outputs = self.linear(hiddens[0])
         return outputs
-    
+
     def sample(self, features, states=None, max_seq_length=20):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
         inputs = features.unsqueeze(1)
         for i in range(max_seq_length):
-            hiddens, states = self.lstm(inputs, states)          # hiddens: (batch_size, 1, hidden_size)
-            outputs = self.linear(hiddens.squeeze(1))            # outputs:  (batch_size, vocab_size)
-            _, predicted = outputs.max(1)                        # predicted: (batch_size)
+            hiddens, states = self.lstm(inputs, states)  # hiddens: (batch_size, 1, hidden_size)
+            outputs = self.linear(hiddens.squeeze(1))    # outputs:  (batch_size, vocab_size)
+            _, predicted = outputs.max(1)                # predicted: (batch_size)
             sampled_ids.append(predicted)
-            inputs = self.embed(predicted)                       # inputs: (batch_size, embed_size)
-            inputs = inputs.unsqueeze(1)                         # inputs: (batch_size, 1, embed_size)
-        sampled_ids = torch.stack(sampled_ids, 1)                # sampled_ids: (batch_size, max_seq_length)
+            inputs = self.embed(predicted)               # inputs: (batch_size, embed_size)
+            inputs = inputs.unsqueeze(1)                 # inputs: (batch_size, 1, embed_size)
+        sampled_ids = torch.stack(sampled_ids, 1)        # sampled_ids: (batch_size, max_seq_length)
         return sampled_ids

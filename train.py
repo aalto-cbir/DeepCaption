@@ -54,6 +54,7 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
     model_path = os.path.join(args.model_path, file_name)
     torch.save(state, model_path)
     print('Saved model as {}'.format(model_path))
+    print(params)
 
 
 def main(args):
@@ -167,23 +168,21 @@ def main(args):
         start_epoch = state['epoch']
         print('Loading model {} at epoch {}.'.format(args.load_model,
                                                      start_epoch))
+        print(params)
 
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
 
     # Construct external feature loaders
-    ef_loaders = []
-    external_features_dim = 0
-    for fn in params.features.external:
-        ef = ExternalFeature(fn)
-        ef_loaders.append(ef)
-        external_features_dim += ef.vdim()
+    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external)
+    (pef_loaders, pef_dim) = ExternalFeature.loaders(
+        params.persist_features.external)
 
     # Build the models
     print('Using device: {}'.format(device.type))
     print('Initializing model...')
-    encoder = EncoderCNN(params, external_features_dim).to(device)
-    decoder = DecoderRNN(params, len(vocab)).to(device)
+    encoder = EncoderCNN(params, ef_dim).to(device)
+    decoder = DecoderRNN(params, len(vocab), pef_dim).to(device)
     if state:
         encoder.load_state_dict(state['encoder'])
         decoder.load_state_dict(state['decoder'])
@@ -211,10 +210,12 @@ def main(args):
             # Get the features batches from each of the external features
             ef_batches = [ef.get_batch(image_ids).to(device)
                           for ef in ef_loaders]
+            pef_batches = [pef.get_batch(image_ids).to(device)
+                           for pef in pef_loaders]
 
             # Forward, backward and optimize
             features = encoder(images, ef_batches)
-            outputs = decoder(features, captions, lengths)
+            outputs = decoder(features, captions, lengths, images, pef_batches)
             loss = criterion(outputs, targets)
             decoder.zero_grad()
             encoder.zero_grad()
@@ -223,9 +224,10 @@ def main(args):
 
             # Print log info
             if (i + 1) % args.log_step == 0:
-                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Perplexity: {:5.4f}'
-                      .format(epoch + 1, args.num_epochs, i + 1, total_step,
-                              loss.item(), np.exp(loss.item())))
+                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, '
+                      'Perplexity: {:5.4f}'.
+                      format(epoch + 1, args.num_epochs, i + 1, total_step,
+                             loss.item(), np.exp(loss.item())))
                 sys.stdout.flush()
 
         save_models(args, params, encoder, decoder, optimizer, epoch)
@@ -273,7 +275,7 @@ if __name__ == '__main__':
                         'features ending with .npy are assumed to be '
                         'precalculated features read from the named npy file, '
                         'example: "resnet152,foo.npy"')
-    parser.add_argument('--persist_features', type=str, default='',
+    parser.add_argument('--persist_features', type=str,
                         help='features accessible in all caption generation '
                         'steps, given as comma separated list')
     parser.add_argument('--embed_size', type=int, default=256,
