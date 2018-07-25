@@ -192,7 +192,7 @@ class DecoderRNN(nn.Module):
 
         with torch.no_grad():
             persist_features = self._cat_features(images, external_feature_batches)
-            if not persist_features:
+            if persist_features is None:
                 persist_features = features.new_empty(0)
             else:
                 # Get into shape: batch_size, seq_length, embed_size
