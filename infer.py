@@ -12,11 +12,12 @@ from datetime import datetime
 from PIL import Image
 
 import torch
-from model import ModelParams, EncoderCNN, DecoderRNN
 from torchvision import transforms
 from tqdm import tqdm
 
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
+from data_loader import ExternalFeature
+from model import ModelParams, EncoderCNN, DecoderRNN
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -48,7 +49,8 @@ def load_image(image_path, transform=None):
     image = Image.open(image_path)
     image = image.resize([224, 224], Image.LANCZOS)
     if image.mode != 'RGB':
-        print('WARNING: converting {} from {} to RGB'.format(image_path, image.mode))
+        print('WARNING: converting {} from {} to RGB'.
+              format(image_path, image.mode))
         image = image.convert('RGB')
 
     if transform is not None:
@@ -102,9 +104,19 @@ def main(args):
 
     state = torch.load(args.model)
     params = ModelParams(state)
+    if args.ext_features:
+        params.update_ext_features(args.ext_features)
+    if args.ext_persist_features:
+        params.update_ext_persist_features(args.ext_persist_features)
+    print(params)
 
-    encoder = EncoderCNN(params).eval()
-    decoder = DecoderRNN(params, len(vocab)).eval()
+    # Construct external feature loaders
+    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external)
+    (pef_loaders, pef_dim) = ExternalFeature.loaders(
+        params.persist_features.external)
+
+    encoder = EncoderCNN(params, ef_dim).eval()
+    decoder = DecoderRNN(params, len(vocab), pef_dim).eval()
     encoder = encoder.to(device)
     decoder = decoder.to(device)
 
@@ -127,6 +139,10 @@ def main(args):
             file_list += glob.glob(args.image_dir + '/*.png')
 
     N = len(file_list)
+    if N == 0:
+        print('ERROR: found no files to process!')
+        sys.exit(1)
+    
     print('Processing {} image files.'.format(N))
     show_progress = sys.stderr.isatty() and not args.verbose
     for i, image_file in tqdm(enumerate(file_list), disable=not show_progress):
@@ -137,16 +153,29 @@ def main(args):
             if m is not None:
                 image_id = int(m.group(1))
                 assert image_id > 0
+        else:
+            m = re.match(r'(\d+):\d+$', image_id)
+            if m:
+                image_id = int(m.group(1))
+                assert image_id >= 0, 'image_file={}'.format(image_file)
 
         if args.verbose:
-            print('[{:.2%}] Reading [{}] as {} ...'.format(i / N, image_id, image_file))
+            print('[{:.2%}] Reading [{}] as {} ...'.
+                  format(i / N, image_id, image_file))
         # Prepare an image
         image = load_image(image_file, transform)
         image_tensor = image.to(device)
 
+        # Get the features batches from each of the external features
+        ef_batches = [ef.get_batch([image_id]).to(device)
+                      for ef in ef_loaders]
+        pef_batches = [pef.get_batch([image_id]).to(device)
+                       for pef in pef_loaders]
+
         # Generate a caption from the image
-        feature = encoder(image_tensor)
-        sampled_ids = decoder.sample(feature, max_seq_length=args.max_seq_length)
+        feature = encoder(image_tensor, ef_batches)
+        sampled_ids = decoder.sample(feature, image_tensor, pef_batches,
+                                     max_seq_length=args.max_seq_length)
         sampled_ids = sampled_ids[0].cpu().numpy()
 
         # Convert word_ids to words
@@ -196,9 +225,16 @@ if __name__ == '__main__':
     parser.add_argument('--vocab_path', type=str,
                         default='datasets/processed/COCO/vocab.pkl',
                         help='path for vocabulary wrapper')
+    parser.add_argument('--ext_features', type=str,
+                        help='paths for the external features, overrides the '
+                        'paths in the model ckpt file (which are the ones '
+                        'used for training), comma separated')
+    parser.add_argument('--ext_persist_features', type=str,
+                        help='paths for external persist features')
     parser.add_argument('--output_file', type=str,
                         help='path for output JSON, default: model_name.json')
-    parser.add_argument('--verbose', help='verbose output', action='store_true')
+    parser.add_argument('--verbose', help='verbose output',
+                        action='store_true')
     parser.add_argument('--results_path', type=str, default='results/',
                         help='path for saving results')
     parser.add_argument('--print_results', action='store_true')
