@@ -146,7 +146,7 @@ def main(args):
     
     print('Processing {} image files.'.format(N))
     show_progress = sys.stderr.isatty() and not args.verbose
-    for i, image_file in tqdm(enumerate(file_list), disable=not show_progress):
+    for i, image_file in enumerate(tqdm(file_list, disable=not show_progress)):
         image_id = basename(image_file)
 
         if image_id.startswith("COCO"):

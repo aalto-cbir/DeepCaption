@@ -212,7 +212,7 @@ class DecoderRNN(nn.Module):
 
         # Concatenate internal and external features
         persist_features = self._cat_features(images, external_features)
-        if not persist_features:
+        if persist_features is None:
             persist_features = features.new_empty(0)
 
         # inputs: (batch_size, 1, embed_size + len(external features))
