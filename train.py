@@ -174,9 +174,10 @@ def main(args):
         start_epoch = args.force_epoch - 1
 
     # Construct external feature loaders
-    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external)
-    (pef_loaders, pef_dim) = ExternalFeature.loaders(
-        params.persist_features.external)
+    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external,
+                                                   args.features_path)
+    (pef_loaders, pef_dim) = ExternalFeature.loaders(params.persist_features.external,
+                                                     args.features_path)
 
     # Build the models
     print('Using device: {}'.format(device.type))
@@ -278,6 +279,10 @@ if __name__ == '__main__':
     parser.add_argument('--persist_features', type=str,
                         help='features accessible in all caption generation '
                         'steps, given as comma separated list')
+    parser.add_argument('--features_path', type=str, default='',
+                        help='directory of external feature files, if not '
+                        'specified should be given with absolute paths, or '
+                        'expected to be found in the working directory')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,

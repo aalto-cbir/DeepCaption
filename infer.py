@@ -111,9 +111,10 @@ def main(args):
     print(params)
 
     # Construct external feature loaders
-    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external)
+    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external,
+                                                   args.features_path)
     (pef_loaders, pef_dim) = ExternalFeature.loaders(
-        params.persist_features.external)
+        params.persist_features.external, args.features_path)
 
     encoder = EncoderCNN(params, ef_dim).eval()
     decoder = DecoderRNN(params, len(vocab), pef_dim).eval()
@@ -231,6 +232,10 @@ if __name__ == '__main__':
                         'used for training), comma separated')
     parser.add_argument('--ext_persist_features', type=str,
                         help='paths for external persist features')
+    parser.add_argument('--features_path', type=str, default='',
+                        help='directory of external feature files, if not '
+                        'specified should be given with absolute paths, or '
+                        'expected to be found in the working directory')
     parser.add_argument('--output_file', type=str,
                         help='path for output JSON, default: model_name.json')
     parser.add_argument('--verbose', help='verbose output',

@@ -8,9 +8,10 @@ from PIL import Image
 
 
 class ExternalFeature:
-    def __init__(self, filename):
+    def __init__(self, filename, base_path):
         import h5py
-        self.f = h5py.File(os.path.expanduser(filename), 'r')
+        full_path = os.path.expanduser(os.path.join(base_path, filename))
+        self.f = h5py.File(full_path, 'r')
         self.data = self.f['data']
 
     def vdim(self):
@@ -20,11 +21,11 @@ class ExternalFeature:
         return torch.tensor([self.data[i] for i in indices])
 
     @classmethod
-    def loaders(cls, features):
+    def loaders(cls, features, base_path):
         ef_loaders = []
         feat_dim = 0
         for fn in features:
-            ef = cls(fn)
+            ef = cls(fn, base_path)
             ef_loaders.append(ef)
             feat_dim += ef.vdim()
         return (ef_loaders, feat_dim)
