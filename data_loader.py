@@ -1,6 +1,7 @@
 import torch
 import torch.utils.data as data
 import os
+import numpy as np
 import nltk
 import sys
 import json
@@ -13,6 +14,8 @@ class ExternalFeature:
         full_path = os.path.expanduser(os.path.join(base_path, filename))
         self.f = h5py.File(full_path, 'r')
         self.data = self.f['data']
+        x1 = self.data[0]
+        assert not np.isnan(x1).any(), full_path
 
     def vdim(self):
         return self.data.shape[1]
