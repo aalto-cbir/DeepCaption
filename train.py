@@ -23,13 +23,24 @@ from model import ModelParams, EncoderCNN, DecoderRNN
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+def feats_to_str(feats):
+    return '+'.join(feats.internal + [os.path.splitext(os.path.basename(f))[0]
+                                      for f in feats.external])
+
+
 def get_file_name(args, params, epoch):
     """Create filename based on parameters supplied"""
     bn = args.model_basename
-    file_name = ('{}-es{}-hs{}-nl{}-bs{}-lr{}-da{}-ep{}.ckpt'.
+
+    feat_spec = feats_to_str(params.features)
+    if params.persist_features is not None:
+        feat_spec += '-' + feats_to_str(params.persist_features)
+
+    file_name = ('{}-{}-{}-{}-{}-{}-{}-{}-ep{}.model'.
                  format(bn, params.embed_size, params.hidden_size,
                         params.num_layers, params.batch_size,
-                        params.learning_rate, params.dropout, epoch + 1))
+                        params.learning_rate, params.dropout,
+                        feat_spec, epoch + 1))
     return file_name
 
 
