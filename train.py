@@ -33,7 +33,7 @@ def get_file_name(args, params, epoch):
     bn = args.model_basename
 
     feat_spec = feats_to_str(params.features)
-    if params.persist_features is not None:
+    if params.has_persist_features():
         feat_spec += '-' + feats_to_str(params.persist_features)
 
     file_name = ('{}-{}-{}-{}-{}-{}-{}-{}-ep{}.model'.
@@ -147,12 +147,12 @@ def main(args):
 
         # Files matching model:
         full_path_prefix = os.path.join(args.model_path, model_no_epoch)
-        matching_files = glob.glob(full_path_prefix + 'ep*.ckpt')
+        matching_files = glob.glob(full_path_prefix + 'ep*.model')
 
-        print("Looking for: {}".format(full_path_prefix + 'ep*.ckpt'))
+        print("Looking for: {}".format(full_path_prefix + 'ep*.model'))
 
         # get a file name with a largest matching epoch:
-        file_regex = full_path_prefix + 'ep([0-9]*).ckpt'
+        file_regex = full_path_prefix + 'ep([0-9]*).model'
         r = re.compile(file_regex)
         last_epoch = -1
 
@@ -164,7 +164,7 @@ def main(args):
                     last_epoch = matched_epoch
 
         if last_epoch is not -1:
-            args.load_model = '{}ep{}.ckpt'.format(full_path_prefix, last_epoch)
+            args.load_model = '{}ep{}.model'.format(full_path_prefix, last_epoch)
             print('Found matching model: {}'.format(args.load_model))
         else:
             print("Warning: Failed to intelligently resume...")
