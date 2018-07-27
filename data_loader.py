@@ -304,15 +304,11 @@ class MSRVTTDataset(data.Dataset):
         else:
             image = torch.zeros(1, 1)
 
-        feature_sets = []
-        # Get the features batches from each of the external features
-        if self.feature_loaders is not None:
-            # we have several sets of features (e.g., initial, persistent, ...)
-            for fl_set in self.feature_loaders:
-                feature_sets.append([ef.get_feature(vid_idx) for ef in fl_set])
-        # print('feature_sets:', len(feature_sets))
-        # for i, fs in enumerate(feature_sets):
-        #     print('set', i, len(fs))
+        # Prepare external features
+        # We have several sets of features (e.g., initial, persistent, ...)
+        # For each set we prepare a single tensor with all the features concatenated
+        feature_sets = [torch.cat([ef.get_feature(vid_idx) for ef in fset])
+                        for fset in self.feature_loaders]
 
         # Convert caption (string) to word ids.
         vocab = self.vocab
@@ -359,20 +355,14 @@ def collate_fn(data):
         end = lengths[i]
         targets[i, :end] = cap[:end]
 
-    # feature_sets[batch][feature_set][feature]
-    fs = []
+    # Generate list of (batch_size, concatenated_feature_length) tensors,
+    # one for each feature set
     batch_size = len(feature_sets)
     num_feature_sets = len(feature_sets[0])
-    for fs_i in range(num_feature_sets):
-        features = []
-        num_features = len(feature_sets[0][fs_i])
-        for f_i in range(num_features):
-            fx = [feature_sets[ii][fs_i][f_i] for ii in range(batch_size)]
-            x = torch.stack(fx, 0)
-            features.append(x)
-        fs.append(features)
+    features = [torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0)
+                for fs_i in range(num_feature_sets)]
 
-    return images, targets, lengths, indices, fs
+    return images, targets, lengths, indices, features
 
 
 def collate_fn_vist(data):

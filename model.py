@@ -130,15 +130,15 @@ class EncoderCNN(nn.Module):
         self.linear = nn.Linear(total_feat_dim, p.embed_size)
         self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
 
-    def forward(self, images, external_feature_batches):
+    def forward(self, images, external_features):
         """Extract feature vectors from input images."""
         with torch.no_grad():
             feat_outputs = []
             # Extract features with each extractor
             for extractor in self.extractors:
                 feat_outputs.append(extractor(images))
-            for ext_feat in external_feature_batches:
-                feat_outputs.append(ext_feat)
+            # Add external features
+            feat_outputs.append(external_features)
             # Concatenate features
             features = torch.cat(feat_outputs, 1)
         # Apply FC layer and batch normalization
@@ -180,13 +180,11 @@ class DecoderRNN(nn.Module):
         for ext in self.extractors:
             feat_outputs.append(ext(images))
         # Also add external features
-        for ext_feat in external_features:
-            feat_outputs.append(ext_feat)
+        feat_outputs.append(external_features)
         # Return concatenated features, empty tensor if none
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
-    def forward(self, features, captions, lengths, images,
-                external_feature_batches):
+    def forward(self, features, captions, lengths, images, external_features):
         """Decode image feature vectors and generates captions."""
 
         # First, construct embeddings input, with initial feature as
@@ -197,7 +195,7 @@ class DecoderRNN(nn.Module):
         seq_length = embeddings.size()[1]
 
         with torch.no_grad():
-            persist_features = self._cat_features(images, external_feature_batches)
+            persist_features = self._cat_features(images, external_features)
             if persist_features is None:
                 persist_features = features.new_empty(0)
             else:

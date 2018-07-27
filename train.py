@@ -214,27 +214,18 @@ def main(args):
     print('Start Training...')
     for epoch in range(start_epoch, args.num_epochs):
         begin = datetime.now()
-        for i, (images, captions, lengths, image_ids, feature_batches) in enumerate(data_loader):
+        for i, (images, captions, lengths, image_ids, features) in enumerate(data_loader):
             # Set mini-batch dataset
             images = images.to(device)
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
-
-            for fs_i in range(len(feature_batches)):
-                for f_i in range(len(feature_batches[fs_i])):
-                    feature_batches[fs_i][f_i] = feature_batches[fs_i][f_i].to(device)
-
-            # Get the features batches from each of the external features
-            # ef_batches = [ef.get_batch(image_ids).to(device)
-            #               for ef in ef_loaders]
-            # pef_batches = [pef.get_batch(image_ids).to(device)
-            #                for pef in pef_loaders]
+            init_features = features[0].to(device)
+            persist_features = features[1].to(device)
 
             # Forward, backward and optimize
-            features = encoder(images, feature_batches[0])
-            outputs = decoder(features, captions, lengths, images,
-                              feature_batches[1])
+            features = encoder(images, init_features)
+            outputs = decoder(features, captions, lengths, images, persist_features)
             loss = criterion(outputs, targets)
             decoder.zero_grad()
             encoder.zero_grad()
@@ -248,9 +239,6 @@ def main(args):
                       format(epoch + 1, args.num_epochs, i + 1, total_step,
                              loss.item(), np.exp(loss.item())))
                 sys.stdout.flush()
-
-            # if i >= 100:
-            #     break
 
         end = datetime.now()
         print('Epoch {} duration: {}.'.format(epoch + 1, end - begin))
