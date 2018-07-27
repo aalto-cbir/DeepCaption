@@ -318,6 +318,8 @@ if __name__ == '__main__':
     for k, v in vars(args).items():
         print('[args] {}={}'.format(k, v))
 
+    # import cProfile
+    # cProfile.run('main(args=args)', filename='train.prof')
     main(args=args)
 
     end = datetime.now()
