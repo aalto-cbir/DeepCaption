@@ -10,10 +10,13 @@ from PIL import Image
 
 class ExternalFeature:
     def __init__(self, filename, base_path):
-        import h5py
         full_path = os.path.expanduser(os.path.join(base_path, filename))
-        self.f = h5py.File(full_path, 'r')
-        self.data = self.f['data']
+        if filename.endswith('.h5'):
+            import h5py
+            self.f = h5py.File(full_path, 'r')
+            self.data = self.f['data']
+        else:
+            self.data = np.load(full_path)
         x1 = self.data[0]
         assert not np.isnan(x1).any(), full_path
 

@@ -42,7 +42,7 @@ class ModelParams:
         ext_feat = []
         int_feat = []
         for fn in features:
-            if fn.endswith('.h5'):
+            if fn.endswith('.h5') or fn.endswith('.npy'):
                 ext_feat.append(fn)
             else:
                 int_feat.append(fn)
