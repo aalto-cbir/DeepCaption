@@ -27,15 +27,15 @@ class ExternalFeature:
         return torch.tensor(self.data[idx])
 
     @classmethod
-    def load_sets(cls, feature_loaders, idx):
+    def load_set(cls, feature_loaders, idx):
+        return torch.cat([ef.get_feature(idx) for ef in feature_loaders])
+
+    @classmethod
+    def load_sets(cls, feature_loader_sets, idx):
         # We have several sets of features (e.g., initial, persistent, ...)
         # For each set we prepare a single tensor with all the features concatenated
-        feature_sets = []
-        for fset in feature_loaders:
-            features = [ef.get_feature(idx) for ef in fset]
-            if features:
-                feature_sets.append(torch.cat(features))
-        return feature_sets
+        return [cls.load_set(fls, idx) for fls in feature_loader_sets
+                if fls]
 
     @classmethod
     def loaders(cls, features, base_path):

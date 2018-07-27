@@ -143,7 +143,7 @@ def main(args):
     if N == 0:
         print('ERROR: found no files to process!')
         sys.exit(1)
-    
+
     print('Processing {} image files.'.format(N))
     show_progress = sys.stderr.isatty() and not args.verbose
     for i, image_file in enumerate(tqdm(file_list, disable=not show_progress)):
@@ -168,14 +168,18 @@ def main(args):
         image_tensor = image.to(device)
 
         # Get the features batches from each of the external features
-        ef_batches = [ef.get_batch([image_id]).to(device)
-                      for ef in ef_loaders]
-        pef_batches = [pef.get_batch([image_id]).to(device)
-                       for pef in pef_loaders]
+        init_features = None
+        persist_features = None
+        if ef_loaders:
+            init_features = ExternalFeature.load_set(ef_loaders,
+                                                     image_id).view(1, -1).to(device)
+        if pef_loaders:
+            persist_features = ExternalFeature.load_set(pef_loaders,
+                                                        image_id).view(1, -1).to(device)
 
         # Generate a caption from the image
-        feature = encoder(image_tensor, ef_batches)
-        sampled_ids = decoder.sample(feature, image_tensor, pef_batches,
+        feature = encoder(image_tensor, init_features)
+        sampled_ids = decoder.sample(feature, image_tensor, persist_features,
                                      max_seq_length=args.max_seq_length)
         sampled_ids = sampled_ids[0].cpu().numpy()
 
