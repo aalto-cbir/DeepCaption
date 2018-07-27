@@ -130,7 +130,7 @@ class EncoderCNN(nn.Module):
         self.linear = nn.Linear(total_feat_dim, p.embed_size)
         self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
 
-    def forward(self, images, external_features):
+    def forward(self, images, external_features=None):
         """Extract feature vectors from input images."""
         with torch.no_grad():
             feat_outputs = []
@@ -138,7 +138,8 @@ class EncoderCNN(nn.Module):
             for extractor in self.extractors:
                 feat_outputs.append(extractor(images))
             # Add external features
-            feat_outputs.append(external_features)
+            if external_features is not None:
+                feat_outputs.append(external_features)
             # Concatenate features
             features = torch.cat(feat_outputs, 1)
         # Apply FC layer and batch normalization
@@ -180,11 +181,12 @@ class DecoderRNN(nn.Module):
         for ext in self.extractors:
             feat_outputs.append(ext(images))
         # Also add external features
-        feat_outputs.append(external_features)
+        if external_features is not None:
+            feat_outputs.append(external_features)
         # Return concatenated features, empty tensor if none
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
-    def forward(self, features, captions, lengths, images, external_features):
+    def forward(self, features, captions, lengths, images, external_features=None):
         """Decode image feature vectors and generates captions."""
 
         # First, construct embeddings input, with initial feature as

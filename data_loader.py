@@ -26,9 +26,16 @@ class ExternalFeature:
     def get_feature(self, idx):
         return torch.tensor(self.data[idx])
 
-    def get_batch(self, indices):
-        return torch.tensor([self.data[i] for i in indices])
-        # return torch.index_select(self.data, 0, torch.tensor(indices).cuda())
+    @classmethod
+    def load_sets(cls, feature_loaders, idx):
+        # We have several sets of features (e.g., initial, persistent, ...)
+        # For each set we prepare a single tensor with all the features concatenated
+        feature_sets = []
+        for fset in feature_loaders:
+            features = [ef.get_feature(idx) for ef in fset]
+            if features:
+                feature_sets.append(torch.cat(features))
+        return feature_sets
 
     @classmethod
     def loaders(cls, features, base_path):
@@ -44,7 +51,8 @@ class ExternalFeature:
 class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 feature_loaders=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -61,6 +69,7 @@ class CocoDataset(data.Dataset):
         self.vocab = vocab
         self.transform = transform
         self.skip_images = skip_images
+        self.feature_loaders = feature_loaders
         print("COCO info loaded for {} images.".format(len(self.ids)))
 
     def __getitem__(self, index):
@@ -80,6 +89,10 @@ class CocoDataset(data.Dataset):
         else:
             image = None
 
+        # Prepare external features
+        # TODO probably wrong index ...
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
+
         # Convert caption (string) to word ids.
         tokens = nltk.tokenize.word_tokenize(str(caption).lower())
         caption = []
@@ -87,7 +100,7 @@ class CocoDataset(data.Dataset):
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
-        return image, target, img_id
+        return image, target, img_id, feature_sets
 
     def __len__(self):
         return len(self.ids)
@@ -96,7 +109,9 @@ class CocoDataset(data.Dataset):
 class VisualGenomeIM2PDataset(data.Dataset):
     """Visual Genome / MS COCO Paragraph-length caption dataset"""
 
-    def __init__(self, root, json_file, vocab, subset=None, transform=None):
+    # FIXME: skip_images, feature_loaders not implemented
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 feature_loaders=None):
         """Set the path for images, captions and vocabulary wrapper.
         Args:
             root: image directory.
@@ -170,7 +185,9 @@ class VisualGenomeIM2PDataset(data.Dataset):
 class VistDataset(data.Dataset):
     """VIST Custom Dataset for sequence processing, compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_file, vocab, subset=None, transform=None):
+    # FIXME: skip_images, feature_loaders not implemented
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 feature_loaders=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -305,10 +322,7 @@ class MSRVTTDataset(data.Dataset):
             image = torch.zeros(1, 1)
 
         # Prepare external features
-        # We have several sets of features (e.g., initial, persistent, ...)
-        # For each set we prepare a single tensor with all the features concatenated
-        feature_sets = [torch.cat([ef.get_feature(vid_idx) for ef in fset])
-                        for fset in self.feature_loaders]
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, vid_idx)
 
         # Convert caption (string) to word ids.
         vocab = self.vocab
