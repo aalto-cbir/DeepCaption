@@ -126,13 +126,6 @@ def main(args):
         print("Extracting vocabulary from {}".format(args.vocab_path))
         vocab = pickle.load(f)
 
-    # Build data loader
-    print("Loading dataset: {}".format(args.dataset))
-    data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
-                             vocab, transform, args.batch_size,
-                             shuffle=True, num_workers=args.num_workers,
-                             subset=args.subset)
-
     state = None
     params = ModelParams.fromargs(args)
     start_epoch = 0
@@ -190,6 +183,14 @@ def main(args):
     (pef_loaders, pef_dim) = ExternalFeature.loaders(params.persist_features.external,
                                                      args.features_path)
 
+    # Build data loader
+    print("Loading dataset: {}".format(args.dataset))
+    data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
+                             vocab, transform, args.batch_size,
+                             shuffle=True, num_workers=args.num_workers,
+                             subset=args.subset, feature_loaders=(ef_loaders, pef_loaders),
+                             skip_images=not params.has_internal_features())
+
     # Build the models
     print('Using device: {}'.format(device.type))
     print('Initializing model...')
@@ -212,22 +213,28 @@ def main(args):
     total_step = len(data_loader)
     print('Start Training...')
     for epoch in range(start_epoch, args.num_epochs):
-        for i, (images, captions, lengths, image_ids) in enumerate(data_loader):
+        begin = datetime.now()
+        for i, (images, captions, lengths, image_ids, feature_batches) in enumerate(data_loader):
             # Set mini-batch dataset
             images = images.to(device)
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
 
+            for fs_i in range(len(feature_batches)):
+                for f_i in range(len(feature_batches[fs_i])):
+                    feature_batches[fs_i][f_i] = feature_batches[fs_i][f_i].to(device)
+
             # Get the features batches from each of the external features
-            ef_batches = [ef.get_batch(image_ids).to(device)
-                          for ef in ef_loaders]
-            pef_batches = [pef.get_batch(image_ids).to(device)
-                           for pef in pef_loaders]
+            # ef_batches = [ef.get_batch(image_ids).to(device)
+            #               for ef in ef_loaders]
+            # pef_batches = [pef.get_batch(image_ids).to(device)
+            #                for pef in pef_loaders]
 
             # Forward, backward and optimize
-            features = encoder(images, ef_batches)
-            outputs = decoder(features, captions, lengths, images, pef_batches)
+            features = encoder(images, feature_batches[0])
+            outputs = decoder(features, captions, lengths, images,
+                              feature_batches[1])
             loss = criterion(outputs, targets)
             decoder.zero_grad()
             encoder.zero_grad()
@@ -242,6 +249,11 @@ def main(args):
                              loss.item(), np.exp(loss.item())))
                 sys.stdout.flush()
 
+            # if i >= 100:
+            #     break
+
+        end = datetime.now()
+        print('Epoch {} duration: {}.'.format(epoch + 1, end - begin))
         save_models(args, params, encoder, decoder, optimizer, epoch)
 
 

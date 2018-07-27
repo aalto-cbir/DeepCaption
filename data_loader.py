@@ -23,8 +23,12 @@ class ExternalFeature:
     def vdim(self):
         return self.data.shape[1]
 
+    def get_feature(self, idx):
+        return torch.tensor(self.data[idx])
+
     def get_batch(self, indices):
         return torch.tensor([self.data[i] for i in indices])
+        # return torch.index_select(self.data, 0, torch.tensor(indices).cuda())
 
     @classmethod
     def loaders(cls, features, base_path):
@@ -40,7 +44,7 @@ class ExternalFeature:
 class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_file, vocab, subset=None, transform=None):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -56,6 +60,7 @@ class CocoDataset(data.Dataset):
         self.ids = list(self.coco.anns.keys())
         self.vocab = vocab
         self.transform = transform
+        self.skip_images = skip_images
         print("COCO info loaded for {} images.".format(len(self.ids)))
 
     def __getitem__(self, index):
@@ -65,11 +70,15 @@ class CocoDataset(data.Dataset):
         ann_id = self.ids[index]
         caption = coco.anns[ann_id]['caption']
         img_id = coco.anns[ann_id]['image_id']
-        path = coco.loadImgs(img_id)[0]['file_name']
 
-        image = Image.open(os.path.join(self.root, path)).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
+        if not self.skip_images:
+            path = coco.loadImgs(img_id)[0]['file_name']
+
+            image = Image.open(os.path.join(self.root, path)).convert('RGB')
+            if self.transform is not None:
+                image = self.transform(image)
+        else:
+            image = None
 
         # Convert caption (string) to word ids.
         tokens = nltk.tokenize.word_tokenize(str(caption).lower())
@@ -245,7 +254,8 @@ class VistDataset(data.Dataset):
 class MSRVTTDataset(data.Dataset):
     """MSR-VTT Custom Dataset compatible with torch.utils.data.DataLoader."""
 
-    def __init__(self, root, json_file, vocab, subset=None, transform=None):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 feature_loaders=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -257,6 +267,8 @@ class MSRVTTDataset(data.Dataset):
         self.root = root
         self.vocab = vocab
         self.transform = transform
+        self.skip_images = skip_images
+        self.feature_loaders = feature_loaders
 
         self.captions = []
         train_vids = set()
@@ -285,9 +297,22 @@ class MSRVTTDataset(data.Dataset):
         vid_idx = int(vid[5:])
         path = '{:04}:kf1.jpeg'.format(vid_idx)
 
-        image = Image.open(os.path.join(self.root, path)).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
+        if not self.skip_images:
+            image = Image.open(os.path.join(self.root, path)).convert('RGB')
+            if self.transform is not None:
+                image = self.transform(image)
+        else:
+            image = torch.zeros(1, 1)
+
+        feature_sets = []
+        # Get the features batches from each of the external features
+        if self.feature_loaders is not None:
+            # we have several sets of features (e.g., initial, persistent, ...)
+            for fl_set in self.feature_loaders:
+                feature_sets.append([ef.get_feature(vid_idx) for ef in fl_set])
+        # print('feature_sets:', len(feature_sets))
+        # for i, fs in enumerate(feature_sets):
+        #     print('set', i, len(fs))
 
         # Convert caption (string) to word ids.
         vocab = self.vocab
@@ -298,14 +323,14 @@ class MSRVTTDataset(data.Dataset):
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
 
-        return image, target, vid_idx
+        return image, target, vid_idx, feature_sets
 
     def __len__(self):
         return len(self.captions)
 
 
 def collate_fn(data):
-    """Creates mini-batch tensors from the list of tuples (image, caption).
+    """Creates mini-batch tensors from the list of tuples (image, caption, image_ids).
 
     We should build custom collate_fn rather than using default collate_fn,
     because merging caption (including padding) is not supported in default.
@@ -322,7 +347,7 @@ def collate_fn(data):
     """
     # Sort a data list by caption length (descending order).
     data.sort(key=lambda x: len(x[1]), reverse=True)
-    images, captions, indices = zip(*data)
+    images, captions, indices, feature_sets = zip(*data)
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
@@ -333,7 +358,21 @@ def collate_fn(data):
     for i, cap in enumerate(captions):
         end = lengths[i]
         targets[i, :end] = cap[:end]
-    return images, targets, lengths, indices
+
+    # feature_sets[batch][feature_set][feature]
+    fs = []
+    batch_size = len(feature_sets)
+    num_feature_sets = len(feature_sets[0])
+    for fs_i in range(num_feature_sets):
+        features = []
+        num_features = len(feature_sets[0][fs_i])
+        for f_i in range(num_features):
+            fx = [feature_sets[ii][fs_i][f_i] for ii in range(batch_size)]
+            x = torch.stack(fx, 0)
+            features.append(x)
+        fs.append(features)
+
+    return images, targets, lengths, indices, fs
 
 
 def collate_fn_vist(data):
@@ -369,7 +408,8 @@ def collate_fn_vist(data):
 
 
 def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
-               shuffle, num_workers, subset=None, _collate_fn=collate_fn):
+               shuffle, num_workers, subset=None, skip_images=False,
+               feature_loaders=None, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     dn = dataset_name.lower()
@@ -387,7 +427,8 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
         sys.exit(1)
 
     dataset = _dataset(root=root, json_file=json_file, vocab=vocab,
-                       subset=subset, transform=transform)
+                       subset=subset, transform=transform, skip_images=skip_images,
+                       feature_loaders=feature_loaders)
 
     # Data loader:
     # This will return (images, captions, lengths) for each iteration.

@@ -18,3 +18,4 @@ submit.sh
 datasets/pycocoevalcap
 *.pkl
 /logs
+/*.prof
