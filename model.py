@@ -49,6 +49,9 @@ class ModelParams:
 
         return Features(ext_feat, int_feat)
 
+    def has_persist_features(self):
+        return self.persist_features.internal or self.persist_features.external
+
     def update_ext_features(self, ef):
         self.features = self._update_ext_features(ef, self.features)
 

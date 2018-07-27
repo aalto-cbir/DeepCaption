@@ -33,7 +33,7 @@ def get_file_name(args, params, epoch):
     bn = args.model_basename
 
     feat_spec = feats_to_str(params.features)
-    if params.persist_features is not None:
+    if params.has_persist_features():
         feat_spec += '-' + feats_to_str(params.persist_features)
 
     file_name = ('{}-{}-{}-{}-{}-{}-{}-{}-ep{}.model'.
