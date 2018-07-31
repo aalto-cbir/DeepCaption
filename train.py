@@ -205,15 +205,23 @@ def main(args):
     opt_params = (list(decoder.parameters()) +
                   list(encoder.linear.parameters()) +
                   list(encoder.bn.parameters()))
-    optimizer = torch.optim.Adam(opt_params, lr=args.learning_rate)
+    optimizer = torch.optim.Adam(opt_params, lr=0.001)  # set default lr
     if state:
         optimizer.load_state_dict(state['optimizer'])
 
+    if args.learning_rate:  # override lr if set explicitly in arguments
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = args.learning_rate
+        params.learning_rate = args.learning_rate
+
     # Train the models
     total_step = len(data_loader)
-    print('Start Training...')
+    print('Start Training... ')
+    print('Optimizer:', optimizer)
     for epoch in range(start_epoch, args.num_epochs):
         begin = datetime.now()
+        total_loss = 0
+        num_batches = 0
         for i, (images, captions, lengths, image_ids, features) in enumerate(data_loader):
             # Set mini-batch dataset
             images = images.to(device)
@@ -232,6 +240,9 @@ def main(args):
             loss.backward()
             optimizer.step()
 
+            total_loss += loss
+            num_batches += 1
+
             # Print log info
             if (i + 1) % args.log_step == 0:
                 print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, '
@@ -241,7 +252,8 @@ def main(args):
                 sys.stdout.flush()
 
         end = datetime.now()
-        print('Epoch {} duration: {}.'.format(epoch + 1, end - begin))
+        print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
+                                                                    total_loss/num_batches))
         save_models(args, params, encoder, decoder, optimizer, epoch)
 
 
@@ -309,7 +321,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', type=int, default=5)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
-    parser.add_argument('--learning_rate', type=float, default=0.001)
+    parser.add_argument('--learning_rate', type=float)
 
     args = parser.parse_args()
 
