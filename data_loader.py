@@ -1,11 +1,20 @@
+import glob
+import json
+import nltk
+import os
+import re
+import sys
+
+import numpy as np
 import torch
 import torch.utils.data as data
-import os
-import numpy as np
-import nltk
-import sys
-import json
+
 from PIL import Image
+
+
+def basename(fname):
+    fname.split(':')
+    return os.path.splitext(os.path.basename(fname))[0]
 
 
 class ExternalFeature:
@@ -339,6 +348,56 @@ class MSRVTTDataset(data.Dataset):
         return len(self.captions)
 
 
+class TRECVID2018Dataset(data.Dataset):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 feature_loaders=None):
+        self.root = root
+        self.vocab = vocab
+        self.transform = transform
+        self.skip_images = skip_images
+        self.feature_loaders = feature_loaders
+
+        self.id_to_filename = {}
+        for filename in glob.glob(self.root + '/*.jpeg'):
+            m = re.match(r'(\d+):\d+$', basename(filename))
+            if m:
+                image_id = int(m.group(1))
+                assert image_id >= 0, 'filename={}'.format(filename)
+                assert image_id not in self.id_to_filename
+                self.id_to_filename[image_id] = filename
+            else:
+                print('WARNING: filename {} could not be parsed, skipping...'.format(filename))
+
+        print("TRECVID 2018 info loaded for {} images.".format(len(self)))
+
+    def __getitem__(self, index):
+        """Returns one training sample as a tuple (image, caption, image_id)."""
+
+        filename = self.id_to_filename[index]
+
+        if not self.skip_images:
+            image_path = os.path.join(self.root, filename)
+            image = Image.open(image_path)
+            image = image.resize([224, 224], Image.LANCZOS)
+            if image.mode != 'RGB':
+                print('WARNING: converting {} from {} to RGB'.
+                      format(image_path, image.mode))
+                image = image.convert('RGB')
+
+            if self.transform is not None:
+                image = self.transform(image)  # .unsqueeze(0)
+        else:
+            image = torch.zeros(1, 1)
+
+        # Prepare external features
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
+
+        return image, None, index, feature_sets
+
+    def __len__(self):
+        return len(self.id_to_filename)
+
+
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption, image_ids).
 
@@ -356,18 +415,25 @@ def collate_fn(data):
         lengths: list; valid length for each padded caption.
     """
     # Sort a data list by caption length (descending order).
-    data.sort(key=lambda x: len(x[1]), reverse=True)
+    # If we are doing inference, captions are None, and we skip the sort
+    if data[0][1] is not None:
+        data.sort(key=lambda x: len(x[1]), reverse=True)
     images, captions, indices, feature_sets = zip(*data)
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
 
     # Merge captions (from tuple of 1D tensor to 2D tensor).
-    lengths = [len(cap) for cap in captions]
-    targets = torch.zeros(len(captions), max(lengths)).long()
-    for i, cap in enumerate(captions):
-        end = lengths[i]
-        targets[i, :end] = cap[:end]
+    # If we are doing inference, captions are None...
+    if captions[0] is not None:
+        lengths = [len(cap) for cap in captions]
+        targets = torch.zeros(len(captions), max(lengths)).long()
+        for i, cap in enumerate(captions):
+            end = lengths[i]
+            targets[i, :end] = cap[:end]
+    else:
+        lengths = None
+        targets = None
 
     # Generate list of (batch_size, concatenated_feature_length) tensors,
     # one for each feature set
@@ -426,6 +492,8 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
         _dataset = VisualGenomeIM2PDataset
     elif dn == 'msrvtt' or dn == 'msr-vtt':
         _dataset = MSRVTTDataset
+    elif dn == 'trecvid2018':
+        _dataset = TRECVID2018Dataset
     else:
         print("Invalid dataset specified...")
         sys.exit(1)

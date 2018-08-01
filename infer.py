@@ -13,10 +13,9 @@ from PIL import Image
 
 import torch
 from torchvision import transforms
-from tqdm import tqdm
 
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
-from data_loader import ExternalFeature
+from data_loader import get_loader, ExternalFeature
 from model import ModelParams, EncoderCNN, DecoderRNN
 
 # Device configuration
@@ -126,82 +125,76 @@ def main(args):
     decoder.load_state_dict(state['decoder'])
 
     output_data = []
-    file_list = []
+    # file_list = []
 
-    if args.image_files:
-        file_list += args.image_files
-    elif args.image_dir:
-        if args.subset:
-            file_list = [path_from_id(args.image_dir, line.rstrip())
-                         for line in open(args.subset)]
-        else:
-            file_list += glob.glob(args.image_dir + '/*.jpg')
-            file_list += glob.glob(args.image_dir + '/*.jpeg')
-            file_list += glob.glob(args.image_dir + '/*.png')
+    # if args.image_files:
+    #     file_list += args.image_files
+    # elif args.image_dir:
+    #     if args.subset:
+    #         file_list = [path_from_id(args.image_dir, line.rstrip())
+    #                      for line in open(args.subset)]
+    #     else:
+    #         file_list += glob.glob(args.image_dir + '/*.jpg')
+    #         file_list += glob.glob(args.image_dir + '/*.jpeg')
+    #         file_list += glob.glob(args.image_dir + '/*.png')
 
-    N = len(file_list)
-    if N == 0:
-        print('ERROR: found no files to process!')
-        sys.exit(1)
+    # N = len(file_list)
+    # if N == 0:
+    #     print('ERROR: found no files to process!')
+    #     sys.exit(1)
 
-    print('Processing {} image files.'.format(N))
-    show_progress = sys.stderr.isatty() and not args.verbose
-    for i, image_file in enumerate(tqdm(file_list, disable=not show_progress)):
-        image_id = basename(image_file)
+    # Build data loader
+    print("Loading dataset: {}".format(args.dataset))
+    data_loader = get_loader(args.dataset, args.image_dir, None,
+                             vocab, transform, args.batch_size,
+                             shuffle=True, num_workers=args.num_workers,
+                             subset=args.subset, feature_loaders=(ef_loaders, pef_loaders),
+                             skip_images=not params.has_internal_features())
 
-        if image_id.startswith("COCO"):
-            m = re.search(r'0*(\d+)$', image_id)
-            if m is not None:
-                image_id = int(m.group(1))
-                assert image_id > 0
-        else:
-            m = re.match(r'(\d+):\d+$', image_id)
-            if m:
-                image_id = int(m.group(1))
-                assert image_id >= 0, 'image_file={}'.format(image_file)
+    for i, (images, captions, lengths, image_ids, features) in enumerate(data_loader):
+        images = images.to(device)
 
-        if args.verbose:
-            print('[{:.2%}] Reading [{}] as {} ...'.
-                  format(i / N, image_id, image_file))
-        # Prepare an image
-        image = load_image(image_file, transform)
-        image_tensor = image.to(device)
+        init_features = features[0].to(device) if len(features) > 0 else None
+        persist_features = features[1].to(device) if len(features) > 1 else None
 
-        # Get the features batches from each of the external features
-        init_features = None
-        persist_features = None
-        if ef_loaders:
-            init_features = ExternalFeature.load_set(ef_loaders,
-                                                     image_id).view(1, -1).to(device)
-        if pef_loaders:
-            persist_features = ExternalFeature.load_set(pef_loaders,
-                                                        image_id).view(1, -1).to(device)
+        # if image_id.startswith("COCO"):
+        #     m = re.search(r'0*(\d+)$', image_id)
+        #     if m is not None:
+        #         image_id = int(m.group(1))
+        #         assert image_id > 0
+        # else:
+        #     m = re.match(r'(\d+):\d+$', image_id)
+        #     if m:
+        #         image_id = int(m.group(1))
+        #         assert image_id >= 0, 'image_file={}'.format(image_file)
 
         # Generate a caption from the image
-        feature = encoder(image_tensor, init_features)
-        sampled_ids = decoder.sample(feature, image_tensor, persist_features,
-                                     max_seq_length=args.max_seq_length)
-        sampled_ids = sampled_ids[0].cpu().numpy()
+        encoded = encoder(images, init_features)
+        sampled_ids_batch = decoder.sample(encoded, images, persist_features,
+                                           max_seq_length=args.max_seq_length)
 
-        # Convert word_ids to words
-        sampled_caption = []
-        for word_id in sampled_ids:
-            word = vocab.idx2word[word_id]
-            sampled_caption.append(word)
-            if word == '<end>':
-                break
-        caption = fix_caption(' '.join(sampled_caption))
+        for i in range(sampled_ids_batch.shape[0]):
+            sampled_ids = sampled_ids_batch[i].cpu().numpy()
 
-        if args.no_repeat_sentences:
-            caption = remove_duplicate_sentences(caption)
+            # Convert word_ids to words
+            sampled_caption = []
+            for word_id in sampled_ids:
+                word = vocab.idx2word[word_id]
+                sampled_caption.append(word)
+                if word == '<end>':
+                    break
+            caption = fix_caption(' '.join(sampled_caption))
 
-        if args.only_complete_sentences:
-            caption = remove_incomplete_sentences(caption)
+            if args.no_repeat_sentences:
+                caption = remove_duplicate_sentences(caption)
 
-        if args.verbose:
-            print('=>', caption)
+            if args.only_complete_sentences:
+                caption = remove_incomplete_sentences(caption)
 
-        output_data.append({'caption': caption, 'image_id': image_id})
+            if args.verbose:
+                print('=>', caption)
+
+            output_data.append({'caption': caption, 'image_id': image_ids[i]})
 
     output_file = None
     if not args.output_file and not args.print_results:
@@ -219,6 +212,10 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', type=str, default='generic',
+                        help='which dataset to use')
+    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('image_files', type=str, nargs='*')
     parser.add_argument('--image_dir', type=str,
                         help='input image dir for generating captions')

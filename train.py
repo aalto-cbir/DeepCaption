@@ -232,8 +232,8 @@ def main(args):
             persist_features = features[1].to(device) if len(features) > 1 else None
 
             # Forward, backward and optimize
-            features = encoder(images, init_features)
-            outputs = decoder(features, captions, lengths, images, persist_features)
+            encoded = encoder(images, init_features)
+            outputs = decoder(encoded, captions, lengths, images, persist_features)
             loss = criterion(outputs, targets)
             decoder.zero_grad()
             encoder.zero_grad()
