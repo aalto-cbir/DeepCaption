@@ -125,27 +125,26 @@ def main(args):
     decoder.load_state_dict(state['decoder'])
 
     output_data = []
-    # file_list = []
-
-    # if args.image_files:
-    #     file_list += args.image_files
-    # elif args.image_dir:
-    #     if args.subset:
-    #         file_list = [path_from_id(args.image_dir, line.rstrip())
-    #                      for line in open(args.subset)]
-    #     else:
-    #         file_list += glob.glob(args.image_dir + '/*.jpg')
-    #         file_list += glob.glob(args.image_dir + '/*.jpeg')
-    #         file_list += glob.glob(args.image_dir + '/*.png')
-
-    # N = len(file_list)
-    # if N == 0:
-    #     print('ERROR: found no files to process!')
-    #     sys.exit(1)
 
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
-    data_loader = get_loader(args.dataset, args.image_dir, None,
+
+    if args.dataset == 'generic':
+        root = []
+        if args.image_files:
+            root += args.image_files
+        if args.image_dir:
+            if args.subset:
+                root = [path_from_id(args.image_dir, line.rstrip())
+                        for line in open(args.subset)]
+            else:
+                root += glob.glob(args.image_dir + '/*.jpg')
+                root += glob.glob(args.image_dir + '/*.jpeg')
+                root += glob.glob(args.image_dir + '/*.png')
+    else:
+        root = args.image_dir
+
+    data_loader = get_loader(args.dataset, root, None,
                              vocab, transform, args.batch_size,
                              shuffle=True, num_workers=args.num_workers,
                              subset=args.subset, feature_loaders=(ef_loaders, pef_loaders),
@@ -156,17 +155,6 @@ def main(args):
 
         init_features = features[0].to(device) if len(features) > 0 else None
         persist_features = features[1].to(device) if len(features) > 1 else None
-
-        # if image_id.startswith("COCO"):
-        #     m = re.search(r'0*(\d+)$', image_id)
-        #     if m is not None:
-        #         image_id = int(m.group(1))
-        #         assert image_id > 0
-        # else:
-        #     m = re.match(r'(\d+):\d+$', image_id)
-        #     if m:
-        #         image_id = int(m.group(1))
-        #         assert image_id >= 0, 'image_file={}'.format(image_file)
 
         # Generate a caption from the image
         encoded = encoder(images, init_features)

@@ -398,6 +398,44 @@ class TRECVID2018Dataset(data.Dataset):
         return len(self.id_to_filename)
 
 
+class GenericDataset(data.Dataset):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 feature_loaders=None):
+        self.filelist = root
+        self.vocab = vocab
+        self.transform = transform
+        self.skip_images = skip_images
+        self.feature_loaders = feature_loaders
+
+        print("GenericDataset: loaded {} images.".format(len(self.filelist)))
+
+    def __getitem__(self, index):
+        """Returns one training sample as a tuple (image, caption, image_id)."""
+
+        image_path = self.filelist[index]
+
+        if not self.skip_images:
+            image = Image.open(image_path)
+            image = image.resize([224, 224], Image.LANCZOS)
+            if image.mode != 'RGB':
+                print('WARNING: converting {} from {} to RGB'.
+                      format(image_path, image.mode))
+                image = image.convert('RGB')
+
+            if self.transform is not None:
+                image = self.transform(image)
+        else:
+            image = torch.zeros(1, 1)
+
+        # Prepare external features
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
+
+        return image, None, image_path, feature_sets
+
+    def __len__(self):
+        return len(self.filelist)
+
+
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption, image_ids).
 
@@ -494,6 +532,8 @@ def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
         _dataset = MSRVTTDataset
     elif dn == 'trecvid2018':
         _dataset = TRECVID2018Dataset
+    elif dn == 'generic':
+        _dataset = GenericDataset
     else:
         print("Invalid dataset specified...")
         sys.exit(1)
