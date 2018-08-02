@@ -18,7 +18,7 @@ class ModelParams:
         self.learning_rate = self._get_param(d, 'learning_rate', 0.001)
         self.features = self._get_features(d, 'features', 'resnet152')
         self.persist_features = self._get_features(d, 'persist_features', '')
-        self.encoder_dropout = self._get_features(d, 'encoder_dropout', 0)
+        self.encoder_dropout = self._get_param(d, 'encoder_dropout', 0)
 
     @classmethod
     def fromargs(cls, args):
