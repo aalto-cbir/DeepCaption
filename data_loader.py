@@ -3,18 +3,93 @@ import json
 import nltk
 import os
 import re
+import pickle
 import sys
+import zipfile
 
 import numpy as np
 import torch
 import torch.utils.data as data
 
+from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
+from collections import namedtuple
 from PIL import Image
 
 
 def basename(fname):
     fname.split(':')
     return os.path.splitext(os.path.basename(fname))[0]
+
+
+DatasetConfig = namedtuple('DatasetConfig',
+                           'name, dataset_class, image_dir, caption_path,'
+                           ' features_path, subset')
+
+
+class DatasetParams:
+    def __init__(self, d):
+        """Initialize dataset configuration object, by default loading data from
+        datasets/datasets.conf file"""
+        import configparser
+        config = configparser.ConfigParser()
+        config.read(d['dataset_config_file'])
+
+        datasets = d['dataset'].split('+')
+        num_datasets = len(datasets)
+
+        # Vocab path can be overriden from arguments even for multiple datasets:
+        self.vocab_path = self._get_param(d, 'vocab_path', config[datasets[0]]['vocab_path'])
+        print(self.vocab_path)
+        self.configs = []
+        print(datasets)
+        for dataset in datasets:
+            if config[dataset]:
+                cfg = config[dataset]
+                if num_datasets == 1:
+                    # Try to override parameters form args:
+                    dataset_config = self._create_config(cfg, dataset, d)
+                else:
+                    # Use parameters from config file when more than one dataset
+                    # specified:
+                    dataset_config = self._create_config(cfg, dataset, {})
+
+                self.configs.append(dataset_config)
+            else:
+                print('Invalid dataset specified')
+                sys.exit(1)
+
+    @classmethod
+    def fromargs(cls, args):
+        return cls(vars(args))
+
+    def _create_config(self, cfg, dataset_name, args):
+        dataset_config = DatasetConfig(dataset_name, cfg['dataset_class'],
+                                       self._get_param(args, 'image_dir', cfg['image_dir']),
+                                       self._get_param(args, 'caption_path',
+                                                       cfg['caption_path']),
+                                       self._get_param(args, 'features_path',
+                                                       cfg['features_path']),
+                                       self._get_param(args, 'subset', cfg['subset']))
+
+        return dataset_config
+
+    def _get_param(self, d, param, default):
+        if not d or param not in d or not d[param]:
+            print('WARNING: {} not set, using default value {}'.
+                  format(param, default))
+            return default
+        return d[param]
+
+    def get_vocab(self):
+        # Load vocabulary wrapper
+        with open(self.vocab_path, 'rb') as f:
+            print("Extracting vocabulary from {}".format(self.vocab_path))
+            vocab = pickle.load(f)
+
+        return vocab
+
+    def get_all(self):
+        return self.configs, self.get_vocab()
 
 
 class ExternalFeature:
@@ -515,32 +590,78 @@ def collate_fn_vist(data):
     return images, targets, lengths, story_ids
 
 
-def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
+def unzip_image_dir(image_dir):
+    # Check if $TMPDIR envirnoment variable is set and use that
+    env_tmp = os.environ.get('TMPDIR')
+    # Also check if the environment variable points to '/tmp/some/dir' to avoid
+    # nasty surprises
+    if env_tmp and os.path.commonprefix([os.path.abspath(env_tmp), '/tmp']) == '/tmp':
+        tmp_root = os.path.abspath(env_tmp)
+    else:
+        tmp_root = '/tmp'
+
+    extract_path = os.path.join(tmp_root)
+
+    if not os.path.exists(extract_path):
+        os.makedirs(extract_path)
+
+    with zipfile.ZipFile(image_dir, 'r') as zipped_images:
+        print("Extracting training data from {} to {}".format(image_dir, extract_path))
+        zipped_images.extractall(extract_path)
+        unzipped_dir = os.path.basename(image_dir).split('.')[0]
+        return os.path.join(extract_path, unzipped_dir)
+
+
+def get_loader(dataset_configs, vocab, transform, batch_size,
                shuffle, num_workers, subset=None, skip_images=False,
                feature_loaders=None, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
-    dn = dataset_name.lower()
+    #dn = dataset_name.lower()
 
-    if dn == 'coco':
-        _dataset = CocoDataset
-    elif 'vist' in dn:
-        _dataset = VistDataset
-    elif dn == 'vgim2p':
-        _dataset = VisualGenomeIM2PDataset
-    elif dn == 'msrvtt' or dn == 'msr-vtt':
-        _dataset = MSRVTTDataset
-    elif dn == 'trecvid2018':
-        _dataset = TRECVID2018Dataset
-    elif dn == 'generic':
-        _dataset = GenericDataset
+    #if dn == 'coco':
+    #    _dataset = CocoDataset
+    #elif 'vist' in dn:
+    #    _dataset = VistDataset
+    #elif dn == 'vgim2p':
+    #    _dataset = VisualGenomeIM2PDataset
+    #elif dn == 'msrvtt' or dn == 'msr-vtt':
+    #    _dataset = MSRVTTDataset
+    #elif dn == 'trecvid2018':
+    #    _dataset = TRECVID2018Dataset
+    #elif dn == 'generic':
+    #    _dataset = GenericDataset
+    #else:
+    #    print("Invalid dataset specified...")
+    #    sys.exit(1)
+
+    #dataset = _dataset(root=root, json_file=json_file, vocab=vocab,
+    #                   subset=subset, transform=transform, skip_images=skip_images,
+    #                   feature_loaders=feature_loaders)
+
+    datasets = []
+
+    for dataset_config in dataset_configs:
+
+        dataset_cls = eval(dataset_config.dataset_class)
+        root = dataset_config.image_dir
+        json_file = dataset_config.caption_path
+        subset = dataset_config.subset
+
+        # Unzip training images to /tmp/data if image_dir argument points to zip file:
+        if zipfile.is_zipfile(root):
+            root = unzip_image_dir(root)
+
+        dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
+                              subset=subset, transform=transform, skip_images=skip_images,
+                              feature_loaders=feature_loaders)
+
+        datasets.append(dataset)
+
+    if len(datasets) == 1:
+        dataset = datasets[0]
     else:
-        print("Invalid dataset specified...")
-        sys.exit(1)
-
-    dataset = _dataset(root=root, json_file=json_file, vocab=vocab,
-                       subset=subset, transform=transform, skip_images=skip_images,
-                       feature_loaders=feature_loaders)
+        dataset = data.ConcatDataset(datasets)
 
     # Data loader:
     # This will return (images, captions, lengths) for each iteration.

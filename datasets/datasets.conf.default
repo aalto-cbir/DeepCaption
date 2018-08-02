@@ -1,0 +1,48 @@
+[coco]
+dataset_class = CocoDataset
+image_dir = datasets/processed/COCO/train2014_resized
+caption_path = datasets/data/COCO/annotations/captions_train2014.json
+vocab_path = datasets/processed/COCO/vocab.pkl
+features_path = 
+subset = 
+
+[vgim2p]
+; Visual Genome paragraph captions
+dataset_class = VisualGenomeIM2PDataset
+image_dir = datasets/processed/VisualGenome/resized_im2p_train
+caption_path = datasets/data/VisualGenome/im2p/paragraphs_v1.json
+features_path = 
+subset = datasets/data/VisualGenome/im2p/train_split.json
+
+[vist]
+; Vist sequence captions
+dataset_class = VistDataset
+image_dir = 
+caption_path = 
+vocab_path =
+features_path =
+subset = 
+
+[msrvtt]
+dataset_class = MSRVTTDataset
+image_dir = 
+caption_path =
+vocab_path =
+features_path =
+subset = 
+
+[trecvid2018]
+dataset_class = TRECVID2018Dataset
+image_dir =
+caption_path =
+vocab_path = 
+features_path =
+subset = 
+
+[generic]
+dataset_class = GenericDataset
+image_dir =
+caption_path =
+vocab_path = 
+features_path =
+subset = 
