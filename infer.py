@@ -18,6 +18,13 @@ from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature
 from model import ModelParams, EncoderCNN, DecoderRNN
 
+try:
+    from tqdm import tqdm
+except ImportError as e:
+    print('WARNING: tqdm module not found. Install it if you want a fancy progress bar :-)')
+
+    def tqdm(x, disable=False): return x
+
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -150,7 +157,10 @@ def main(args):
                              subset=args.subset, feature_loaders=(ef_loaders, pef_loaders),
                              skip_images=not params.has_internal_features())
 
-    for i, (images, captions, lengths, image_ids, features) in enumerate(data_loader):
+    print('Starting inference...')
+    show_progress = sys.stderr.isatty() and not args.verbose
+    for i, (images, captions, lengths, image_ids,
+            features) in enumerate(tqdm(data_loader, disable=not show_progress)):
         images = images.to(device)
 
         init_features = features[0].to(device) if len(features) > 0 else None

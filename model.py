@@ -18,6 +18,7 @@ class ModelParams:
         self.learning_rate = self._get_param(d, 'learning_rate', 0.001)
         self.features = self._get_features(d, 'features', 'resnet152')
         self.persist_features = self._get_features(d, 'persist_features', '')
+        self.encoder_dropout = self._get_features(d, 'encoder_dropout', 0)
 
     @classmethod
     def fromargs(cls, args):
@@ -128,6 +129,7 @@ class EncoderCNN(nn.Module):
 
         # Add FC layer on top of features to get the desired output dimension
         self.linear = nn.Linear(total_feat_dim, p.embed_size)
+        self.dropout = nn.Dropout(p=p.encoder_dropout)
         self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
 
     def forward(self, images, external_features=None):
@@ -142,8 +144,8 @@ class EncoderCNN(nn.Module):
                 feat_outputs.append(external_features)
             # Concatenate features
             features = torch.cat(feat_outputs, 1)
-        # Apply FC layer and batch normalization
-        features = self.bn(self.linear(features))
+        # Apply FC layer, dropout and batch normalization
+        features = self.bn(self.dropout(self.linear(features)))
         return features
 
     # hack to be able to load old state files which used the "resnet." prefix
