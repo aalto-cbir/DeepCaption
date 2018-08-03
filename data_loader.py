@@ -18,7 +18,6 @@ import configparser
 
 
 def basename(fname):
-    fname.split(':')
     return os.path.splitext(os.path.basename(fname))[0]
 
 
@@ -528,7 +527,7 @@ class GenericDataset(data.Dataset):
         # Prepare external features
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
 
-        return image, None, image_path, feature_sets
+        return image, None, basename(image_path), feature_sets
 
     def __len__(self):
         return len(self.filelist)

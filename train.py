@@ -56,6 +56,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'batch_size': params.batch_size,
         'learning_rate': params.learning_rate,
         'dropout': params.dropout,
+        'encoder_dropout': params.encoder_dropout,
         'features': params.features,
         'persist_features': params.persist_features,
     }
@@ -237,7 +238,6 @@ if __name__ == '__main__':
     parser.add_argument('--crop_size', type=int, default=224,
                         help='size for randomly cropping images')
     parser.add_argument('--vocab_path', type=str, default=None,
-                        #default='datasets/processed/COCO/vocab.pkl',
                         help='path for vocabulary wrapper')
     parser.add_argument('--image_dir', type=str, default=None,
                         help='directory for resized images'
@@ -277,6 +277,8 @@ if __name__ == '__main__':
                         help='number of layers in lstm')
     parser.add_argument('--dropout', type=float, default=0.0,
                         help='dropout for the LSTM')
+    parser.add_argument('--encoder_dropout', type=float, default=0.0,
+                        help='dropout for the encoder FC layer')
 
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
