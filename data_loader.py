@@ -22,8 +22,8 @@ def basename(fname):
 
 
 DatasetConfig = namedtuple('DatasetConfig',
-                           'name, dataset_class, image_dir, caption_path,'
-                           ' features_path, subset')
+                           'name, dataset_class, image_dir, caption_path, '
+                           'features_path, subset')
 
 
 class DatasetParams:
@@ -33,6 +33,7 @@ class DatasetParams:
         if not os.path.isfile(d['dataset_config_file']):
             print('Dataset configuration file {} does not exist'.
                   format(d['dataset_config_file']))
+            print('Hint: you can use datasets/datasets.conf.default as a starting point.')
             sys.exit(1)
 
         config = configparser.ConfigParser()
@@ -70,7 +71,7 @@ class DatasetParams:
                 caption_path = self._get_param(user_args, 'caption_path', cfg['caption_path'])
                 features_path = self._get_param(user_args, 'features_path',
                                                 cfg['features_path'])
-                subset = self._get_param(user_args, 'subset', cfg['subset'])
+                subset = self._get_param(user_args, 'subset', cfg.get('subset', ''))
 
                 dataset_config = DatasetConfig(dataset_name,
                                                dataset_class,
@@ -634,9 +635,8 @@ def unzip_image_dir(image_dir):
         return os.path.join(extract_path, unzipped_dir)
 
 
-def get_loader(dataset_configs, vocab, transform, batch_size,
-               shuffle, num_workers, subset=None, skip_images=False,
-               feature_loaders=None, _collate_fn=collate_fn):
+def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
+               subset=None, ext_feature_sets=None, skip_images=False, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     datasets = []
@@ -647,6 +647,16 @@ def get_loader(dataset_configs, vocab, transform, batch_size,
         root = dataset_config.image_dir
         json_file = dataset_config.caption_path
         subset = dataset_config.subset
+        fpath = dataset_config.features_path
+
+        loaders = None
+        dims = None
+        if ext_feature_sets is not None:
+            # Construct external feature loaders for each of the specified feature sets
+            loaders_and_dims = [ExternalFeature.loaders(fs, fpath) for fs in ext_feature_sets]
+
+            # List of tuples into two lists...
+            loaders, dims = zip(*loaders_and_dims)
 
         # Unzip training images to /tmp/data if image_dir argument points to zip file:
         if isinstance(root, str) and zipfile.is_zipfile(root):
@@ -654,7 +664,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size,
 
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
                               subset=subset, transform=transform, skip_images=skip_images,
-                              feature_loaders=feature_loaders)
+                              feature_loaders=loaders)
 
         datasets.append(dataset)
 
@@ -674,7 +684,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size,
                                               shuffle=shuffle,
                                               num_workers=num_workers,
                                               collate_fn=_collate_fn)
-    return data_loader
+    return data_loader, dims
 
 
 if __name__ == '__main__':

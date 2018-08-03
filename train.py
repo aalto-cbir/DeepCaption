@@ -14,7 +14,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
-from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
+from data_loader import get_loader, ExternalFeature, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 
 # Device configuration
@@ -87,7 +87,7 @@ def main(args):
                              (0.229, 0.224, 0.225))])
 
     state = None
-    
+
     # Get dataset parameters and vocabulary wrapper:
     dataset_params, vocab = DatasetParams.fromargs(args).get_all()
     params = ModelParams.fromargs(args)
@@ -141,24 +141,19 @@ def main(args):
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
 
-    # Construct external feature loaders
-    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external,
-                                                   args.features_path)
-    (pef_loaders, pef_dim) = ExternalFeature.loaders(params.persist_features.external,
-                                                     args.features_path)
-
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
-    data_loader = get_loader(dataset_params, vocab, transform, args.batch_size,
-                             shuffle=True, num_workers=args.num_workers,
-                             feature_loaders=(ef_loaders, pef_loaders),
-                             skip_images=not params.has_internal_features())
+    ext_feature_sets = [params.features.external, params.persist_features.external]
+    data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
+                                      shuffle=True, num_workers=args.num_workers,
+                                      ext_feature_sets=ext_feature_sets,
+                                      skip_images=not params.has_internal_features())
 
     # Build the models
     print('Using device: {}'.format(device.type))
     print('Initializing model...')
-    encoder = EncoderCNN(params, ef_dim).to(device)
-    decoder = DecoderRNN(params, len(vocab), pef_dim).to(device)
+    encoder = EncoderCNN(params, ef_dims[0]).to(device)
+    decoder = DecoderRNN(params, len(vocab), ef_dims[1]).to(device)
     if state:
         encoder.load_state_dict(state['encoder'])
         decoder.load_state_dict(state['decoder'])
