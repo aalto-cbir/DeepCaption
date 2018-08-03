@@ -15,7 +15,7 @@ import torch
 from torchvision import transforms
 
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
-from data_loader import get_loader, ExternalFeature
+from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 
 try:
@@ -100,10 +100,9 @@ def main(args):
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
 
-    # Load vocabulary wrapper
-    print('Reading vocabulary from {}.'.format(args.vocab_path))
-    with open(args.vocab_path, 'rb') as f:
-        vocab = pickle.load(f)
+
+    # Get dataset parameters and vocabulary wrapper:
+    dataset_params, vocab = DatasetParams.fromargs(args).get_all()
 
     # Build models
     print('Bulding models.')
@@ -136,23 +135,7 @@ def main(args):
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
 
-    if args.dataset == 'generic':
-        root = []
-        if args.image_files:
-            root += args.image_files
-        if args.image_dir:
-            if args.subset:
-                root = [path_from_id(args.image_dir, line.rstrip())
-                        for line in open(args.subset)]
-            else:
-                root += glob.glob(args.image_dir + '/*.jpg')
-                root += glob.glob(args.image_dir + '/*.jpeg')
-                root += glob.glob(args.image_dir + '/*.png')
-    else:
-        root = args.image_dir
-
-    data_loader = get_loader(args.dataset, root, None,
-                             vocab, transform, args.batch_size,
+    data_loader = get_loader(dataset_params, vocab, transform, args.batch_size,
                              shuffle=True, num_workers=args.num_workers,
                              subset=args.subset, feature_loaders=(ef_loaders, pef_loaders),
                              skip_images=not params.has_internal_features())
@@ -212,6 +195,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='generic',
                         help='which dataset to use')
+    parser.add_argument('--dataset_config_file', type=str,
+                        default='datasets/datasets.conf',
+                        help='location of dataset configuration file')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('image_files', type=str, nargs='*')

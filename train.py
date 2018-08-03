@@ -7,16 +7,14 @@ import numpy as np
 import os
 import glob
 import re
-import pickle
 import sys
-import zipfile
 
 from datetime import datetime
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
-from data_loader import get_loader, ExternalFeature
+from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 
 # Device configuration
@@ -28,24 +26,24 @@ def feats_to_str(feats):
                                       for f in feats.external])
 
 
-def get_file_name(args, params, epoch):
-    """Create filename based on parameters supplied"""
+def get_model_name(args, params):
+    """Create model name"""
     bn = args.model_basename
 
     feat_spec = feats_to_str(params.features)
     if params.has_persist_features():
         feat_spec += '-' + feats_to_str(params.persist_features)
 
-    file_name = ('{}-{}-{}-{}-{}-{}-{}-{}-ep{}.model'.
-                 format(bn, params.embed_size, params.hidden_size,
-                        params.num_layers, params.batch_size,
-                        params.learning_rate, params.dropout,
-                        feat_spec, epoch + 1))
-    return file_name
+    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}'.
+                  format(bn, params.embed_size, params.hidden_size,
+                         params.num_layers, params.batch_size,
+                         params.learning_rate, params.dropout,
+                         feat_spec))
+    return model_name
 
 
-def save_models(args, params, encoder, decoder, optimizer, epoch):
-    file_name = get_file_name(args, params, epoch)
+def save_model(args, params, encoder, decoder, optimizer, epoch):
+    model_name = get_model_name(args, params)
 
     state = {
         'epoch': epoch + 1,
@@ -63,55 +61,21 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
         'persist_features': params.persist_features,
     }
 
-    model_path = os.path.join(args.model_path, file_name)
+    file_name = '{}-ep{}.model'.format(model_name, epoch + 1)
+
+    model_path = os.path.join(args.model_path, model_name, file_name)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
     torch.save(state, model_path)
     print('Saved model as {}'.format(model_path))
     print(params)
 
 
 def main(args):
-    if not os.path.exists(args.image_dir):
-        print("Image directory or ZIP file not found at {}. Exiting...".
-              format(args.image_dir))
-        sys.exit(1)
-
-    if not os.path.exists(args.vocab_path):
-        print("Vocabulary file not found at {}. Exiting...".
-              format(args.vocab_path))
-        sys.exit(1)
-
-    if not os.path.exists(args.caption_path):
-        print("Caption file not found at {}. Exiting...".
-              format(args.caption_path))
-        sys.exit(1)
 
     # Create model directory
     if not os.path.exists(args.model_path):
         os.makedirs(args.model_path)
-
-    # Unzip training images to /tmp/data if image_dir argument points
-    # to zip file:
-    if zipfile.is_zipfile(args.image_dir):
-        # Check if $TMPDIR envirnoment variable is set and use that
-        env_tmp = os.environ.get('TMPDIR')
-        # Also check if the environment variable points to
-        # '/tmp/some/dir' to avoid nasty surprises
-        env_tmp_abs = os.path.abspath(env_tmp)
-        if env_tmp and os.path.commonprefix([env_tmp_abs, '/tmp']) == '/tmp':
-            tmp_root = env_tmp_abs
-        else:
-            tmp_root = '/tmp'
-
-        extract_path = os.path.join(tmp_root, args.tmp_dir_prefix)
-
-        if not os.path.exists(extract_path):
-            os.makedirs(extract_path)
-        with zipfile.ZipFile(args.image_dir, 'r') as zipped_images:
-            print("Extracting training data from {} to {}".format(
-                args.image_dir, extract_path))
-            zipped_images.extractall(extract_path)
-            unzipped_dir = os.path.basename(args.image_dir).split('.')[0]
-            args.image_dir = os.path.join(extract_path, unzipped_dir)
 
     # Image preprocessing, normalization for the pretrained resnet
     transform = transforms.Compose([
@@ -122,13 +86,12 @@ def main(args):
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
 
-    # Load vocabulary wrapper
-    with open(args.vocab_path, 'rb') as f:
-        print("Extracting vocabulary from {}".format(args.vocab_path))
-        vocab = pickle.load(f)
-
     state = None
+    
+    # Get dataset parameters and vocabulary wrapper:
+    dataset_params, vocab = DatasetParams.fromargs(args).get_all()
     params = ModelParams.fromargs(args)
+    print(params)
     start_epoch = 0
 
     # Intelligently resume from the newest trained epoch matching
@@ -137,16 +100,16 @@ def main(args):
         print('Attempting to resume from latest epoch matching supplied '
               'parameters...')
         # Get a matching filename without the epoch part
-        model_no_epoch = get_file_name(args, params, 0).split('ep')[0]
+        model_name = get_model_name(args, params)
 
         # Files matching model:
-        full_path_prefix = os.path.join(args.model_path, model_no_epoch)
-        matching_files = glob.glob(full_path_prefix + 'ep*.model')
+        full_path_prefix = os.path.join(args.model_path, model_name, model_name)
+        matching_files = glob.glob(full_path_prefix + '*.model')
 
-        print("Looking for: {}".format(full_path_prefix + 'ep*.model'))
+        print("Looking for: {}".format(full_path_prefix + '*.model'))
 
         # get a file name with a largest matching epoch:
-        file_regex = full_path_prefix + 'ep([0-9]*).model'
+        file_regex = full_path_prefix + '-ep([0-9]*).model'
         r = re.compile(file_regex)
         last_epoch = -1
 
@@ -158,7 +121,7 @@ def main(args):
                     last_epoch = matched_epoch
 
         if last_epoch is not -1:
-            args.load_model = '{}ep{}.model'.format(full_path_prefix, last_epoch)
+            args.load_model = '{}-ep{}.model'.format(full_path_prefix, last_epoch)
             print('Found matching model: {}'.format(args.load_model))
         else:
             print("Warning: Failed to intelligently resume...")
@@ -186,10 +149,9 @@ def main(args):
 
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
-    data_loader = get_loader(args.dataset, args.image_dir, args.caption_path,
-                             vocab, transform, args.batch_size,
+    data_loader = get_loader(dataset_params, vocab, transform, args.batch_size,
                              shuffle=True, num_workers=args.num_workers,
-                             subset=args.subset, feature_loaders=(ef_loaders, pef_loaders),
+                             feature_loaders=(ef_loaders, pef_loaders),
                              skip_images=not params.has_internal_features())
 
     # Build the models
@@ -255,13 +217,16 @@ def main(args):
         end = datetime.now()
         print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                     total_loss/num_batches))
-        save_models(args, params, encoder, decoder, optimizer, epoch)
+        save_model(args, params, encoder, decoder, optimizer, epoch)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='coco',
                         help='which dataset to use')
+    parser.add_argument('--dataset_config_file', type=str,
+                        default='datasets/datasets.conf',
+                        help='location of dataset configuration file')
     parser.add_argument('--subset', type=str, default=None,
                         help='file defining the subset of training images')
     parser.add_argument('--load_model', type=str,
@@ -272,19 +237,16 @@ if __name__ == '__main__':
                         help='path for saving trained models')
     parser.add_argument('--crop_size', type=int, default=224,
                         help='size for randomly cropping images')
-    parser.add_argument('--vocab_path', type=str,
-                        default='datasets/processed/COCO/vocab.pkl',
+    parser.add_argument('--vocab_path', type=str, default=None,
                         help='path for vocabulary wrapper')
-    parser.add_argument('--image_dir', type=str,
-                        default='datasets/processed/COCO/train2014_resized',
+    parser.add_argument('--image_dir', type=str, default=None,
                         help='directory for resized images'
                         'if "image_dir" points to zip archive - extract '
                         'to /tmp/ , use the extracted images to train')
     parser.add_argument('--tmp_dir_prefix', type=str,
                         default='image_captioning',
                         help='where in /tmp folder to store project data')
-    parser.add_argument('--caption_path', type=str,
-                        default='datasets/data/COCO/annotations/captions_train2014.json',
+    parser.add_argument('--caption_path', type=str, default=None,
                         help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for printing log info')

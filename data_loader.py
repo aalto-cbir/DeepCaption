@@ -3,17 +3,108 @@ import json
 import nltk
 import os
 import re
+import pickle
 import sys
+import zipfile
 
 import numpy as np
 import torch
 import torch.utils.data as data
 
+from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
+from collections import namedtuple
 from PIL import Image
+import configparser
 
 
 def basename(fname):
     return os.path.splitext(os.path.basename(fname))[0]
+
+
+DatasetConfig = namedtuple('DatasetConfig',
+                           'name, dataset_class, image_dir, caption_path,'
+                           ' features_path, subset')
+
+
+class DatasetParams:
+    def __init__(self, d):
+        """Initialize dataset configuration object, by default loading data from
+        datasets/datasets.conf file"""
+        if not os.path.isfile(d['dataset_config_file']):
+            print('Dataset configuration file {} does not exist'.
+                  format(d['dataset_config_file']))
+            sys.exit(1)
+
+        config = configparser.ConfigParser()
+        config.read(d['dataset_config_file'])
+
+        datasets = d['dataset'].split('+')
+        num_datasets = len(datasets)
+
+        # Vocab path can be overriden from arguments even for multiple datasets:
+        self.vocab_path = self._get_param(d, 'vocab_path', config[datasets[0]]['vocab_path'])
+        self.configs = []
+        for dataset in datasets:
+            dataset = dataset.lower()
+            if config[dataset]:
+                cfg = config[dataset]
+                if num_datasets == 1:
+                    user_args = d
+                else:
+                    # Ignore user args for more than one dataset
+                    user_args = {}
+
+                dataset_name = dataset
+                dataset_class = cfg['dataset_class']
+
+                if d.get('image_files'):
+                    root = []
+                    root += d['image_files']
+                    if d.get('image_dir'):
+                        root += glob.glob(d['image_dir'] + '/*.jpg')
+                        root += glob.glob(d['image_dir'] + '/*.jpeg')
+                        root += glob.glob(d['image_dir'] + '/*.png')
+                else:
+                    root = self._get_param(user_args, 'image_dir', cfg['image_dir'])
+
+                caption_path = self._get_param(user_args, 'caption_path', cfg['caption_path'])
+                features_path = self._get_param(user_args, 'features_path',
+                                                cfg['features_path'])
+                subset = self._get_param(user_args, 'subset', cfg['subset'])
+
+                dataset_config = DatasetConfig(dataset_name,
+                                               dataset_class,
+                                               root,
+                                               caption_path,
+                                               features_path,
+                                               subset)
+
+                self.configs.append(dataset_config)
+            else:
+                print('Invalid dataset specified')
+                sys.exit(1)
+
+    @classmethod
+    def fromargs(cls, args):
+        return cls(vars(args))
+
+    def _get_param(self, d, param, default):
+        if not d or param not in d or not d[param]:
+            print('WARNING: {} not set, using default value {}'.
+                  format(param, default))
+            return default
+        return d[param]
+
+    def get_vocab(self):
+        # Load vocabulary wrapper
+        with open(self.vocab_path, 'rb') as f:
+            print("Extracting vocabulary from {}".format(self.vocab_path))
+            vocab = pickle.load(f)
+
+        return vocab
+
+    def get_all(self):
+        return self.configs, self.get_vocab()
 
 
 class ExternalFeature:
@@ -131,6 +222,8 @@ class VisualGenomeIM2PDataset(data.Dataset):
         self.root = root
         self.vocab = vocab
         self.transform = transform
+        self.skip_images = skip_images
+        self.feature_loaders = feature_loaders
 
         self.paragraphs = []
 
@@ -177,6 +270,11 @@ class VisualGenomeIM2PDataset(data.Dataset):
         if self.transform is not None:
             image = self.transform(image)
 
+
+        # Prepare external features
+        # TODO probably wrong index ...
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
+
         # Convert caption (string) to word ids.
         tokens = nltk.tokenize.word_tokenize(str(cap).lower())
         caption = []
@@ -184,7 +282,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
-        return image, target
+        return image, target, img_id, feature_sets
 
     def __len__(self):
         return len(self.paragraphs)
@@ -514,32 +612,56 @@ def collate_fn_vist(data):
     return images, targets, lengths, story_ids
 
 
-def get_loader(dataset_name, root, json_file, vocab, transform, batch_size,
+def unzip_image_dir(image_dir):
+    # Check if $TMPDIR envirnoment variable is set and use that
+    env_tmp = os.environ.get('TMPDIR')
+    # Also check if the environment variable points to '/tmp/some/dir' to avoid
+    # nasty surprises
+    if env_tmp and os.path.commonprefix([os.path.abspath(env_tmp), '/tmp']) == '/tmp':
+        tmp_root = os.path.abspath(env_tmp)
+    else:
+        tmp_root = '/tmp'
+
+    extract_path = os.path.join(tmp_root)
+
+    if not os.path.exists(extract_path):
+        os.makedirs(extract_path)
+
+    with zipfile.ZipFile(image_dir, 'r') as zipped_images:
+        print("Extracting training data from {} to {}".format(image_dir, extract_path))
+        zipped_images.extractall(extract_path)
+        unzipped_dir = os.path.basename(image_dir).split('.')[0]
+        return os.path.join(extract_path, unzipped_dir)
+
+
+def get_loader(dataset_configs, vocab, transform, batch_size,
                shuffle, num_workers, subset=None, skip_images=False,
                feature_loaders=None, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
-    dn = dataset_name.lower()
+    datasets = []
 
-    if dn == 'coco':
-        _dataset = CocoDataset
-    elif 'vist' in dn:
-        _dataset = VistDataset
-    elif dn == 'vgim2p':
-        _dataset = VisualGenomeIM2PDataset
-    elif dn == 'msrvtt' or dn == 'msr-vtt':
-        _dataset = MSRVTTDataset
-    elif dn == 'trecvid2018':
-        _dataset = TRECVID2018Dataset
-    elif dn == 'generic':
-        _dataset = GenericDataset
+    for dataset_config in dataset_configs:
+
+        dataset_cls = eval(dataset_config.dataset_class)
+        root = dataset_config.image_dir
+        json_file = dataset_config.caption_path
+        subset = dataset_config.subset
+
+        # Unzip training images to /tmp/data if image_dir argument points to zip file:
+        if isinstance(root, str) and zipfile.is_zipfile(root):
+            root = unzip_image_dir(root)
+
+        dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
+                              subset=subset, transform=transform, skip_images=skip_images,
+                              feature_loaders=feature_loaders)
+
+        datasets.append(dataset)
+
+    if len(datasets) == 1:
+        dataset = datasets[0]
     else:
-        print("Invalid dataset specified...")
-        sys.exit(1)
-
-    dataset = _dataset(root=root, json_file=json_file, vocab=vocab,
-                       subset=subset, transform=transform, skip_images=skip_images,
-                       feature_loaders=feature_loaders)
+        dataset = data.ConcatDataset(datasets)
 
     # Data loader:
     # This will return (images, captions, lengths) for each iteration.

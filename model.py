@@ -25,7 +25,7 @@ class ModelParams:
         return cls(vars(args))
 
     def _get_param(self, d, param, default):
-        if param not in d:
+        if param not in d or not d[param]:
             print('WARNING: {} not set, using default value {}'.
                   format(param, default))
             return default
