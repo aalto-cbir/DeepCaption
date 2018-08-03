@@ -207,6 +207,8 @@ class VisualGenomeIM2PDataset(data.Dataset):
         self.root = root
         self.vocab = vocab
         self.transform = transform
+        self.skip_images = skip_images
+        self.feature_loaders = feature_loaders
 
         self.paragraphs = []
 
@@ -253,6 +255,11 @@ class VisualGenomeIM2PDataset(data.Dataset):
         if self.transform is not None:
             image = self.transform(image)
 
+
+        # Prepare external features
+        # TODO probably wrong index ...
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
+
         # Convert caption (string) to word ids.
         tokens = nltk.tokenize.word_tokenize(str(cap).lower())
         caption = []
@@ -260,7 +267,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
         caption.extend([vocab(token) for token in tokens])
         caption.append(vocab('<end>'))
         target = torch.Tensor(caption)
-        return image, target
+        return image, target, img_id, feature_sets
 
     def __len__(self):
         return len(self.paragraphs)
