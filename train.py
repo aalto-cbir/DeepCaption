@@ -86,8 +86,11 @@ def main(args):
                              (0.229, 0.224, 0.225))])
 
     state = None
+    
+    # Get dataset parameters and vocabulary wrapper:
     dataset_params, vocab = DatasetParams.fromargs(args).get_all()
     params = ModelParams.fromargs(args)
+    print(params)
     start_epoch = 0
 
     # Intelligently resume from the newest trained epoch matching
@@ -237,7 +240,6 @@ if __name__ == '__main__':
                         #default='datasets/processed/COCO/vocab.pkl',
                         help='path for vocabulary wrapper')
     parser.add_argument('--image_dir', type=str, default=None,
-                        #default='datasets/processed/COCO/train2014_resized',
                         help='directory for resized images'
                         'if "image_dir" points to zip archive - extract '
                         'to /tmp/ , use the extracted images to train')
@@ -245,7 +247,6 @@ if __name__ == '__main__':
                         default='image_captioning',
                         help='where in /tmp folder to store project data')
     parser.add_argument('--caption_path', type=str, default=None,
-                        #default='datasets/data/COCO/annotations/captions_train2014.json',
                         help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for printing log info')
