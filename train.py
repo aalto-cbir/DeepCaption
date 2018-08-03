@@ -26,24 +26,24 @@ def feats_to_str(feats):
                                       for f in feats.external])
 
 
-def get_file_name(args, params, epoch):
-    """Create filename based on parameters supplied"""
+def get_model_name(args, params):
+    """Create model name"""
     bn = args.model_basename
 
     feat_spec = feats_to_str(params.features)
     if params.has_persist_features():
         feat_spec += '-' + feats_to_str(params.persist_features)
 
-    file_name = ('{}-{}-{}-{}-{}-{}-{}-{}-ep{}.model'.
-                 format(bn, params.embed_size, params.hidden_size,
-                        params.num_layers, params.batch_size,
-                        params.learning_rate, params.dropout,
-                        feat_spec, epoch + 1))
-    return file_name
+    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}'.
+                  format(bn, params.embed_size, params.hidden_size,
+                         params.num_layers, params.batch_size,
+                         params.learning_rate, params.dropout,
+                         feat_spec))
+    return model_name
 
 
-def save_models(args, params, encoder, decoder, optimizer, epoch):
-    file_name = get_file_name(args, params, epoch)
+def save_model(args, params, encoder, decoder, optimizer, epoch):
+    model_name = get_model_name(args, params)
 
     state = {
         'epoch': epoch + 1,
@@ -60,7 +60,11 @@ def save_models(args, params, encoder, decoder, optimizer, epoch):
         'persist_features': params.persist_features,
     }
 
-    model_path = os.path.join(args.model_path, file_name)
+    file_name = '{}-ep{}.model'.format(model_name, epoch + 1)
+
+    model_path = os.path.join(args.model_path, model_name, file_name)
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+
     torch.save(state, model_path)
     print('Saved model as {}'.format(model_path))
     print(params)
@@ -210,7 +214,7 @@ def main(args):
         end = datetime.now()
         print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                     total_loss/num_batches))
-        save_models(args, params, encoder, decoder, optimizer, epoch)
+        save_model(args, params, encoder, decoder, optimizer, epoch)
 
 
 if __name__ == '__main__':
