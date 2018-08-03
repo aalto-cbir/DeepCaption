@@ -11,6 +11,7 @@ subset =
 dataset_class = VisualGenomeIM2PDataset
 image_dir = datasets/processed/VisualGenome/resized_im2p_train
 caption_path = datasets/data/VisualGenome/im2p/paragraphs_v1.json
+vocab_path = datasets/processed/COCO/vocab.pkl
 features_path = 
 subset = datasets/data/VisualGenome/im2p/train_split.json
 
