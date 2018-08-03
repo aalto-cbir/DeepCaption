@@ -44,6 +44,6 @@ subset =
 dataset_class = GenericDataset
 image_dir =
 caption_path =
-vocab_path = 
+vocab_path = datasets/processed/COCO/vocab.pkl
 features_path =
 subset = 
