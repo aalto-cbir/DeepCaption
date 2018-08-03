@@ -14,6 +14,7 @@ import torch.utils.data as data
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
 from collections import namedtuple
 from PIL import Image
+import configparser
 
 
 def basename(fname):
@@ -30,7 +31,11 @@ class DatasetParams:
     def __init__(self, d):
         """Initialize dataset configuration object, by default loading data from
         datasets/datasets.conf file"""
-        import configparser
+        if not os.path.isfile(d['dataset_config_file']):
+            print('Dataset configuration file {} does not exist'.
+                  format(d['dataset_config_file']))
+            sys.exit(1)
+
         config = configparser.ConfigParser()
         config.read(d['dataset_config_file'])
 
@@ -39,19 +44,41 @@ class DatasetParams:
 
         # Vocab path can be overriden from arguments even for multiple datasets:
         self.vocab_path = self._get_param(d, 'vocab_path', config[datasets[0]]['vocab_path'])
-        print(self.vocab_path)
         self.configs = []
-        print(datasets)
         for dataset in datasets:
+            dataset = dataset.lower()
             if config[dataset]:
                 cfg = config[dataset]
                 if num_datasets == 1:
-                    # Try to override parameters form args:
-                    dataset_config = self._create_config(cfg, dataset, d)
+                    user_args = d
                 else:
-                    # Use parameters from config file when more than one dataset
-                    # specified:
-                    dataset_config = self._create_config(cfg, dataset, {})
+                    # Ignore user args for more than one dataset
+                    user_args = {}
+
+                dataset_name = dataset
+                dataset_class = cfg['dataset_class']
+
+                if d.get('image_files'):
+                    root = []
+                    root += d['image_files']
+                    if d.get('image_dir'):
+                        root += glob.glob(d['image_dir'] + '/*.jpg')
+                        root += glob.glob(d['image_dir'] + '/*.jpeg')
+                        root += glob.glob(d['image_dir'] + '/*.png')
+                else:
+                    root = self._get_param(user_args, 'image_dir', cfg['image_dir'])
+
+                caption_path = self._get_param(user_args, 'caption_path', cfg['caption_path'])
+                features_path = self._get_param(user_args, 'features_path',
+                                                cfg['features_path'])
+                subset = self._get_param(user_args, 'subset', cfg['subset'])
+
+                dataset_config = DatasetConfig(dataset_name,
+                                               dataset_class,
+                                               root,
+                                               caption_path,
+                                               features_path,
+                                               subset)
 
                 self.configs.append(dataset_config)
             else:
@@ -61,17 +88,6 @@ class DatasetParams:
     @classmethod
     def fromargs(cls, args):
         return cls(vars(args))
-
-    def _create_config(self, cfg, dataset_name, args):
-        dataset_config = DatasetConfig(dataset_name, cfg['dataset_class'],
-                                       self._get_param(args, 'image_dir', cfg['image_dir']),
-                                       self._get_param(args, 'caption_path',
-                                                       cfg['caption_path']),
-                                       self._get_param(args, 'features_path',
-                                                       cfg['features_path']),
-                                       self._get_param(args, 'subset', cfg['subset']))
-
-        return dataset_config
 
     def _get_param(self, d, param, default):
         if not d or param not in d or not d[param]:
@@ -624,28 +640,6 @@ def get_loader(dataset_configs, vocab, transform, batch_size,
                feature_loaders=None, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
-    #dn = dataset_name.lower()
-
-    #if dn == 'coco':
-    #    _dataset = CocoDataset
-    #elif 'vist' in dn:
-    #    _dataset = VistDataset
-    #elif dn == 'vgim2p':
-    #    _dataset = VisualGenomeIM2PDataset
-    #elif dn == 'msrvtt' or dn == 'msr-vtt':
-    #    _dataset = MSRVTTDataset
-    #elif dn == 'trecvid2018':
-    #    _dataset = TRECVID2018Dataset
-    #elif dn == 'generic':
-    #    _dataset = GenericDataset
-    #else:
-    #    print("Invalid dataset specified...")
-    #    sys.exit(1)
-
-    #dataset = _dataset(root=root, json_file=json_file, vocab=vocab,
-    #                   subset=subset, transform=transform, skip_images=skip_images,
-    #                   feature_loaders=feature_loaders)
-
     datasets = []
 
     for dataset_config in dataset_configs:
@@ -656,7 +650,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size,
         subset = dataset_config.subset
 
         # Unzip training images to /tmp/data if image_dir argument points to zip file:
-        if zipfile.is_zipfile(root):
+        if isinstance(root, str) and zipfile.is_zipfile(root):
             root = unzip_image_dir(root)
 
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
