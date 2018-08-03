@@ -85,9 +85,8 @@ def main(args):
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
 
-    dataset_params, vocab = DatasetParams.fromargs(args).get_all()
-
     state = None
+    dataset_params, vocab = DatasetParams.fromargs(args).get_all()
     params = ModelParams.fromargs(args)
     start_epoch = 0
 
@@ -97,16 +96,16 @@ def main(args):
         print('Attempting to resume from latest epoch matching supplied '
               'parameters...')
         # Get a matching filename without the epoch part
-        model_no_epoch = get_file_name(args, params, 0).split('ep')[0]
+        model_name = get_model_name(args, params)
 
         # Files matching model:
-        full_path_prefix = os.path.join(args.model_path, model_no_epoch)
-        matching_files = glob.glob(full_path_prefix + 'ep*.model')
+        full_path_prefix = os.path.join(args.model_path, model_name, model_name)
+        matching_files = glob.glob(full_path_prefix + '*.model')
 
-        print("Looking for: {}".format(full_path_prefix + 'ep*.model'))
+        print("Looking for: {}".format(full_path_prefix + '*.model'))
 
         # get a file name with a largest matching epoch:
-        file_regex = full_path_prefix + 'ep([0-9]*).model'
+        file_regex = full_path_prefix + '-ep([0-9]*).model'
         r = re.compile(file_regex)
         last_epoch = -1
 
@@ -118,7 +117,7 @@ def main(args):
                     last_epoch = matched_epoch
 
         if last_epoch is not -1:
-            args.load_model = '{}ep{}.model'.format(full_path_prefix, last_epoch)
+            args.load_model = '{}-ep{}.model'.format(full_path_prefix, last_epoch)
             print('Found matching model: {}'.format(args.load_model))
         else:
             print("Warning: Failed to intelligently resume...")
