@@ -83,7 +83,7 @@ class DatasetParams:
                                                cfg.get('caption_path'))
                 features_path = self._get_param(user_args, 'features_path',
                                                 cfg.get('features_path'))
-                subset = self._get_param(user_args, 'subset', cfg.get('subset', ''))
+                subset = self._get_param(user_args, 'subset', cfg.get('subset'))
 
                 dataset_config = DatasetConfig(dataset_name,
                                                dataset_class,
@@ -123,6 +123,9 @@ class DatasetParams:
 class ExternalFeature:
     def __init__(self, filename, base_path):
         full_path = os.path.expanduser(os.path.join(base_path, filename))
+        if not os.path.exists(full_path):
+            print('ERROR: external feature file not found:', full_path)
+            sys.exit(1)
         if filename.endswith('.h5'):
             import h5py
             self.f = h5py.File(full_path, 'r')

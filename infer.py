@@ -4,7 +4,6 @@ import argparse
 import glob
 import json
 import os
-import pickle
 import re
 import sys
 
@@ -115,14 +114,18 @@ def main(args):
         params.update_ext_persist_features(args.ext_persist_features)
     print(params)
 
-    # Construct external feature loaders
-    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external,
-                                                   args.features_path)
-    (pef_loaders, pef_dim) = ExternalFeature.loaders(
-        params.persist_features.external, args.features_path)
+    # Build data loader
+    print("Loading dataset: {}".format(args.dataset))
 
-    encoder = EncoderCNN(params, ef_dim).eval()
-    decoder = DecoderRNN(params, len(vocab), pef_dim).eval()
+    ext_feature_sets = [params.features.external, params.persist_features.external]
+    data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
+                                      shuffle=True, num_workers=args.num_workers,
+                                      ext_feature_sets=ext_feature_sets,
+                                      subset=args.subset,
+                                      skip_images=not params.has_internal_features())
+
+    encoder = EncoderCNN(params, ef_dims[0]).eval()
+    decoder = DecoderRNN(params, len(vocab), ef_dims[1]).eval()
     encoder = encoder.to(device)
     decoder = decoder.to(device)
 
@@ -131,14 +134,6 @@ def main(args):
     decoder.load_state_dict(state['decoder'])
 
     output_data = []
-
-    # Build data loader
-    print("Loading dataset: {}".format(args.dataset))
-
-    data_loader = get_loader(dataset_params, vocab, transform, args.batch_size,
-                             shuffle=True, num_workers=args.num_workers,
-                             subset=args.subset, feature_loaders=(ef_loaders, pef_loaders),
-                             skip_images=not params.has_internal_features())
 
     print('Starting inference...')
     show_progress = sys.stderr.isatty() and not args.verbose
@@ -217,7 +212,7 @@ if __name__ == '__main__':
                         'used for training), comma separated')
     parser.add_argument('--ext_persist_features', type=str,
                         help='paths for external persist features')
-    parser.add_argument('--features_path', type=str, default='',
+    parser.add_argument('--features_path', type=str,
                         help='directory of external feature files, if not '
                         'specified should be given with absolute paths, or '
                         'expected to be found in the working directory')
@@ -235,8 +230,8 @@ if __name__ == '__main__':
     parser.add_argument('--only_complete_sentences', action='store_true')
 
     args = parser.parse_args()
-    if not args.image_files and not args.image_dir:
-        args.image_dir = 'datasets/data/COCO/images/val2014'
+    # if not args.image_files and not args.image_dir:
+    #     args.image_dir = 'datasets/data/COCO/images/val2014'
 
     begin = datetime.now()
     print('Started inference at {}, with parameters:'.format(begin))
