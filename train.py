@@ -26,6 +26,12 @@ def feats_to_str(feats):
                                       for f in feats.external])
 
 
+# This is to print the float without exponential-notation, and without trailing zeros.
+# Normal formatting, e.g.: '{:f}'.format(0.01) produces "0.010000"
+def f2s(f):
+    return '{:0.16f}'.format(f).rstrip('0')
+
+
 def get_model_name(args, params):
     """Create model name"""
     bn = args.model_basename
@@ -34,11 +40,10 @@ def get_model_name(args, params):
     if params.has_persist_features():
         feat_spec += '-' + feats_to_str(params.persist_features)
 
-    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}'.
-                  format(bn, params.embed_size, params.hidden_size,
-                         params.num_layers, params.batch_size,
-                         params.learning_rate, params.dropout,
-                         feat_spec))
+    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}-{}'.
+                  format(bn, params.embed_size, params.hidden_size, params.num_layers,
+                         params.batch_size, f2s(params.learning_rate), params.dropout,
+                         params.encoder_dropout, feat_spec))
     return model_name
 
 
