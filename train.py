@@ -8,13 +8,14 @@ import os
 import glob
 import re
 import sys
+import json
 
 from datetime import datetime
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
-from data_loader import get_loader, ExternalFeature, DatasetParams
+from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 
 # Device configuration
@@ -75,6 +76,16 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
     print('Saved model as {}'.format(model_path))
     if args.verbose:
         print(params)
+
+
+def save_stats(args, params, all_stats):
+    model_name = get_model_name(args, params)
+    model_dir = os.path.join(args.model_path, model_name)
+    os.makedirs(model_dir, exist_ok=True)
+
+    stats_filename = os.path.join(model_dir, 'train_stats.json')
+    with open(stats_filename, 'w') as outfile:
+        json.dump(all_stats, outfile, indent=2, sort_keys=True)
 
 
 def main(args):
@@ -203,9 +214,12 @@ def main(args):
 
     # Train the models
     total_step = len(data_loader)
+    all_stats = {}
+
     print('Start Training... ')
     print('Optimizer:', optimizer)
     for epoch in range(start_epoch, args.num_epochs):
+        stats = {}
         begin = datetime.now()
         total_loss = 0
         num_batches = 0
@@ -239,8 +253,10 @@ def main(args):
                 sys.stdout.flush()
 
         end = datetime.now()
+
+        stats['training_loss'] = total_loss/num_batches
         print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
-                                                                    total_loss/num_batches))
+                                                                    stats['training_loss']))
         save_model(args, params, encoder, decoder, optimizer, epoch)
 
         if args.validation > 0 and (epoch + 1) % args.validation == 0:
@@ -272,9 +288,12 @@ def main(args):
             decoder = decoder.train()
 
             end = datetime.now()
+            stats['validation_loss'] = total_loss/num_batches
             print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
-                epoch + 1, end - begin, total_loss/num_batches))
+                epoch + 1, end - begin, stats['validation_loss']))
 
+        all_stats[epoch+1] = stats
+        save_stats(args, params, all_stats)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
