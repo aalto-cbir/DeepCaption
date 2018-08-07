@@ -96,6 +96,12 @@ def main(args):
 
     # Get dataset parameters and vocabulary wrapper:
     dataset_params, vocab = DatasetParams.fromargs(args).get_all()
+    for ds in dataset_params:
+        print('[Dataset]', ds.name)
+        for name, value in ds._asdict().items():
+            if name != 'name' and value is not None:
+                print('    {}: {}'.format(name, value))
+
     params = ModelParams.fromargs(args)
     print(params)
     start_epoch = 0
@@ -341,9 +347,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     begin = datetime.now()
-    print('Started training at {}, with parameters:'.format(begin))
-    for k, v in vars(args).items():
-        print('[args] {}={}'.format(k, v))
+    print('Started training at {}.'.format(begin))
 
     # import cProfile
     # cProfile.run('main(args=args)', filename='train.prof')

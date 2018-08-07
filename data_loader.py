@@ -103,8 +103,6 @@ class DatasetParams:
 
     def _get_param(self, d, param, default):
         if not d or param not in d or not d[param]:
-            print('WARNING: {} not set, using default value {}'.
-                  format(param, default))
             return default
         return d[param]
 
