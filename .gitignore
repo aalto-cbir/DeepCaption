@@ -20,3 +20,4 @@ datasets/datasets.conf
 *.pkl
 /logs
 /*.prof
+.*
