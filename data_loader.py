@@ -124,7 +124,7 @@ class ExternalFeature:
         return self.data.shape[1]
 
     def get_feature(self, idx):
-        return torch.tensor(self.data[idx])
+        return torch.tensor(self.data[idx]).float()
 
     @classmethod
     def load_set(cls, feature_loaders, idx):
