@@ -30,21 +30,31 @@ class DatasetParams:
     def __init__(self, d):
         """Initialize dataset configuration object, by default loading data from
         datasets/datasets.conf file"""
-        if not os.path.isfile(d['dataset_config_file']):
-            print('Dataset configuration file {} does not exist'.
-                  format(d['dataset_config_file']))
-            print('Hint: you can use datasets/datasets.conf.default as a starting point.')
-            sys.exit(1)
 
         config = configparser.ConfigParser()
-        config.read(d['dataset_config_file'])
+        # If the configuration file is not found, we can still use
+        # 'generic' dataset with sensible defaults:
+        if not os.path.isfile(d['dataset_config_file']):
+            if d['dataset'] == 'generic':
+                if not d['vocab_path']:
+                    print("Please specify at least a vocabulary path...")
+                    sys.exit(1)
+                config['generic'] = {'dataset_class': 'GenericDataset'}
+            else:
+                print('Dataset configuration file {} does not exist'.
+                      format(d['dataset_config_file']))
+                print('Hint: you can use datasets/datasets.conf.default as a starting point.')
+                sys.exit(1)
+        # Otherwise all is good, and we are using the config file as
+        else:
+            config.read(d['dataset_config_file'])
 
         datasets = d['dataset'].split('+')
         num_datasets = len(datasets)
 
         # Vocab path can be overriden from arguments even for multiple datasets:
         self.vocab_path = self._get_param(d, 'vocab_path',
-                                          config[datasets[0]].get('vocab_path', None))
+                                          config[datasets[0]].get('vocab_path'))
         self.configs = []
         for dataset in datasets:
             dataset = dataset.lower()
@@ -67,13 +77,13 @@ class DatasetParams:
                         root += glob.glob(d['image_dir'] + '/*.jpeg')
                         root += glob.glob(d['image_dir'] + '/*.png')
                 else:
-                    root = self._get_param(user_args, 'image_dir', cfg['image_dir'])
+                    root = self._get_param(user_args, 'image_dir', cfg.get('image_dir'))
 
                 caption_path = self._get_param(user_args, 'caption_path',
-                                               cfg.get('caption_path', None))
+                                               cfg.get('caption_path'))
                 features_path = self._get_param(user_args, 'features_path',
-                                                cfg.get('features_path', None))
-                subset = self._get_param(user_args, 'subset', cfg.get('subset', None))
+                                                cfg.get('features_path'))
+                subset = self._get_param(user_args, 'subset', cfg.get('subset'))
 
                 dataset_config = DatasetConfig(dataset_name,
                                                dataset_class,

@@ -4,7 +4,6 @@ import argparse
 import glob
 import json
 import os
-import pickle
 import re
 import sys
 
