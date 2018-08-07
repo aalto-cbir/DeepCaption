@@ -161,7 +161,6 @@ def main(args):
                                      shuffle=True, num_workers=args.num_workers,
                                      ext_feature_sets=ext_feature_sets,
                                      skip_images=not params.has_internal_features())
-        print('Loaded validation set: {} items'.format(len(valid_loader)))
 
     # Build the models
     print('Using device: {}'.format(device.type))
@@ -178,7 +177,10 @@ def main(args):
                   list(encoder.linear.parameters()) +
                   list(encoder.bn.parameters()))
     default_lr = 0.001
-    optimizer = torch.optim.Adam(opt_params, lr=default_lr)  # set default lr
+    if args.optimizer == 'adam':
+        optimizer = torch.optim.Adam(opt_params, lr=default_lr)
+    elif args.optimizer == 'rmsprop':
+        optimizer = torch.optim.RMSprop(opt_params, lr=default_lr)
     if state:
         optimizer.load_state_dict(state['optimizer'])
 
@@ -334,6 +336,7 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float)
     parser.add_argument('--validation', type=int, default=0,
                         help='Validate at every VALIDATION epochs, 0 means never validate.')
+    parser.add_argument('--optimizer', type=str, default="adam")
 
     args = parser.parse_args()
 
