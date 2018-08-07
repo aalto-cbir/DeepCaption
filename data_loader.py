@@ -22,8 +22,8 @@ def basename(fname):
 
 
 DatasetConfig = namedtuple('DatasetConfig',
-                           'name, dataset_class, image_dir, caption_path,'
-                           ' features_path, subset')
+                           'name, dataset_class, image_dir, caption_path, '
+                           'features_path, subset')
 
 
 class DatasetParams:
@@ -43,6 +43,7 @@ class DatasetParams:
             else:
                 print('Dataset configuration file {} does not exist'.
                       format(d['dataset_config_file']))
+                print('Hint: you can use datasets/datasets.conf.default as a starting point.')
                 sys.exit(1)
         # Otherwise all is good, and we are using the config file as
         else:
@@ -82,7 +83,7 @@ class DatasetParams:
                                                cfg.get('caption_path'))
                 features_path = self._get_param(user_args, 'features_path',
                                                 cfg.get('features_path'))
-                subset = self._get_param(user_args, 'subset', cfg.get('subset'))
+                subset = self._get_param(user_args, 'subset', cfg.get('subset', ''))
 
                 dataset_config = DatasetConfig(dataset_name,
                                                dataset_class,
@@ -135,7 +136,7 @@ class ExternalFeature:
         return self.data.shape[1]
 
     def get_feature(self, idx):
-        return torch.tensor(self.data[idx])
+        return torch.tensor(self.data[idx]).float()
 
     @classmethod
     def load_set(cls, feature_loaders, idx):
@@ -404,23 +405,24 @@ class MSRVTTDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.subset = subset if subset else 'train'
 
         self.captions = []
-        train_vids = set()
+        subset_vids = set()
 
         with open(json_file, 'r') as fp:
             j = json.load(fp)
             for v in j['videos']:
-                if v['split'] == 'train':
-                    train_vids.add(v['video_id'])
+                if v['split'] == self.subset:
+                    subset_vids.add(v['video_id'])
 
             for s in j['sentences']:
                 vid = s['video_id']
-                if vid in train_vids:
+                if vid in subset_vids:
                     self.captions.append((vid, s['caption']))
 
-        print("MSR-VTT info loaded for {} images, {} captions.".format(
-            len(train_vids), len(self.captions)))
+        print("MSR-VTT info [{}] loaded for {} images, {} captions.".format(self.subset,
+            len(subset_vids), len(self.captions)))
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
@@ -646,9 +648,8 @@ def unzip_image_dir(image_dir):
         return os.path.join(extract_path, unzipped_dir)
 
 
-def get_loader(dataset_configs, vocab, transform, batch_size,
-               shuffle, num_workers, subset=None, skip_images=False,
-               feature_loaders=None, _collate_fn=collate_fn):
+def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
+               subset=None, ext_feature_sets=None, skip_images=False, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     datasets = []
@@ -658,7 +659,17 @@ def get_loader(dataset_configs, vocab, transform, batch_size,
         dataset_cls = eval(dataset_config.dataset_class)
         root = dataset_config.image_dir
         json_file = dataset_config.caption_path
-        subset = dataset_config.subset
+        subset = subset if subset is not None else dataset_config.subset
+        fpath = dataset_config.features_path
+
+        loaders = None
+        dims = None
+        if ext_feature_sets is not None:
+            # Construct external feature loaders for each of the specified feature sets
+            loaders_and_dims = [ExternalFeature.loaders(fs, fpath) for fs in ext_feature_sets]
+
+            # List of tuples into two lists...
+            loaders, dims = zip(*loaders_and_dims)
 
         # Unzip training images to /tmp/data if image_dir argument points to zip file:
         if isinstance(root, str) and zipfile.is_zipfile(root):
@@ -666,7 +677,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size,
 
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
                               subset=subset, transform=transform, skip_images=skip_images,
-                              feature_loaders=feature_loaders)
+                              feature_loaders=loaders)
 
         datasets.append(dataset)
 
@@ -686,7 +697,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size,
                                               shuffle=shuffle,
                                               num_workers=num_workers,
                                               collate_fn=_collate_fn)
-    return data_loader
+    return data_loader, dims
 
 
 if __name__ == '__main__':

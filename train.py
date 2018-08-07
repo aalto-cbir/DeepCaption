@@ -14,7 +14,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
-from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
+from data_loader import get_loader, ExternalFeature, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 
 # Device configuration
@@ -26,6 +26,12 @@ def feats_to_str(feats):
                                       for f in feats.external])
 
 
+# This is to print the float without exponential-notation, and without trailing zeros.
+# Normal formatting, e.g.: '{:f}'.format(0.01) produces "0.010000"
+def f2s(f):
+    return '{:0.16f}'.format(f).rstrip('0')
+
+
 def get_model_name(args, params):
     """Create model name"""
     bn = args.model_basename
@@ -34,11 +40,10 @@ def get_model_name(args, params):
     if params.has_persist_features():
         feat_spec += '-' + feats_to_str(params.persist_features)
 
-    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}'.
-                  format(bn, params.embed_size, params.hidden_size,
-                         params.num_layers, params.batch_size,
-                         params.learning_rate, params.dropout,
-                         feat_spec))
+    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}-{}'.
+                  format(bn, params.embed_size, params.hidden_size, params.num_layers,
+                         params.batch_size, f2s(params.learning_rate), params.dropout,
+                         params.encoder_dropout, feat_spec))
     return model_name
 
 
@@ -68,7 +73,8 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
 
     torch.save(state, model_path)
     print('Saved model as {}'.format(model_path))
-    print(params)
+    if args.verbose:
+        print(params)
 
 
 def main(args):
@@ -87,7 +93,7 @@ def main(args):
                              (0.229, 0.224, 0.225))])
 
     state = None
-    
+
     # Get dataset parameters and vocabulary wrapper:
     dataset_params, vocab = DatasetParams.fromargs(args).get_all()
     params = ModelParams.fromargs(args)
@@ -141,24 +147,27 @@ def main(args):
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
 
-    # Construct external feature loaders
-    (ef_loaders, ef_dim) = ExternalFeature.loaders(params.features.external,
-                                                   args.features_path)
-    (pef_loaders, pef_dim) = ExternalFeature.loaders(params.persist_features.external,
-                                                     args.features_path)
-
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
-    data_loader = get_loader(dataset_params, vocab, transform, args.batch_size,
-                             shuffle=True, num_workers=args.num_workers,
-                             feature_loaders=(ef_loaders, pef_loaders),
-                             skip_images=not params.has_internal_features())
+    ext_feature_sets = [params.features.external, params.persist_features.external]
+    data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
+                                      shuffle=True, num_workers=args.num_workers,
+                                      ext_feature_sets=ext_feature_sets,
+                                      skip_images=not params.has_internal_features())
+
+    if args.validation > 0:
+        valid_loader, _ = get_loader(dataset_params, vocab, transform, args.batch_size,
+                                     subset='validate',
+                                     shuffle=True, num_workers=args.num_workers,
+                                     ext_feature_sets=ext_feature_sets,
+                                     skip_images=not params.has_internal_features())
+        print('Loaded validation set: {} items'.format(len(valid_loader)))
 
     # Build the models
     print('Using device: {}'.format(device.type))
     print('Initializing model...')
-    encoder = EncoderCNN(params, ef_dim).to(device)
-    decoder = DecoderRNN(params, len(vocab), pef_dim).to(device)
+    encoder = EncoderCNN(params, ef_dims[0]).to(device)
+    decoder = DecoderRNN(params, len(vocab), ef_dims[1]).to(device)
     if state:
         encoder.load_state_dict(state['encoder'])
         decoder.load_state_dict(state['decoder'])
@@ -168,7 +177,8 @@ def main(args):
     opt_params = (list(decoder.parameters()) +
                   list(encoder.linear.parameters()) +
                   list(encoder.bn.parameters()))
-    optimizer = torch.optim.Adam(opt_params, lr=0.001)  # set default lr
+    default_lr = 0.001
+    optimizer = torch.optim.Adam(opt_params, lr=default_lr)  # set default lr
     if state:
         optimizer.load_state_dict(state['optimizer'])
 
@@ -176,6 +186,8 @@ def main(args):
         for param_group in optimizer.param_groups:
             param_group['lr'] = args.learning_rate
         params.learning_rate = args.learning_rate
+    else:
+        params.learning_rate = default_lr
 
     # Train the models
     total_step = len(data_loader)
@@ -203,7 +215,7 @@ def main(args):
             loss.backward()
             optimizer.step()
 
-            total_loss += loss
+            total_loss += loss.item()
             num_batches += 1
 
             # Print log info
@@ -218,6 +230,38 @@ def main(args):
         print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                     total_loss/num_batches))
         save_model(args, params, encoder, decoder, optimizer, epoch)
+
+        if args.validation > 0 and (epoch + 1) % args.validation == 0:
+            begin = datetime.now()
+            encoder = encoder.eval()
+            decoder = decoder.eval()
+
+            total_loss = 0
+            num_batches = 0
+            for i, (images, captions, lengths, image_ids, features) in enumerate(valid_loader):
+                # Set mini-batch dataset
+                images = images.to(device)
+                captions = captions.to(device)
+                targets = pack_padded_sequence(captions, lengths,
+                                               batch_first=True)[0]
+                init_features = features[0].to(device) if len(features) > 0 else None
+                persist_features = features[1].to(device) if len(features) > 1 else None
+
+                # Forward, backward and optimize
+                with torch.no_grad():
+                    encoded = encoder(images, init_features)
+                    outputs = decoder(encoded, captions, lengths, images, persist_features)
+                loss = criterion(outputs, targets)
+
+                total_loss += loss.item()
+                num_batches += 1
+
+            encoder = encoder.train()
+            decoder = decoder.train()
+
+            end = datetime.now()
+            print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
+                epoch + 1, end - begin, total_loss/num_batches))
 
 
 if __name__ == '__main__':
@@ -253,6 +297,7 @@ if __name__ == '__main__':
     parser.add_argument('--resume', action="store_true",
                         help="Resume from largest epoch checkpoint matching \
                         current parameters")
+    parser.add_argument('--verbose', action="store_true", help="Increase verbosity")
 
     # Model parameters
     parser.add_argument('--features', type=str, default='resnet152',
@@ -287,6 +332,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--learning_rate', type=float)
+    parser.add_argument('--validation', type=int, default=0,
+                        help='Validate at every VALIDATION epochs, 0 means never validate.')
 
     args = parser.parse_args()
 
