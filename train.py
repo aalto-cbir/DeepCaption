@@ -168,7 +168,8 @@ def main(args):
     opt_params = (list(decoder.parameters()) +
                   list(encoder.linear.parameters()) +
                   list(encoder.bn.parameters()))
-    optimizer = torch.optim.Adam(opt_params, lr=0.001)  # set default lr
+    default_lr = 0.001
+    optimizer = torch.optim.Adam(opt_params, lr=default_lr)  # set default lr
     if state:
         optimizer.load_state_dict(state['optimizer'])
 
@@ -176,6 +177,8 @@ def main(args):
         for param_group in optimizer.param_groups:
             param_group['lr'] = args.learning_rate
         params.learning_rate = args.learning_rate
+    else:
+        params.learning_rate = default_lr
 
     # Train the models
     total_step = len(data_loader)
