@@ -393,23 +393,24 @@ class MSRVTTDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.subset = subset if subset else 'train'
 
         self.captions = []
-        train_vids = set()
+        subset_vids = set()
 
         with open(json_file, 'r') as fp:
             j = json.load(fp)
             for v in j['videos']:
-                if v['split'] == 'train':
-                    train_vids.add(v['video_id'])
+                if v['split'] == self.subset:
+                    subset_vids.add(v['video_id'])
 
             for s in j['sentences']:
                 vid = s['video_id']
-                if vid in train_vids:
+                if vid in subset_vids:
                     self.captions.append((vid, s['caption']))
 
-        print("MSR-VTT info loaded for {} images, {} captions.".format(
-            len(train_vids), len(self.captions)))
+        print("MSR-VTT info [{}] loaded for {} images, {} captions.".format(self.subset,
+            len(subset_vids), len(self.captions)))
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
@@ -646,7 +647,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         dataset_cls = eval(dataset_config.dataset_class)
         root = dataset_config.image_dir
         json_file = dataset_config.caption_path
-        subset = dataset_config.subset
+        subset = subset if subset is not None else dataset_config.subset
         fpath = dataset_config.features_path
 
         loaders = None
