@@ -47,11 +47,9 @@ class DatasetParams:
 
         config_path = None
         for i, path in enumerate(search_paths):
-            print(path)
             if os.path.isfile(path):
                 config_path = path
                 break
-            print('{} does not exist'.format(path))
 
         # If the configuration file is not found, we can still use
         # 'generic' dataset with sensible defaults when infering.
