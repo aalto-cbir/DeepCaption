@@ -187,6 +187,10 @@ def main(args):
         optimizer = torch.optim.Adam(opt_params, lr=default_lr)
     elif args.optimizer == 'rmsprop':
         optimizer = torch.optim.RMSprop(opt_params, lr=default_lr)
+    else:
+        print('ERROR: unknown optimizer:', args.optimizer)
+        sys.exit(1)
+
     if state:
         optimizer.load_state_dict(state['optimizer'])
 
