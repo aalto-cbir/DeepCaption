@@ -67,7 +67,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'persist_features': params.persist_features,
     }
 
-    file_name = '{}-ep{}.model'.format(model_name, epoch + 1)
+    file_name = 'ep{}.model'.format(epoch + 1)
 
     model_path = os.path.join(args.model_path, model_name, file_name)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
