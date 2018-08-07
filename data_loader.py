@@ -32,10 +32,32 @@ class DatasetParams:
         datasets/datasets.conf file"""
 
         config = configparser.ConfigParser()
+
+        # List of places to look for dataset configuration - in this order:
+        # In current working directory
+        conf_in_working_dir = d['dataset_config_file']
+        # In user configuration directory:
+        conf_in_user_dir = os.path.expanduser(os.path.join("~/.config/image_captioning",
+                                                           d['dataset_config_file']))
+        # Inside code folder:
+        file_path = os.path.realpath(__file__)
+        conf_in_code_dir = os.path.join(os.path.dirname(file_path), d['dataset_config_file'])
+
+        search_paths = [conf_in_working_dir, conf_in_user_dir, conf_in_code_dir]
+
+        config_path = None
+        for i, path in enumerate(search_paths):
+            print(path)
+            if os.path.isfile(path):
+                config_path = path
+                break
+            print('{} does not exist'.format(path))
+
         # If the configuration file is not found, we can still use
-        # 'generic' dataset with sensible defaults:
-        if not os.path.isfile(d['dataset_config_file']):
+        # 'generic' dataset with sensible defaults when infering.
+        if not config_path:
             if d['dataset'] == 'generic':
+                print('Config file not found. Loading default settings for generic dataset.')
                 if not d['vocab_path']:
                     print("Please specify at least a vocabulary path...")
                     sys.exit(1)
@@ -47,7 +69,8 @@ class DatasetParams:
                 sys.exit(1)
         # Otherwise all is good, and we are using the config file as
         else:
-            config.read(d['dataset_config_file'])
+            print("Loading dataset configuration from {}...".format(config_path))
+            config.read(config_path)
 
         datasets = d['dataset'].split('+')
         num_datasets = len(datasets)
