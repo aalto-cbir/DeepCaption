@@ -310,7 +310,7 @@ if __name__ == '__main__':
     parser.add_argument('--persist_features', type=str,
                         help='features accessible in all caption generation '
                         'steps, given as comma separated list')
-    parser.add_argument('--features_path', type=str, default='',
+    parser.add_argument('--features_path', type=str,
                         help='directory of external feature files, if not '
                         'specified should be given with absolute paths, or '
                         'expected to be found in the working directory')

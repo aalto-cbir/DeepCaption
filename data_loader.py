@@ -43,7 +43,8 @@ class DatasetParams:
         num_datasets = len(datasets)
 
         # Vocab path can be overriden from arguments even for multiple datasets:
-        self.vocab_path = self._get_param(d, 'vocab_path', config[datasets[0]]['vocab_path'])
+        self.vocab_path = self._get_param(d, 'vocab_path',
+                                          config[datasets[0]].get('vocab_path', None))
         self.configs = []
         for dataset in datasets:
             dataset = dataset.lower()
@@ -68,10 +69,11 @@ class DatasetParams:
                 else:
                     root = self._get_param(user_args, 'image_dir', cfg['image_dir'])
 
-                caption_path = self._get_param(user_args, 'caption_path', cfg['caption_path'])
+                caption_path = self._get_param(user_args, 'caption_path',
+                                               cfg.get('caption_path', None))
                 features_path = self._get_param(user_args, 'features_path',
-                                                cfg['features_path'])
-                subset = self._get_param(user_args, 'subset', cfg.get('subset', ''))
+                                                cfg.get('features_path', None))
+                subset = self._get_param(user_args, 'subset', cfg.get('subset', None))
 
                 dataset_config = DatasetConfig(dataset_name,
                                                dataset_class,
@@ -111,6 +113,9 @@ class DatasetParams:
 class ExternalFeature:
     def __init__(self, filename, base_path):
         full_path = os.path.expanduser(os.path.join(base_path, filename))
+        if not os.path.exists(full_path):
+            print('ERROR: external feature file not found:', full_path)
+            sys.exit(1)
         if filename.endswith('.h5'):
             import h5py
             self.f = h5py.File(full_path, 'r')
