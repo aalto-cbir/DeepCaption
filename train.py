@@ -41,10 +41,11 @@ def get_model_name(args, params):
     if params.has_persist_features():
         feat_spec += '-' + feats_to_str(params.persist_features)
 
-    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}-{}'.
+    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}'.
                   format(bn, params.embed_size, params.hidden_size, params.num_layers,
-                         params.batch_size, f2s(params.learning_rate), params.dropout,
-                         params.encoder_dropout, feat_spec))
+                         params.batch_size, args.optimizer, f2s(params.learning_rate),
+                         f2s(args.weight_decay), params.dropout, params.encoder_dropout,
+                         feat_spec))
     return model_name
 
 
@@ -195,9 +196,10 @@ def main(args):
                   list(encoder.bn.parameters()))
     default_lr = 0.001
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(opt_params, lr=default_lr)
+        optimizer = torch.optim.Adam(opt_params, lr=default_lr, weight_decay=args.weight_decay)
     elif args.optimizer == 'rmsprop':
-        optimizer = torch.optim.RMSprop(opt_params, lr=default_lr)
+        optimizer = torch.optim.RMSprop(opt_params, lr=default_lr,
+                                        weight_decay=args.weight_decay)
     else:
         print('ERROR: unknown optimizer:', args.optimizer)
         sys.exit(1)
@@ -366,6 +368,7 @@ if __name__ == '__main__':
     parser.add_argument('--validation', type=int, default=0,
                         help='Validate at every VALIDATION epochs, 0 means never validate.')
     parser.add_argument('--optimizer', type=str, default="adam")
+    parser.add_argument('--weight_decay', type=float, default=0)
 
     args = parser.parse_args()
 
