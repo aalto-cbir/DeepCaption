@@ -79,18 +79,30 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         print(params)
 
 
-def save_stats(args, params, all_stats):
+def stats_filename(args, params):
     model_name = get_model_name(args, params)
     model_dir = os.path.join(args.model_path, model_name)
-    os.makedirs(model_dir, exist_ok=True)
+    return os.path.join(model_dir, 'train_stats.json')
 
-    stats_filename = os.path.join(model_dir, 'train_stats.json')
-    with open(stats_filename, 'w') as outfile:
-        json.dump(all_stats, outfile, indent=2, sort_keys=True)
+
+def init_stats(args, params):
+    filename = stats_filename(args, params)
+    if os.path.exists(filename):
+        with open(filename, 'r') as fp:
+            return json.load(fp)
+    else:
+        return dict()
+
+
+def save_stats(args, params, all_stats):
+    filename = stats_filename(args, params)
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+
+    with open(filename, 'w') as outfile:
+        json.dump(all_stats, outfile, indent=2)
 
 
 def main(args):
-
     # Create model directory
     if not os.path.exists(args.model_path):
         os.makedirs(args.model_path)
@@ -216,7 +228,10 @@ def main(args):
 
     # Train the models
     total_step = len(data_loader)
-    all_stats = {}
+    if args.load_model:
+        all_stats = init_stats(args, params)
+    else:
+        all_stats = {}
 
     print('Start Training... ')
     print('Optimizer:', optimizer)
