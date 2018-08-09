@@ -142,6 +142,7 @@ class DatasetParams:
 class ExternalFeature:
     def __init__(self, filename, base_path):
         full_path = os.path.expanduser(os.path.join(base_path, filename))
+        self.lmdb = None
         if not os.path.exists(full_path):
             print('ERROR: external feature file not found:', full_path)
             sys.exit(1)
@@ -149,16 +150,40 @@ class ExternalFeature:
             import h5py
             self.f = h5py.File(full_path, 'r')
             self.data = self.f['data']
+        if filename.endswith('.lmdb'):
+            import lmdb
+            self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
+                               readahead=False, meminit=False)
+            self.lmdb = self.f.begin(write=False)
         else:
             self.data = np.load(full_path)
-        x1 = self.data[0]
+
+        if self.lmdb is None:
+            x1 = self.data[0]
+            self._vdim = self.data.shape[1]
+        else:
+            c = self.lmdb.cursor()
+            assert c.first(), full_path
+            x1 = self._lmdb_to_numpy(c.value())
+            self._vdim = x1.shape[0]
+
         assert not np.isnan(x1).any(), full_path
 
+        print('Loaded feature {} with dim {}.'.format(filename, self.vdim()))
+
     def vdim(self):
-        return self.data.shape[1]
+        return self._vdim
+
+    def _lmdb_to_numpy(self, value):
+        return np.frombuffer(value, dtype=np.float32)
 
     def get_feature(self, idx):
-        return torch.tensor(self.data[idx]).float()
+        if self.lmdb is not None:
+            x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+        else:
+            x = self.data[idx]
+
+        return torch.tensor(x).float()
 
     @classmethod
     def load_set(cls, feature_loaders, idx):
@@ -213,19 +238,18 @@ class CocoDataset(data.Dataset):
         ann_id = self.ids[index]
         caption = coco.anns[ann_id]['caption']
         img_id = coco.anns[ann_id]['image_id']
+        path = coco.loadImgs(img_id)[0]['file_name']
 
         if not self.skip_images:
-            path = coco.loadImgs(img_id)[0]['file_name']
-
             image = Image.open(os.path.join(self.root, path)).convert('RGB')
             if self.transform is not None:
                 image = self.transform(image)
         else:
-            image = None
+            image = torch.zeros(1, 1)
 
-        # Prepare external features
-        # TODO probably wrong index ...
-        feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
+        # Prepare external features, we use paths to access features
+        # NOTE: this only works with lmdb
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
 
         # Convert caption (string) to word ids.
         tokens = nltk.tokenize.word_tokenize(str(caption).lower())

@@ -242,10 +242,10 @@ def main(args):
             encoder.zero_grad()
             loss.backward()
 
-            grad_norms = [x.grad.data.norm(2) for x in opt_params]
-            batch_max_grad = np.max(grad_norms)
-            if batch_max_grad > 10.0:
-                print('WARNING: gradient norms larger than 10.0')
+            # grad_norms = [x.grad.data.norm(2) for x in opt_params]
+            # batch_max_grad = np.max(grad_norms)
+            # if batch_max_grad > 10.0:
+            #     print('WARNING: gradient norms larger than 10.0')
 
             # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
             # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)

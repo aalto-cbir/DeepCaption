@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -43,7 +45,8 @@ class ModelParams:
         ext_feat = []
         int_feat = []
         for fn in features:
-            if fn.endswith('.h5') or fn.endswith('.npy'):
+            (tmp, ext) = os.path.splitext(fn)
+            if ext:
                 ext_feat.append(fn)
             else:
                 int_feat.append(fn)

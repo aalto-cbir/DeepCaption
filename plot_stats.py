@@ -30,6 +30,7 @@ def main(args):
                 label = labels[i]
             else:
                 label = str(i+1)
+                print('{}: {}'.format(label, filename))
             plot_stats(label, json.load(fp), colors[i % len(colors)])
 
     ax = plt.subplot(111)
