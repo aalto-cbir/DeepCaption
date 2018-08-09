@@ -241,6 +241,15 @@ def main(args):
             decoder.zero_grad()
             encoder.zero_grad()
             loss.backward()
+
+            grad_norms = [x.grad.data.norm(2) for x in opt_params]
+            batch_max_grad = np.max(grad_norms)
+            if batch_max_grad > 10.0:
+                print('WARNING: gradient norms larger than 10.0')
+
+            # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
+            # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)
+
             optimizer.step()
 
             total_loss += loss.item()
@@ -250,8 +259,8 @@ def main(args):
             if (i + 1) % args.log_step == 0:
                 print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, '
                       'Perplexity: {:5.4f}'.
-                      format(epoch + 1, args.num_epochs, i + 1, total_step,
-                             loss.item(), np.exp(loss.item())))
+                      format(epoch + 1, args.num_epochs, i + 1, total_step, loss.item(),
+                             np.exp(loss.item())))
                 sys.stdout.flush()
 
         end = datetime.now()
@@ -367,8 +376,8 @@ if __name__ == '__main__':
     parser.add_argument('--learning_rate', type=float)
     parser.add_argument('--validation', type=int, default=0,
                         help='Validate at every VALIDATION epochs, 0 means never validate.')
-    parser.add_argument('--optimizer', type=str, default="adam")
-    parser.add_argument('--weight_decay', type=float, default=0)
+    parser.add_argument('--optimizer', type=str, default="rmsprop")
+    parser.add_argument('--weight_decay', type=float, default=1e-6)
 
     args = parser.parse_args()
 

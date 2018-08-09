@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import json
-import os
 
 import matplotlib.pyplot as plt
 
@@ -22,7 +21,7 @@ def plot_stats(label, stats, color):
 
 
 def main(args):
-    colors = ['blue', 'red', 'green']
+    colors = ['blue', 'red', 'cyan', 'yellow', 'gray']
     labels = args.labels.split(',') if args.labels else []
 
     for i, filename in enumerate(args.files):
@@ -33,7 +32,11 @@ def main(args):
                 label = str(i+1)
             plot_stats(label, json.load(fp), colors[i % len(colors)])
 
-    plt.legend(bbox_to_anchor=(0.8, 1.13))  #, loc=2, borderaxespad=0.)
+    ax = plt.subplot(111)
+    box = ax.get_position()
+    ax.set_position([box.x0, box.y0, box.width * 0.65, box.height])
+
+    plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
     plt.show()
 
 
