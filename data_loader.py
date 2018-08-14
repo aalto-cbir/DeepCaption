@@ -33,23 +33,7 @@ class DatasetParams:
 
         config = configparser.ConfigParser()
 
-        # List of places to look for dataset configuration - in this order:
-        # In current working directory
-        conf_in_working_dir = d['dataset_config_file']
-        # In user configuration directory:
-        conf_in_user_dir = os.path.expanduser(os.path.join("~/.config/image_captioning",
-                                                           d['dataset_config_file']))
-        # Inside code folder:
-        file_path = os.path.realpath(__file__)
-        conf_in_code_dir = os.path.join(os.path.dirname(file_path), d['dataset_config_file'])
-
-        search_paths = [conf_in_working_dir, conf_in_user_dir, conf_in_code_dir]
-
-        config_path = None
-        for i, path in enumerate(search_paths):
-            if os.path.isfile(path):
-                config_path = path
-                break
+        config_path = self._get_config_path(d)
 
         # If the configuration file is not found, we can still use
         # 'generic' dataset with sensible defaults when infering.
@@ -117,6 +101,28 @@ class DatasetParams:
             else:
                 print('Invalid dataset specified')
                 sys.exit(1)
+
+    def _get_config_path(self, d):
+        """Try to intelligently find the configuration file"""
+        # List of places to look for dataset configuration - in this order:
+        # In current working directory
+        conf_in_working_dir = d['dataset_config_file']
+        # In user configuration directory:
+        conf_in_user_dir = os.path.expanduser(os.path.join("~/.config/image_captioning",
+                                                           d['dataset_config_file']))
+        # Inside code folder:
+        file_path = os.path.realpath(__file__)
+        conf_in_code_dir = os.path.join(os.path.dirname(file_path), d['dataset_config_file'])
+
+        search_paths = [conf_in_working_dir, conf_in_user_dir, conf_in_code_dir]
+
+        config_path = None
+        for i, path in enumerate(search_paths):
+            if os.path.isfile(path):
+                config_path = path
+                break
+
+        return config_path
 
     @classmethod
     def fromargs(cls, args):
@@ -207,6 +213,19 @@ class ExternalFeature:
         return (ef_loaders, feat_dim)
 
 
+def tokenize_caption(text, vocab):
+    """Tokenize a single sentence / caption, convert tokens to vocabulary indices,
+    and store the vocabulary index array into a torch tensor"""
+    tokens = nltk.tokenize.word_tokenize(str(text).lower())
+    caption = []
+    caption.append(vocab('<start>'))
+    caption.extend([vocab(token) for token in tokens])
+    caption.append(vocab('<end>'))
+    target = torch.Tensor(caption)
+
+    return target
+
+
 class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
@@ -250,14 +269,8 @@ class CocoDataset(data.Dataset):
         # Prepare external features, we use paths to access features
         # NOTE: this only works with lmdb
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
+        target = tokenize_caption(caption, vocab)
 
-        # Convert caption (string) to word ids.
-        tokens = nltk.tokenize.word_tokenize(str(caption).lower())
-        caption = []
-        caption.append(vocab('<start>'))
-        caption.extend([vocab(token) for token in tokens])
-        caption.append(vocab('<end>'))
-        target = torch.Tensor(caption)
         return image, target, img_id, feature_sets
 
     def __len__(self):
@@ -329,18 +342,11 @@ class VisualGenomeIM2PDataset(data.Dataset):
         if self.transform is not None:
             image = self.transform(image)
 
-
         # Prepare external features
         # TODO probably wrong index ...
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
+        target = tokenize_caption(cap, vocab)
 
-        # Convert caption (string) to word ids.
-        tokens = nltk.tokenize.word_tokenize(str(cap).lower())
-        caption = []
-        caption.append(vocab('<start>'))
-        caption.extend([vocab(token) for token in tokens])
-        caption.append(vocab('<end>'))
-        target = torch.Tensor(caption)
         return image, target, img_id, feature_sets
 
     def __len__(self):
@@ -422,11 +428,8 @@ class VistDataset(data.Dataset):
             sequence.append(image)
 
         # Convert caption (string) to word ids.
-        tokens = nltk.tokenize.word_tokenize(str(story).lower())
-        story = [vocab('<start>')]
-        story.extend([vocab(token) for token in tokens])
-        story.append(vocab('<end>'))
-        target = torch.Tensor(story)
+        target = tokenize_caption(story, vocab)
+
         return sequence, target, self.story_ids[index]
 
     def __len__(self):
@@ -492,12 +495,7 @@ class MSRVTTDataset(data.Dataset):
 
         # Convert caption (string) to word ids.
         vocab = self.vocab
-        tokens = nltk.tokenize.word_tokenize(str(caption).lower())
-        caption = []
-        caption.append(vocab('<start>'))
-        caption.extend([vocab(token) for token in tokens])
-        caption.append(vocab('<end>'))
-        target = torch.Tensor(caption)
+        target = tokenize_caption(caption, vocab)
 
         return image, target, vid_idx, feature_sets
 
@@ -694,6 +692,25 @@ def unzip_image_dir(image_dir):
         return os.path.join(extract_path, unzipped_dir)
 
 
+def get_dataset_class(cls_name):
+    """Return the correct dataset class based on the one specified in configuration file"""
+    if cls_name == 'CocoDataset':
+        return CocoDataset
+    elif cls_name == 'VisualGenomeIM2PDataset':
+        return VisualGenomeIM2PDataset
+    elif cls_name == 'VistDataset':
+        return VistDataset
+    elif cls_name == 'MSRVTTDataset':
+        return MSRVTTDataset
+    elif cls_name == 'TRECVID2018Dataset':
+        return TRECVID2018Dataset
+    elif cls_name == 'GenericDataset':
+        return GenericDataset
+    else:
+        print("Invalid data set specified")
+        sys.exit(1)
+
+
 def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
                subset=None, ext_feature_sets=None, skip_images=False, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
@@ -706,7 +723,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
                   dataset_config.dataset_class)
             continue
 
-        dataset_cls = eval(dataset_config.dataset_class)
+        dataset_cls = get_dataset_class(dataset_config.dataset_class)
         root = dataset_config.image_dir
         json_file = dataset_config.caption_path
         subset = subset if subset is not None else dataset_config.subset
@@ -753,8 +770,6 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
 if __name__ == '__main__':
     # Test loading dataset!
     from pprint import pprint
-    import pickle
-    from build_vocab import Vocabulary
 
     vg_root = 'datasets/data/VisualGenome'
     vocab_path = 'datasets/processed/COCO/vocab.pkl'
