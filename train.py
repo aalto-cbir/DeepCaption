@@ -226,6 +226,10 @@ def main(args):
     else:
         params.learning_rate = default_lr
 
+    if args.validation > 0 and args.lr_scheduler:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
+                                                               patience=2)
+
     # Train the models
     total_step = len(data_loader)
     if args.load_model:
@@ -314,9 +318,13 @@ def main(args):
             decoder = decoder.train()
 
             end = datetime.now()
-            stats['validation_loss'] = total_loss/num_batches
+            val_loss = total_loss/num_batches
+            stats['validation_loss'] = val_loss
             print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
-                epoch + 1, end - begin, stats['validation_loss']))
+                epoch + 1, end - begin, val_loss))
+
+            if args.lr_scheduler:
+                scheduler.step(val_loss)
 
         all_stats[epoch+1] = stats
         save_stats(args, params, all_stats)
@@ -393,6 +401,7 @@ if __name__ == '__main__':
                         help='Validate at every VALIDATION epochs, 0 means never validate.')
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
+    parser.add_argument('--lr_scheduler', action='store_true')
 
     args = parser.parse_args()
 
@@ -404,5 +413,4 @@ if __name__ == '__main__':
     main(args=args)
 
     end = datetime.now()
-    print('Training ended at {}. Total training time: {}.'.
-          format(end, end - begin))
+    print('Training ended at {}. Total training time: {}.'.format(end, end - begin))

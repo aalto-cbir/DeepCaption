@@ -701,6 +701,10 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
     datasets = []
 
     for dataset_config in dataset_configs:
+        if subset == 'validate' and dataset_config.dataset_class != 'MSRVTTDataset':
+            print('Validate implemented only for MSR-VTT at the moment, skipping',
+                  dataset_config.dataset_class)
+            continue
 
         dataset_cls = eval(dataset_config.dataset_class)
         root = dataset_config.image_dir
