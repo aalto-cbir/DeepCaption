@@ -105,7 +105,7 @@ class DatasetParams:
 
     def _cfg_path(self, cfg, s):
         path = cfg.get(s)
-        if os.path.isabs(path):
+        if path is None or os.path.isabs(path):
             return path
         else:
             root_dir = cfg.get('root_dir', '')
@@ -347,7 +347,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
                     'caption': d['paragraph']
                 })
 
-        print("... {} images loaded ...".format(len(self.paragraphs)))
+        print("VisualGenome paragraph data loaded for {} images...".format(len(self.paragraphs)))
 
     def __getitem__(self, index):
         """Returns one data pair (image and paragraph)."""
