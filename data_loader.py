@@ -109,12 +109,12 @@ class DatasetParams:
 
     def _get_combined_cfg(self, config, dataset):
         """If dataset name is separated by 'parent_dataset:child_split' (i.e. 'coco:train2014')
-         use fallback to parent settings"""
+         fallback to parent settings when child configuration has no corresponding parameter included"""
         child_subset = None
         if ":" in dataset:
             (parent_dataset, child_subset) = tuple(dataset.split(':'))
-            # Take defaults from parent and override them as needed:
 
+            # Take defaults from parent and override them as needed:
             for key in config[parent_dataset]:
                 if config[dataset].get(key) is None:
                     config[dataset][key] = config[parent_dataset][key]
