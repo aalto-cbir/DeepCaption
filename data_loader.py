@@ -23,7 +23,7 @@ def basename(fname):
 
 DatasetConfig = namedtuple('DatasetConfig',
                            'name, child_split, dataset_class, image_dir, caption_path, '
-                           'features_path, subset')
+                           'vocab_path, features_path, subset')
 
 
 class DatasetParams:
@@ -86,6 +86,8 @@ class DatasetParams:
 
                 caption_path = self._get_param(user_args, 'caption_path',
                                                self._cfg_path(cfg, 'caption_path'))
+                vocab_path = self._get_param(user_args, 'vocab_path',
+                                               self._cfg_path(cfg, 'vocab_path'))
                 features_path = self._get_param(user_args, 'features_path',
                                                 self._cfg_path(cfg, 'features_path'))
                 subset = self._get_param(user_args, 'subset', cfg.get('subset'))
@@ -95,6 +97,7 @@ class DatasetParams:
                                                dataset_class,
                                                root,
                                                caption_path,
+                                               vocab_path,
                                                features_path,
                                                subset)
 
