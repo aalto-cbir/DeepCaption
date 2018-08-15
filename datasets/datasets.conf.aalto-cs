@@ -9,7 +9,7 @@ image_dir = image_captioning/train2014_resized
 caption_path = download/annotations/captions_train2014.json
 
 [coco:val2014]
-image_dir = image_captioning/val2014_resized
+image_dir = download/images/val2014/
 caption_path = download/annotations/captions_val2014.json
 
 [msrvtt]

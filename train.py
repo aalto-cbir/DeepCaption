@@ -35,17 +35,21 @@ def f2s(f):
 
 def get_model_name(args, params):
     """Create model name"""
-    bn = args.model_basename
 
-    feat_spec = feats_to_str(params.features)
-    if params.has_persist_features():
-        feat_spec += '-' + feats_to_str(params.persist_features)
+    if args.model_name is not None:
+        model_name = args.model_name
+    else:
+        bn = args.model_basename
 
-    model_name = ('{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}'.
-                  format(bn, params.embed_size, params.hidden_size, params.num_layers,
-                         params.batch_size, args.optimizer, f2s(params.learning_rate),
-                         f2s(args.weight_decay), params.dropout, params.encoder_dropout,
-                         feat_spec))
+        feat_spec = feats_to_str(params.features)
+        if params.has_persist_features():
+            feat_spec += '-' + feats_to_str(params.persist_features)
+
+        model_name = ('{}-{}-{}-{}-{}-{}-{}-{}-{}-{}-{}'.
+                      format(bn, params.embed_size, params.hidden_size, params.num_layers,
+                             params.batch_size, args.optimizer, f2s(params.learning_rate),
+                             f2s(args.weight_decay), params.dropout, params.encoder_dropout,
+                             feat_spec))
     return model_name
 
 
@@ -159,8 +163,8 @@ def main(args):
     dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
                                                             vocab_path=args.vocab_path)
     vocab = get_vocab(vocab_path)
-    if args.validation:
-        validation_dataset_params, _ = dataset_configs.get_params(args.validation)
+    if args.validate is not None:
+        validation_dataset_params, _ = dataset_configs.get_params(args.validate)
 
     params = ModelParams.fromargs(args)
     print(params)
@@ -194,10 +198,10 @@ def main(args):
                                       ext_feature_sets=ext_feature_sets,
                                       skip_images=not params.has_internal_features())
 
-    if args.validation > 0:
-        valid_loader, _ = get_loader(dataset_params, vocab, transform, args.batch_size,
-                                     subset='validate',
-                                     shuffle=True, num_workers=args.num_workers,
+    if args.validate is not None:
+        valid_loader, _ = get_loader(validation_dataset_params, vocab, transform,
+                                     args.batch_size, shuffle=True,
+                                     num_workers=args.num_workers,
                                      ext_feature_sets=ext_feature_sets,
                                      skip_images=not params.has_internal_features())
 
@@ -235,7 +239,7 @@ def main(args):
     else:
         params.learning_rate = default_lr
 
-    if args.validation > 0 and args.lr_scheduler:
+    if args.lr_scheduler:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
 
@@ -298,7 +302,7 @@ def main(args):
                                                                     stats['training_loss']))
         save_model(args, params, encoder, decoder, optimizer, epoch)
 
-        if args.validation > 0 and (epoch + 1) % args.validation == 0:
+        if args.validate is not None and (epoch + 1) % args.validation_step == 0:
             begin = datetime.now()
             encoder = encoder.eval()
             decoder = decoder.eval()
@@ -332,15 +336,15 @@ def main(args):
             print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
                 epoch + 1, end - begin, val_loss))
 
-            if args.lr_scheduler:
-                scheduler.step(val_loss)
+        if args.lr_scheduler:
+            scheduler.step(val_loss)
 
         all_stats[epoch+1] = stats
         save_stats(args, params, all_stats)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='coco',
+    parser.add_argument('--dataset', type=str, default='coco:train2014',
                         help='which dataset to use')
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
@@ -349,6 +353,7 @@ if __name__ == '__main__':
                         help='file defining the subset of training images')
     parser.add_argument('--load_model', type=str,
                         help='existing model, for continuing training')
+    parser.add_argument('--model_name', type=str)
     parser.add_argument('--model_basename', type=str, default='model',
                         help='base name for model snapshot filenames')
     parser.add_argument('--model_path', type=str, default='models/',
@@ -406,8 +411,10 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--learning_rate', type=float)
-    parser.add_argument('--validation', type=int, default=0,
-                        help='Validate at every VALIDATION epochs, 0 means never validate.')
+    parser.add_argument('--validate', type=str,
+                        help='Dataset to validate against after each epoch')
+    parser.add_argument('--validation_step', type=int, default=1,
+                        help='After how many epochs to perform validation, default=1')
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')

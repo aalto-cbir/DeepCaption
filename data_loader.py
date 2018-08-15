@@ -76,6 +76,10 @@ class DatasetParams:
         for dataset in datasets:
             dataset = dataset.lower()
 
+            if dataset not in self.config:
+                print('No such dataset configured:', dataset)
+                sys.exit(1)
+
             if self.config[dataset]:
                 # If dataset is of the form "parent_dataset:child_split",
                 # if child doesn't have a parameter specified use fallback values from parent
@@ -752,11 +756,6 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
     datasets = []
 
     for dataset_config in dataset_configs:
-        if subset == 'validate' and dataset_config.dataset_class != 'MSRVTTDataset':
-            print('Validate implemented only for MSR-VTT at the moment, skipping',
-                  dataset_config.dataset_class)
-            continue
-
         dataset_cls = get_dataset_class(dataset_config.dataset_class)
         root = dataset_config.image_dir
         json_file = dataset_config.caption_path
