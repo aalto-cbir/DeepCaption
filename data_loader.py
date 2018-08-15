@@ -90,17 +90,14 @@ class DatasetParams:
 
                 root = None
                 if dataset == 'generic' and (image_files or image_dir):
+                    image_list = []
                     if image_files:
-                        image_list = []
                         image_list += image_files
-                        if image_dir:
-                            image_list += glob.glob(image_dir + '/*.jpg')
-                            image_list += glob.glob(image_dir + '/*.jpeg')
-                            image_list += glob.glob(image_dir + '/*.png')
-
-                        root = image_list
-                    elif image_dir:
-                        root = image_dir
+                    if image_dir:
+                        image_list += glob.glob(image_dir + '/*.jpg')
+                        image_list += glob.glob(image_dir + '/*.jpeg')
+                        image_list += glob.glob(image_dir + '/*.png')
+                    root = image_list
                 else:
                     root = self._cfg_path(cfg, 'image_dir')
 
