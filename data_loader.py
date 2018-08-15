@@ -22,7 +22,7 @@ def basename(fname):
 
 
 DatasetConfig = namedtuple('DatasetConfig',
-                           'name, dataset_class, image_dir, caption_path, '
+                           'name, child_split, dataset_class, image_dir, caption_path, '
                            'features_path, subset')
 
 
@@ -57,14 +57,12 @@ class DatasetParams:
         datasets = d['dataset'].split('+')
         num_datasets = len(datasets)
 
-        # Vocab path can be overriden from arguments even for multiple datasets:
-        self.vocab_path = self._get_param(d, 'vocab_path',
-                                          self._cfg_path(config[datasets[0]], 'vocab_path'))
         self.configs = []
         for dataset in datasets:
             dataset = dataset.lower()
             if config[dataset]:
-                cfg = config[dataset]
+                # If dataset is of the form "parent_dataset:child_split", use default values from parent
+                cfg, child_split = self._get_combined_cfg(config, dataset) 
                 if num_datasets == 1:
                     user_args = d
                 else:
@@ -92,6 +90,7 @@ class DatasetParams:
                 subset = self._get_param(user_args, 'subset', cfg.get('subset'))
 
                 dataset_config = DatasetConfig(dataset_name,
+                                               child_split,
                                                dataset_class,
                                                root,
                                                caption_path,
@@ -102,6 +101,24 @@ class DatasetParams:
             else:
                 print('Invalid dataset specified')
                 sys.exit(1)
+
+        # Vocab path can be overriden from arguments even for multiple datasets:
+        self.vocab_path = self._get_param(d, 'vocab_path',
+                                          self._cfg_path(config[datasets[0]], 'vocab_path'))
+
+    def _get_combined_cfg(self, config, dataset):
+        """If dataset name is separated by 'parent_dataset:child_split' (i.e. 'coco:train2014')
+         use fallback to parent settings"""
+        child_subset = None
+        if ":" in dataset:
+            (parent_dataset, child_subset) = tuple(dataset.split(':'))
+            # Take defaults from parent and override them as needed:
+
+            for key in config[parent_dataset]:
+                if not config[dataset].get(key):
+                    config[dataset][key] = config[parent_dataset][key]
+
+        return config[dataset], child_subset
 
     def _cfg_path(self, cfg, s):
         path = cfg.get(s)
