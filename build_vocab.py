@@ -1,9 +1,21 @@
+#!/usr/bin/env python3
+
 import nltk
 import pickle
 import argparse
 import sys
-import json
+import os
 from collections import Counter
+
+import data_loader as dl
+
+
+try:
+    from tqdm import tqdm
+except ImportError as e:
+    print('WARNING: tqdm module not found. Install it if you want a fancy progress bar :-)')
+
+    def tqdm(x, disable=False): return x
 
 
 class Vocabulary(object):
@@ -29,87 +41,75 @@ class Vocabulary(object):
         return len(self.word2idx)
 
 
-def build_vocab(dataset, json_file, threshold):
-    """Build a simple vocabulary wrapper."""
+def main(args):
+    dataset_params = dl.DatasetParams.fromargs(args).configs
 
-    counter = Counter()
-
-    if dataset == 'coco':
-        from pycocotools.coco import COCO
-        coco = COCO(json_file)
-        ids = coco.anns.keys()
-
-        for i, id in enumerate(ids):
-            caption = str(coco.anns[id]['caption'])
-            tokens = nltk.tokenize.word_tokenize(caption.lower())
-            counter.update(tokens)
-
-            if (i + 1) % 1000 == 0:
-                print("[{}/{}] Tokenized the captions.".format(i + 1, len(ids)))
-    elif 'vist' in dataset:
-        with open(json_file) as raw_data:
-            json_data = json.load(raw_data)
-            annotations = json_data['annotations']
-
-        for i, annotation in enumerate(annotations):
-            caption = str(annotation[0]['text'])
-            tokens = nltk.tokenize.word_tokenize(caption.lower())
-            counter.update(tokens)
-
-            if (i + 1) % 1000 == 0:
-                print("[{}/{}] Tokenized the captions.".format(i + 1, len(annotations)))
-    elif dataset == 'msrvtt':
-        with open(json_file, 'r') as fp:
-            j = json.load(fp)
-            sentences = j['sentences']
-            for i, s in enumerate(sentences):
-                caption = str(s['caption'])
-                tokens = nltk.tokenize.word_tokenize(caption.lower())
-                counter.update(tokens)
-                if (i + 1) % 1000 == 0:
-                    print("[{}/{}] Tokenized the captions.".format(i + 1, len(sentences)))
+    # Take vocab path from dataset config, can be overridden by
+    # command line argument
+    if args.vocab_path is None:
+        if len(dataset_params) == 1:
+            vocab_path = dataset_params[0].vocab_path
+        else:
+            print('ERROR: for combined datasets you need to define the vocabulary on the '
+                  'command line, e.g. --vocab_path=/some/dir/vocab.pkl')
+            sys.exit(1)
     else:
-        print("Invalid dataset specified...")
+        vocab_path = args.vocab_path
+
+    # Check that we are not overwriting anything
+    if os.path.exists(vocab_path):
+        print('ERROR: {} exists, please remove it first if you really want to replace it.'.
+              format(vocab_path))
         sys.exit(1)
 
-    # If the word frequency is less than 'threshold', then the word is discarded.
-    words = [word for word, cnt in counter.items() if cnt >= threshold]
+    # Get data loader
+    data_loader, _ = dl.get_loader(dataset_params, None, None, 128, shuffle=False,
+                                   num_workers=args.num_workers, skip_images=True)
 
-    # Create a vocab wrapper and add some special tokens.
+    if len(data_loader) == 0:
+        print('ERROR: No captions found, please specify a dataset that has captions defined.')
+        if args.dataset == 'coco':
+            print('HINT: instead of "coco" use "coco:train2014"')
+        sys.exit(1)
+
+    # Start counting words...
+    counter = Counter()
+    show_progress = sys.stderr.isatty()
+    for _, captions, _, _, _ in tqdm(data_loader, disable=not show_progress):
+        for caption in captions:
+            tokens = nltk.tokenize.word_tokenize(caption.lower())
+            counter.update(tokens)
+
+    # If the word frequency is less than 'threshold', then the word is discarded
+    words = [word for word, cnt in counter.items() if cnt >= args.threshold]
+
+    # Create a vocab wrapper and add some special tokens
     vocab = Vocabulary()
     vocab.add_word('<pad>')
     vocab.add_word('<start>')
     vocab.add_word('<end>')
     vocab.add_word('<unk>')
 
-    # Add the words to the vocabulary.
-    for i, word in enumerate(words):
+    # Add the words to the vocabulary
+    for word in words:
         vocab.add_word(word)
-    return vocab
 
-
-def main(args):
-    vocab = build_vocab(dataset=args.dataset,
-                        json_file=args.caption_path,
-                        threshold=args.threshold)
-    vocab_path = args.vocab_path
     with open(vocab_path, 'wb') as f:
         pickle.dump(vocab, f)
+
     print("Total vocabulary size: {}".format(len(vocab)))
-    print("Saved the vocabulary wrapper to '{}'".format(vocab_path))
+    print("Saved the vocabulary to '{}'".format(vocab_path))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='coco',
+    parser.add_argument('--dataset', type=str, default='coco:train2014',
                         help='which dataset to use')
-    parser.add_argument('--caption_path', type=str,
-                        default='datasets/data/COCO/annotations/captions_train2014.json',
-                        help='path for train annotation file')
-    parser.add_argument('--vocab_path', type=str,
-                        default='datasets/processed/COCO/vocab.pkl',
-                        help='path for saving vocabulary wrapper')
+    parser.add_argument('--dataset_config_file', type=str, default='datasets/datasets.conf',
+                        help='location of dataset configuration file')
+    parser.add_argument('--vocab_path', type=str, help='path for saving vocabulary')
     parser.add_argument('--threshold', type=int, default=4,
                         help='minimum word count threshold')
+    parser.add_argument('--num_workers', type=int, default=2)
     args = parser.parse_args()
     main(args)

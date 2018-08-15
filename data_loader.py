@@ -238,6 +238,8 @@ class ExternalFeature:
     def load_sets(cls, feature_loader_sets, idx):
         # We have several sets of features (e.g., initial, persistent, ...)
         # For each set we prepare a single tensor with all the features concatenated
+        if feature_loader_sets is None:
+            return None
         return [cls.load_set(fls, idx) for fls in feature_loader_sets
                 if fls]
 
@@ -255,6 +257,10 @@ class ExternalFeature:
 def tokenize_caption(text, vocab):
     """Tokenize a single sentence / caption, convert tokens to vocabulary indices,
     and store the vocabulary index array into a torch tensor"""
+
+    if vocab is None:
+        return text
+
     tokens = nltk.tokenize.word_tokenize(str(text).lower())
     caption = []
     caption.append(vocab('<start>'))
@@ -655,24 +661,30 @@ def collate_fn(data):
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
 
-    # Merge captions (from tuple of 1D tensor to 2D tensor).
-    # If we are doing inference, captions are None...
-    if captions[0] is not None:
+    if type(captions[0]) is str:
+        targets = captions
+        lengths = None
+    elif captions[0] is not None:
+        # Merge captions (from tuple of 1D tensor to 2D tensor).
         lengths = [len(cap) for cap in captions]
         targets = torch.zeros(len(captions), max(lengths)).long()
         for i, cap in enumerate(captions):
             end = lengths[i]
             targets[i, :end] = cap[:end]
     else:
+        # If we are doing inference, captions are None...
         lengths = None
         targets = None
 
     # Generate list of (batch_size, concatenated_feature_length) tensors,
     # one for each feature set
-    batch_size = len(feature_sets)
-    num_feature_sets = len(feature_sets[0])
-    features = [torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0)
-                for fs_i in range(num_feature_sets)]
+    if feature_sets[0] is not None:
+        batch_size = len(feature_sets)
+        num_feature_sets = len(feature_sets[0])
+        features = [torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0)
+                    for fs_i in range(num_feature_sets)]
+    else:
+        features = None
 
     return images, targets, lengths, indices, features
 
