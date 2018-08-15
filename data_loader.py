@@ -101,7 +101,7 @@ class DatasetParams:
                     root = self._cfg_path(cfg, 'image_dir')
 
                 caption_path = self._cfg_path(cfg, 'caption_path')
-                vocab_path = self._cfg_path(cfg, 'vocab_path')
+                cfg_vocab_path = vocab_path if vocab_path else self._cfg_path(cfg, 'vocab_path')
                 features_path = self._cfg_path(cfg, 'features_path')
                 subset = cfg.get('subset')
 
@@ -110,7 +110,7 @@ class DatasetParams:
                                                dataset_class,
                                                root,
                                                caption_path,
-                                               vocab_path,
+                                               cfg_vocab_path,
                                                features_path,
                                                subset)
 
