@@ -61,7 +61,8 @@ class DatasetParams:
         for dataset in datasets:
             dataset = dataset.lower()
             if config[dataset]:
-                # If dataset is of the form "parent_dataset:child_split", use default values from parent
+                # If dataset is of the form "parent_dataset:child_split", if child doesn't have a parameter specified
+                # use fallback values from parent
                 cfg, child_split = self._get_combined_cfg(config, dataset) 
                 if num_datasets == 1:
                     user_args = d
@@ -115,7 +116,7 @@ class DatasetParams:
             # Take defaults from parent and override them as needed:
 
             for key in config[parent_dataset]:
-                if not config[dataset].get(key):
+                if config[dataset].get(key) is None:
                     config[dataset][key] = config[parent_dataset][key]
 
         return config[dataset], child_subset

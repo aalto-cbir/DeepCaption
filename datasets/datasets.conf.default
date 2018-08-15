@@ -1,5 +1,6 @@
 [coco]
 dataset_class = CocoDataset
+image_dir = defined_in_children
 vocab_path = datasets/processed/COCO/vocab.pkl
 features_path = 
 subset = 
