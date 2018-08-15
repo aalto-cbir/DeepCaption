@@ -27,122 +27,37 @@ DatasetConfig = namedtuple('DatasetConfig',
 
 
 class DatasetParams:
-    def __init__(self, d):
+    def __init__(self, dataset_config_file=None):
         """Initialize dataset configuration object, by default loading data from
-        datasets/datasets.conf file"""
+        datasets/datasets.conf file or creating a generic configuration if datasets.conf
+        file was not specified or found"""
 
-        config = configparser.ConfigParser()
+        self.config = configparser.ConfigParser()
 
-        config_path = self._get_config_path(d)
+        config_path = self._get_config_path(dataset_config_file)
 
         # If the configuration file is not found, we can still use
         # 'generic' dataset with sensible defaults when infering.
         if not config_path:
-            if d['dataset'] == 'generic':
-                print('Config file not found. Loading default settings for generic dataset.')
-                if not d['vocab_path']:
-                    print("Please specify at least a vocabulary path...")
-                    sys.exit(1)
-                config['generic'] = {'dataset_class': 'GenericDataset'}
-            else:
-                print('Dataset configuration file {} does not exist'.
-                      format(d['dataset_config_file']))
-                print('Hint: you can use datasets/datasets.conf.default as a starting point.')
-                sys.exit(1)
+            print('Config file not found. Loading default settings for generic dataset.')
+            print('Hint: you can use datasets/datasets.conf.default as a starting point.')
+            self.config['generic'] = {'dataset_class': 'GenericDataset'}
         # Otherwise all is good, and we are using the config file as
         else:
             print("Loading dataset configuration from {}...".format(config_path))
-            config.read(config_path)
+            self.config.read(config_path)
 
-        datasets = d['dataset'].split('+')
-        num_datasets = len(datasets)
-
-        self.configs = []
-        for dataset in datasets:
-            dataset = dataset.lower()
-            if config[dataset]:
-                # If dataset is of the form "parent_dataset:child_split", if child doesn't have a parameter specified
-                # use fallback values from parent
-                cfg, child_split = self._get_combined_cfg(config, dataset) 
-                if num_datasets == 1:
-                    user_args = d
-                else:
-                    # Ignore user args for more than one dataset
-                    user_args = {}
-
-                dataset_name = dataset
-                dataset_class = cfg['dataset_class']
-
-                if d.get('image_files'):
-                    root = []
-                    root += d['image_files']
-                    if d.my_get_path('image_dir'):
-                        root += glob.glob(d['image_dir'] + '/*.jpg')
-                        root += glob.glob(d['image_dir'] + '/*.jpeg')
-                        root += glob.glob(d['image_dir'] + '/*.png')
-                else:
-                    root = self._get_param(user_args, 'image_dir',
-                                           self._cfg_path(cfg, 'image_dir'))
-
-                caption_path = self._get_param(user_args, 'caption_path',
-                                               self._cfg_path(cfg, 'caption_path'))
-                vocab_path = self._get_param(user_args, 'vocab_path',
-                                               self._cfg_path(cfg, 'vocab_path'))
-                features_path = self._get_param(user_args, 'features_path',
-                                                self._cfg_path(cfg, 'features_path'))
-                subset = self._get_param(user_args, 'subset', cfg.get('subset'))
-
-                dataset_config = DatasetConfig(dataset_name,
-                                               child_split,
-                                               dataset_class,
-                                               root,
-                                               caption_path,
-                                               vocab_path,
-                                               features_path,
-                                               subset)
-
-                self.configs.append(dataset_config)
-            else:
-                print('Invalid dataset specified')
-                sys.exit(1)
-
-        # Vocab path can be overriden from arguments even for multiple datasets:
-        self.vocab_path = self._get_param(d, 'vocab_path',
-                                          self._cfg_path(config[datasets[0]], 'vocab_path'))
-
-    def _get_combined_cfg(self, config, dataset):
-        """If dataset name is separated by 'parent_dataset:child_split' (i.e. 'coco:train2014')
-         fallback to parent settings when child configuration has no corresponding parameter included"""
-        child_subset = None
-        if ":" in dataset:
-            (parent_dataset, child_subset) = tuple(dataset.split(':'))
-
-            # Take defaults from parent and override them as needed:
-            for key in config[parent_dataset]:
-                if config[dataset].get(key) is None:
-                    config[dataset][key] = config[parent_dataset][key]
-
-        return config[dataset], child_subset
-
-    def _cfg_path(self, cfg, s):
-        path = cfg.get(s)
-        if path is None or os.path.isabs(path):
-            return path
-        else:
-            root_dir = cfg.get('root_dir', '')
-            return os.path.join(root_dir, path)
-
-    def _get_config_path(self, d):
+    def _get_config_path(self, dataset_config_file):
         """Try to intelligently find the configuration file"""
         # List of places to look for dataset configuration - in this order:
         # In current working directory
-        conf_in_working_dir = d['dataset_config_file']
+        conf_in_working_dir = dataset_config_file
         # In user configuration directory:
         conf_in_user_dir = os.path.expanduser(os.path.join("~/.config/image_captioning",
-                                                           d['dataset_config_file']))
+                                                           dataset_config_file))
         # Inside code folder:
         file_path = os.path.realpath(__file__)
-        conf_in_code_dir = os.path.join(os.path.dirname(file_path), d['dataset_config_file'])
+        conf_in_code_dir = os.path.join(os.path.dirname(file_path), dataset_config_file)
 
         search_paths = [conf_in_working_dir, conf_in_user_dir, conf_in_code_dir]
 
@@ -154,34 +69,102 @@ class DatasetParams:
 
         return config_path
 
-    @classmethod
-    def fromargs(cls, args):
-        return cls(vars(args))
+    def get_params(self, args_dataset, image_dir=None, image_files=None, vocab_path=None):
+
+        datasets = args_dataset.split('+')
+        configs = []
+        for dataset in datasets:
+            dataset = dataset.lower()
+
+            if self.config[dataset]:
+                # If dataset is of the form "parent_dataset:child_split",
+                # if child doesn't have a parameter specified use fallback values from parent
+                cfg, child_split = self._combine_cfg(dataset)
+
+                dataset_name = dataset
+                dataset_class = cfg['dataset_class']
+
+                root = None
+                if dataset == 'generic' and (image_files or image_dir):
+                    if image_files:
+                        image_list = []
+                        image_list += image_files
+                        if image_dir:
+                            image_list += glob.glob(image_dir + '/*.jpg')
+                            image_list += glob.glob(image_dir + '/*.jpeg')
+                            image_list += glob.glob(image_dir + '/*.png')
+
+                        root = image_list
+                    elif image_dir:
+                        root = image_dir
+                else:
+                    root = self._cfg_path(cfg, 'image_dir')
+
+                caption_path = self._cfg_path(cfg, 'caption_path')
+                vocab_path = self._cfg_path(cfg, 'vocab_path')
+                features_path = self._cfg_path(cfg, 'features_path')
+                subset = cfg.get('subset')
+
+                dataset_config = DatasetConfig(dataset_name,
+                                               child_split,
+                                               dataset_class,
+                                               root,
+                                               caption_path,
+                                               vocab_path,
+                                               features_path,
+                                               subset)
+
+                configs.append(dataset_config)
+            else:
+                print('Invalid dataset specified')
+                sys.exit(1)
+
+        # Vocab path can be overriden from arguments even for multiple datasets:
+        main_vocab_path = vocab_path if vocab_path else self._cfg_path(
+            self.config[datasets[0]], 'vocab_path')
+
+        if main_vocab_path is None:
+            print("WARNING: Vocabulary path not specified!")
+
+        self.print_info(configs)
+
+        return configs, main_vocab_path
+
+    def _combine_cfg(self, dataset):
+        """If dataset name is separated by 'parent_dataset:child_split' (i.e. 'coco:train2014')
+        fallback to parent settings when child configuration has no corresponding parameter
+        included"""
+        child_subset = None
+        if ":" in dataset:
+            (parent_dataset, child_subset) = tuple(dataset.split(':'))
+
+            # Take defaults from parent and override them as needed:
+            for key in self.config[parent_dataset]:
+                if self.config[dataset].get(key) is None:
+                    self.config[dataset][key] = self.config[parent_dataset][key]
+
+        return self.config[dataset], child_subset
+
+    def _cfg_path(self, cfg, s):
+        path = cfg.get(s)
+        if path is None or os.path.isabs(path):
+            return path
+        else:
+            root_dir = cfg.get('root_dir', '')
+            return os.path.join(root_dir, path)
 
     def _get_param(self, d, param, default):
         if not d or param not in d or not d[param]:
             return default
         return d[param]
 
-    def get_vocab(self):
-        # Load vocabulary wrapper
-        with open(self.vocab_path, 'rb') as f:
-            print("Extracting vocabulary from {}".format(self.vocab_path))
-            vocab = pickle.load(f)
-
-        return vocab
-
-    def print_info(self):
+    def print_info(self, configs):
         """Print out details about datasets being configured"""
-        for ds in self.configs:
+        for ds in configs:
             print('[Dataset]', ds.name)
             for name, value in ds._asdict().items():
                 if name != 'name' and value is not None:
                     print('    {}: {}'.format(name, value))
-
-    def get_all(self):
-        self.print_info()
-        return self.configs, self.get_vocab()
 
 
 class ExternalFeature:
@@ -516,7 +499,7 @@ class MSRVTTDataset(data.Dataset):
                     self.captions.append((vid, s['caption']))
 
         print("MSR-VTT info [{}] loaded for {} images, {} captions.".format(self.subset,
-            len(subset_vids), len(self.captions)))
+                                                                            len(subset_vids), len(self.captions)))
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""

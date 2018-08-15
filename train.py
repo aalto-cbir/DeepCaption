@@ -14,7 +14,7 @@ from datetime import datetime
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
-from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 
@@ -155,7 +155,11 @@ def main(args):
     state = None
 
     # Get dataset parameters and vocabulary wrapper:
-    dataset_params, vocab = DatasetParams.fromargs(args).get_all()
+    dataset_configs = DatasetParams(args.dataset_config_file)
+    dataset_params, vocab_path = dataset_configs.get_params(args.dataset, args.vocab_path)
+    vocab = get_vocab(vocab_path)
+    if args.validation:
+        validation_dataset_params, _ = dataset_configs.get_params(args.validation, None)
 
     params = ModelParams.fromargs(args)
     print(params)

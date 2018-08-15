@@ -13,7 +13,7 @@ from PIL import Image
 import torch
 from torchvision import transforms
 
-from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 
@@ -101,7 +101,11 @@ def main(args):
 
 
     # Get dataset parameters and vocabulary wrapper:
-    dataset_params, vocab = DatasetParams.fromargs(args).get_all()
+    dataset_configs = DatasetParams(args.dataset_config_file)
+    dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
+                                                            args.image_dir,
+                                                            args.image_files)
+    vocab = get_vocab(vocab_path)
 
     # Build models
     print('Bulding models.')
