@@ -234,10 +234,7 @@ if __name__ == '__main__':
     #     args.image_dir = 'datasets/data/COCO/images/val2014'
 
     begin = datetime.now()
-    print('Started inference at {}, with parameters:'.format(begin))
-    for k, v in vars(args).items():
-        print('[args] {}={}'.format(k, v))
-    sys.stdout.flush()
+    print('Started inference at {}.'.format(begin))
 
     main(args)
 

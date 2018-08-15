@@ -59,7 +59,7 @@ class DatasetParams:
 
         # Vocab path can be overriden from arguments even for multiple datasets:
         self.vocab_path = self._get_param(d, 'vocab_path',
-                                          config[datasets[0]].get('vocab_path'))
+                                          self._cfg_path(config[datasets[0]], 'vocab_path'))
         self.configs = []
         for dataset in datasets:
             dataset = dataset.lower()
@@ -77,17 +77,18 @@ class DatasetParams:
                 if d.get('image_files'):
                     root = []
                     root += d['image_files']
-                    if d.get('image_dir'):
+                    if d.my_get_path('image_dir'):
                         root += glob.glob(d['image_dir'] + '/*.jpg')
                         root += glob.glob(d['image_dir'] + '/*.jpeg')
                         root += glob.glob(d['image_dir'] + '/*.png')
                 else:
-                    root = self._get_param(user_args, 'image_dir', cfg.get('image_dir'))
+                    root = self._get_param(user_args, 'image_dir',
+                                           self._cfg_path(cfg, 'image_dir'))
 
                 caption_path = self._get_param(user_args, 'caption_path',
-                                               cfg.get('caption_path'))
+                                               self._cfg_path(cfg, 'caption_path'))
                 features_path = self._get_param(user_args, 'features_path',
-                                                cfg.get('features_path'))
+                                                self._cfg_path(cfg, 'features_path'))
                 subset = self._get_param(user_args, 'subset', cfg.get('subset'))
 
                 dataset_config = DatasetConfig(dataset_name,
@@ -101,6 +102,14 @@ class DatasetParams:
             else:
                 print('Invalid dataset specified')
                 sys.exit(1)
+
+    def _cfg_path(self, cfg, s):
+        path = cfg.get(s)
+        if os.path.isabs(path):
+            return path
+        else:
+            root_dir = cfg.get('root_dir', '')
+            return os.path.join(root_dir, path)
 
     def _get_config_path(self, d):
         """Try to intelligently find the configuration file"""
@@ -727,6 +736,10 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
     datasets = []
 
     for dataset_config in dataset_configs:
+        if subset == 'validate' and dataset_config.dataset_class != 'MSRVTTDataset':
+            print('Validate implemented only for MSR-VTT at the moment, skipping',
+                  dataset_config.dataset_class)
+            continue
 
         dataset_cls = get_dataset_class(dataset_config.dataset_class)
         root = dataset_config.image_dir

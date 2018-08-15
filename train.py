@@ -230,6 +230,10 @@ def main(args):
     else:
         params.learning_rate = default_lr
 
+    if args.validation > 0 and args.lr_scheduler:
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
+                                                               patience=2)
+
     # Train the models
     total_step = len(data_loader)
     if args.load_model:
@@ -318,9 +322,13 @@ def main(args):
             decoder = decoder.train()
 
             end = datetime.now()
-            stats['validation_loss'] = total_loss/num_batches
+            val_loss = total_loss/num_batches
+            stats['validation_loss'] = val_loss
             print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
-                epoch + 1, end - begin, stats['validation_loss']))
+                epoch + 1, end - begin, val_loss))
+
+            if args.lr_scheduler:
+                scheduler.step(val_loss)
 
         all_stats[epoch+1] = stats
         save_stats(args, params, all_stats)
