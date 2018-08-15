@@ -102,6 +102,42 @@ def save_stats(args, params, all_stats):
         json.dump(all_stats, outfile, indent=2)
 
 
+def find_matching_model(args, params):
+    """Get a model file matching the parameters given with the latest trained epoch"""
+    print('Attempting to resume from latest epoch matching supplied '
+          'parameters...')
+    # Get a matching filename without the epoch part
+    model_name = get_model_name(args, params)
+
+    # Files matching model:
+    full_path_prefix = os.path.join(args.model_path, model_name)
+    matching_files = glob.glob(full_path_prefix + '*.model')
+
+    print("Looking for: {}".format(full_path_prefix + '*.model'))
+
+    # get a file name with a largest matching epoch:
+    file_regex = full_path_prefix + '/ep([0-9]*).model'
+    r = re.compile(file_regex)
+    last_epoch = 0
+
+    for file in matching_files:
+        m = r.match(file)
+        if m:
+            matched_epoch = int(m.group(1))
+            if matched_epoch > last_epoch:
+                last_epoch = matched_epoch
+
+    model_file_path = None
+    if last_epoch:
+        model_file_name = 'ep{}.model'.format(last_epoch)
+        model_file_path = os.path.join(full_path_prefix, model_file_name)
+        print('Found matching model: {}'.format(args.load_model))
+    else:
+        print("Warning: Failed to intelligently resume...")
+
+    return model_file_path
+
+
 def main(args):
     # Create model directory
     if not os.path.exists(args.model_path):
@@ -120,11 +156,6 @@ def main(args):
 
     # Get dataset parameters and vocabulary wrapper:
     dataset_params, vocab = DatasetParams.fromargs(args).get_all()
-    for ds in dataset_params:
-        print('[Dataset]', ds.name)
-        for name, value in ds._asdict().items():
-            if name != 'name' and value is not None:
-                print('    {}: {}'.format(name, value))
 
     params = ModelParams.fromargs(args)
     print(params)
@@ -133,34 +164,7 @@ def main(args):
     # Intelligently resume from the newest trained epoch matching
     # supplied configuration:
     if args.resume:
-        print('Attempting to resume from latest epoch matching supplied '
-              'parameters...')
-        # Get a matching filename without the epoch part
-        model_name = get_model_name(args, params)
-
-        # Files matching model:
-        full_path_prefix = os.path.join(args.model_path, model_name, model_name)
-        matching_files = glob.glob(full_path_prefix + '*.model')
-
-        print("Looking for: {}".format(full_path_prefix + '*.model'))
-
-        # get a file name with a largest matching epoch:
-        file_regex = full_path_prefix + '-ep([0-9]*).model'
-        r = re.compile(file_regex)
-        last_epoch = -1
-
-        for file in matching_files:
-            m = r.match(file)
-            if m:
-                matched_epoch = int(m.group(1))
-                if matched_epoch > last_epoch:
-                    last_epoch = matched_epoch
-
-        if last_epoch is not -1:
-            args.load_model = '{}-ep{}.model'.format(full_path_prefix, last_epoch)
-            print('Found matching model: {}'.format(args.load_model))
-        else:
-            print("Warning: Failed to intelligently resume...")
+        args.load_model = find_matching_model(args, params)
 
     if args.load_model:
         state = torch.load(args.load_model)

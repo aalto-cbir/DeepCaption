@@ -9,7 +9,7 @@ subset =
 [vgim2p]
 ; Visual Genome paragraph captions
 dataset_class = VisualGenomeIM2PDataset
-image_dir = datasets/processed/VisualGenome/resized_im2p_train
+image_dir = datasets/processed/VisualGenome/resized_vg_all
 caption_path = datasets/data/VisualGenome/im2p/paragraphs_v1.json
 vocab_path = datasets/processed/COCO/vocab.pkl
 features_path = 
