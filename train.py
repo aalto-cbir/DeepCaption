@@ -156,10 +156,11 @@ def main(args):
 
     # Get dataset parameters and vocabulary wrapper:
     dataset_configs = DatasetParams(args.dataset_config_file)
-    dataset_params, vocab_path = dataset_configs.get_params(args.dataset, args.vocab_path)
+    dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
+                                                            vocab_path=args.vocab_path)
     vocab = get_vocab(vocab_path)
     if args.validation:
-        validation_dataset_params, _ = dataset_configs.get_params(args.validation, None)
+        validation_dataset_params, _ = dataset_configs.get_params(args.validation)
 
     params = ModelParams.fromargs(args)
     print(params)
@@ -356,15 +357,15 @@ if __name__ == '__main__':
                         help='size for randomly cropping images')
     parser.add_argument('--vocab_path', type=str, default=None,
                         help='path for vocabulary wrapper')
-    parser.add_argument('--image_dir', type=str, default=None,
-                        help='directory for resized images'
-                        'if "image_dir" points to zip archive - extract '
-                        'to /tmp/ , use the extracted images to train')
+    # parser.add_argument('--image_dir', type=str, default=None,
+    #                    help='directory for resized images'
+    #                    'if "image_dir" points to zip archive - extract '
+    #                    'to /tmp/ , use the extracted images to train')
     parser.add_argument('--tmp_dir_prefix', type=str,
                         default='image_captioning',
                         help='where in /tmp folder to store project data')
-    parser.add_argument('--caption_path', type=str, default=None,
-                        help='path for train annotation json file')
+    # parser.add_argument('--caption_path', type=str, default=None,
+    #                    help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for printing log info')
     parser.add_argument('--resume', action="store_true",
@@ -383,10 +384,10 @@ if __name__ == '__main__':
     parser.add_argument('--persist_features', type=str,
                         help='features accessible in all caption generation '
                         'steps, given as comma separated list')
-    parser.add_argument('--features_path', type=str,
-                        help='directory of external feature files, if not '
-                        'specified should be given with absolute paths, or '
-                        'expected to be found in the working directory')
+    # parser.add_argument('--features_path', type=str,
+    #                    help='directory of external feature files, if not '
+    #                    'specified should be given with absolute paths, or '
+    #                    'expected to be found in the working directory')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
