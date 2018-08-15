@@ -16,7 +16,7 @@ from model_vist import ModelParams, EncoderCNN, EncoderRNN, DecoderRNN
 from torchvision import transforms
 from data_loader import get_loader, collate_fn_vist
 
-from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

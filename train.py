@@ -14,7 +14,7 @@ from datetime import datetime
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
-from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 

@@ -4,7 +4,7 @@ import pickle
 import sys
 import torch
 import numpy as np
-from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
 
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms

@@ -13,7 +13,7 @@ from PIL import Image
 import torch
 from torchvision import transforms
 
-from build_vocab import Vocabulary  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
 from model import ModelParams, EncoderCNN, DecoderRNN
 
