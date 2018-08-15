@@ -1,10 +1,16 @@
 [coco]
 dataset_class = CocoDataset
 root_dir = /m/cs/scratch/imagedb/picsom/databases/COCO
-image_dir = image_captioning/train2014_resized
-caption_path = download/annotations/captions_train2014.json
 vocab_path = image_captioning/vocab.pkl
 features_path = features/
+
+[coco:train2014]
+image_dir = image_captioning/train2014_resized
+caption_path = download/annotations/captions_train2014.json
+
+[coco:val2014]
+image_dir = image_captioning/val2014_resized
+caption_path = download/annotations/captions_val2014.json
 
 [msrvtt]
 dataset_class = MSRVTTDataset
@@ -14,8 +20,17 @@ caption_path = download/train_val_videodatainfo.json
 vocab_path = analysis/mvsjober/image_captioning/vocab.pkl
 features_path = features/
 
+[msrvtt:train]
+split = train
+
+[msrvtt:validate]
+# MSR-VTT validation set
+split = validate
+
 [trecvid2018]
 dataset_class = TRECVID2018Dataset
 root_dir = /m/cs/scratch/imagedb/picsom/databases/trecvid2018
 image_dir = middleframes/
 features_path = features/
+
+[trecvid2016]
