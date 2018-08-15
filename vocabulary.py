@@ -1,3 +1,6 @@
+import pickle
+
+
 class Vocabulary(object):
     """Simple vocabulary wrapper."""
 
@@ -19,3 +22,12 @@ class Vocabulary(object):
 
     def __len__(self):
         return len(self.word2idx)
+
+
+def get_vocab(vocab_path):
+    # Load vocabulary wrapper
+    with open(vocab_path, 'rb') as f:
+        print("Extracting vocabulary from {}".format(vocab_path))
+        vocab = pickle.load(f)
+
+    return vocab
