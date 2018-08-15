@@ -141,7 +141,16 @@ class DatasetParams:
 
         return vocab
 
+    def print_info(self):
+        """Print out details about datasets being configured"""
+        for ds in self.configs:
+            print('[Dataset]', ds.name)
+            for name, value in ds._asdict().items():
+                if name != 'name' and value is not None:
+                    print('    {}: {}'.format(name, value))
+
     def get_all(self):
+        self.print_info()
         return self.configs, self.get_vocab()
 
 
