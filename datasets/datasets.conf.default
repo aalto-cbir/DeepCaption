@@ -1,10 +1,17 @@
 [coco]
 dataset_class = CocoDataset
-image_dir = datasets/processed/COCO/train2014_resized
-caption_path = datasets/data/COCO/annotations/captions_train2014.json
+image_dir = defined_in_children
 vocab_path = datasets/processed/COCO/vocab.pkl
 features_path = 
 subset = 
+
+[coco:train2014]
+image_dir = datasets/processed/COCO/train2014_resized
+caption_path = datasets/data/COCO/annotations/captions_train2014.json
+
+[coco:val2014]
+image_dir = datasets/processed/COCO/val2014_resized
+caption_path = datasets/data/COCO/annotations/captions_val2014.json
 
 [vgim2p]
 ; Visual Genome paragraph captions
