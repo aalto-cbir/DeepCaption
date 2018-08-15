@@ -405,6 +405,7 @@ if __name__ == '__main__':
                         help='Validate at every VALIDATION epochs, 0 means never validate.')
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
+    parser.add_argument('--lr_scheduler', action='store_true')
 
     args = parser.parse_args()
 
@@ -416,5 +417,4 @@ if __name__ == '__main__':
     main(args=args)
 
     end = datetime.now()
-    print('Training ended at {}. Total training time: {}.'.
-          format(end, end - begin))
+    print('Training ended at {}. Total training time: {}.'.format(end, end - begin))

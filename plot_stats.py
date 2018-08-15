@@ -21,7 +21,7 @@ def plot_stats(label, stats, color):
 
 
 def main(args):
-    colors = ['blue', 'red', 'cyan', 'yellow', 'gray']
+    colors = ['blue', 'red', 'cyan', 'yellow', 'gray', 'black']
     labels = args.labels.split(',') if args.labels else []
 
     for i, filename in enumerate(args.files):
