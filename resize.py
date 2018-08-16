@@ -15,7 +15,15 @@ def resize_image(image, size):
         return cv2.resize(image, size)
     except OSError as e:
         print("WARNING: unable to resize image {}: {}".format(image, str(e)))
-        return None
+        return image
+
+
+def save_image(output_path, img):
+    # noinspection PyBroadException
+    try:
+        cv2.imwrite(output_path, img)
+    except Exception as _:
+        print('ERROR saving {}'.format(output_path))
 
 
 def resize_images(image_dir, output_dir, create_zip, size):
@@ -26,7 +34,6 @@ def resize_images(image_dir, output_dir, create_zip, size):
     if args.subset:
         print('Resizing image subset defined in {} ...'.format(args.subset))
         subset_ids = [line.rstrip() for line in open(args.subset, 'r')]
-        num_images = len(subset_ids)
         images = []
         for img_id in subset_ids:
             # Attempt to auto-detect file extension:
@@ -52,7 +59,7 @@ def resize_images(image_dir, output_dir, create_zip, size):
                 img = cv2.imread(os.path.join(image_dir, image))
                 if img is not None:
                     img = resize_image(img, size)
-                    cv2.imwrite(output_path, img)
+                    save_image(output_path, img)
                 else:
                     print('image {} not found or corrupted'.format(os.path.join(image_dir,
                                                                                 image)))
