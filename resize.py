@@ -8,6 +8,8 @@ import pymp
 import multiprocessing
 import glob
 
+from feature_extractor import image_types
+
 
 def resize_image(image, size):
     """Resize an image to the given size."""
@@ -41,7 +43,9 @@ def resize_images(image_dir, output_dir, create_zip, size):
             images.append("{}.{}".format(img_id, img_ext))
     else:
         print('Resizing all images...')
-        images = os.listdir(image_dir)
+        images = []
+        for image_type in image_types:
+            images.extend(glob.glob(os.path.join(image_dir, image_type)))
     num_images = len(images)
 
     # Run the job on several cores to speed it up:
