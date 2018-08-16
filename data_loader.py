@@ -292,6 +292,10 @@ class CocoDataset(data.Dataset):
         img_id = coco.anns[ann_id]['image_id']
         path = coco.loadImgs(img_id)[0]['file_name']
 
+        # Yes, this works... for now
+        if not path.startswith('COCO'):
+            path = 'COCO_val2014_' + path
+
         if not self.skip_images:
             image = Image.open(os.path.join(self.root, path)).convert('RGB')
             if self.transform is not None:

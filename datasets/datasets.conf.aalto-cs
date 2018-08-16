@@ -5,12 +5,20 @@ vocab_path = image_captioning/vocab.pkl
 features_path = features/
 
 [coco:train2014]
-image_dir = image_captioning/train2014_resized
+image_dir = image_captioning/train2014_256x256
 caption_path = download/annotations/captions_train2014.json
 
 [coco:val2014]
-image_dir = download/images/val2014/
+image_dir = image_captioning/val2014_256x256
 caption_path = download/annotations/captions_val2014.json
+
+[coco:train2017]
+caption_path = download/annotations/captions_train2017.json
+
+[coco:val2017]
+caption_path = download/annotations/captions_val2017.json
+image_dir = image_captioning/val2014_256x256
+
 
 [msrvtt]
 dataset_class = MSRVTTDataset
