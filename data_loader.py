@@ -755,7 +755,7 @@ def get_dataset_class(cls_name):
 
 
 def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
-               subset=None, ext_feature_sets=None, skip_images=False, _collate_fn=collate_fn):
+               ext_feature_sets=None, skip_images=False, _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     datasets = []
@@ -764,7 +764,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         dataset_cls = get_dataset_class(dataset_config.dataset_class)
         root = dataset_config.image_dir
         json_file = dataset_config.caption_path
-        subset = subset if subset is not None else dataset_config.subset
+        subset = dataset_config.subset
         fpath = dataset_config.features_path
 
         loaders = None
