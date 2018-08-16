@@ -59,6 +59,9 @@ class ModelParams:
     def has_internal_features(self):
         return self.features.internal or self.persist_features.internal
 
+    def has_external_features(self):
+        return self.features.external or self.persist_features.external
+
     def update_ext_features(self, ef):
         self.features = self._update_ext_features(ef, self.features)
 

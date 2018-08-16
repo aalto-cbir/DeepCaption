@@ -41,11 +41,13 @@ class DatasetParams:
         if not config_path:
             print('Config file not found. Loading default settings for generic dataset.')
             print('Hint: you can use datasets/datasets.conf.default as a starting point.')
-            self.config['generic'] = {'dataset_class': 'GenericDataset'}
         # Otherwise all is good, and we are using the config file as
         else:
             print("Loading dataset configuration from {}...".format(config_path))
             self.config.read(config_path)
+
+        # Generic, "fall back" dataset
+        self.config['generic'] = {'dataset_class': 'GenericDataset'}
 
     def _get_config_path(self, dataset_config_file):
         """Try to intelligently find the configuration file"""
@@ -277,7 +279,9 @@ class CocoDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
-        print("COCO info loaded for {} images.".format(len(self.ids)))
+
+        print("COCO info loaded for {} images and {} captions.".format(len(self.coco.imgs),
+                                                                       len(self.ids)))
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""

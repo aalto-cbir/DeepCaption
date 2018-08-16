@@ -99,12 +99,15 @@ def main(args):
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
 
-
     # Get dataset parameters and vocabulary wrapper:
     dataset_configs = DatasetParams(args.dataset_config_file)
     dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
                                                             args.image_dir,
-                                                            args.image_files)
+                                                            args.image_files,
+                                                            vocab_path=args.vocab_path)
+    if not vocab_path:
+        print('ERROR: you must specify a vocabulary with the --vocab_path option!')
+        sys.exit(1)
     vocab = get_vocab(vocab_path)
 
     # Build models
@@ -118,12 +121,18 @@ def main(args):
         params.update_ext_persist_features(args.ext_persist_features)
     print(params)
 
+    if params.has_external_features() and any(dc.name == 'generic' for dc in dataset_params):
+        print('ERROR: you cannot use external features without specifying all datasets in '
+              'datasets.conf.')
+        print('Hint: take a look at datasets/datasets.conf.default.')
+        sys.exit(1)
+
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
 
     ext_feature_sets = [params.features.external, params.persist_features.external]
     data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
-                                      shuffle=True, num_workers=args.num_workers,
+                                      shuffle=False, num_workers=args.num_workers,
                                       ext_feature_sets=ext_feature_sets,
                                       subset=args.subset,
                                       skip_images=not params.has_internal_features())
@@ -178,12 +187,21 @@ def main(args):
 
     output_file = None
     if not args.output_file and not args.print_results:
-        output_file = basename(args.model) + '.json'
+        output_file = basename(args.model) + '.txt'
     else:
         output_file = args.output_file
 
     if output_file:
-        json.dump(output_data, open(os.path.join(args.results_path, output_file), 'w'))
+        output_format = 'plain text'
+        if output_file.endswith('.json'):
+            json.dump(output_data, open(os.path.join(args.results_path, output_file), 'w'))
+            output_format = 'COCO json'
+        else:
+            with open(output_file, 'w') as fp:
+                for data in output_data:
+                    print(data['image_id'], data['caption'], file=fp)
+
+        print('Wrote generated captions to {} as {}'.format(output_file, output_format))
 
     if args.print_results:
         for d in output_data:
@@ -207,9 +225,7 @@ if __name__ == '__main__':
                         'listing ids of images to include')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
-    parser.add_argument('--vocab_path', type=str,
-                        default='datasets/processed/COCO/vocab.pkl',
-                        help='path for vocabulary wrapper')
+    parser.add_argument('--vocab_path', type=str, help='path for vocabulary wrapper')
     parser.add_argument('--ext_features', type=str,
                         help='paths for the external features, overrides the '
                         'paths in the model ckpt file (which are the ones '
