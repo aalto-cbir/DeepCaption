@@ -1,3 +1,25 @@
+##########################################################################################################
+# Dataset configurations. 
+# Location defined by dataset_config_file command line parameter
+##########################################################################################################
+#
+# [Name_in_brackets]:   dataset name, can contain one ":" which denotes parent and child relationship
+#
+# dataset_class:        Python class name of dataset class
+#
+# image_dir:            directory containing the images in some cases, "image_dir" points to zip archive 
+#                       containing the images
+#
+# caption_path:         Path to a file containing image annotation, in JSON format
+#
+# vocab_path:           Location of a Pickled vocabulary object (mapping words to integers)
+#
+# features_path:        Directory of external feature files, if not specified should be given with 
+#                       absolute paths, or expected to be found in the working directory
+#
+# subset_path:          Path to (optional) new-line separated file listing ids of images to include
+##########################################################################################################
+
 [coco]
 dataset_class = CocoDataset
 image_dir = defined_in_children
@@ -14,16 +36,20 @@ image_dir = datasets/processed/COCO/val2014_resized
 caption_path = datasets/data/COCO/annotations/captions_val2014.json
 
 [vgim2p]
-; Visual Genome paragraph captions
+# Visual Genome paragraph captions
 dataset_class = VisualGenomeIM2PDataset
 image_dir = datasets/processed/VisualGenome/resized_vg_all
 caption_path = datasets/data/VisualGenome/im2p/paragraphs_v1.json
 vocab_path = datasets/processed/COCO/vocab.pkl
-features_path = 
+
+[vgim2p:train]
 subset = datasets/data/VisualGenome/im2p/train_split.json
 
+[vgim2p:val]
+subset = datasets/data/VisualGenome/im2p/val_split.json
+
 [vist]
-; Vist sequence captions
+# Vist sequence captions
 dataset_class = VistDataset
 image_dir = 
 caption_path = 

@@ -134,7 +134,6 @@ def main(args):
     data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
                                       shuffle=False, num_workers=args.num_workers,
                                       ext_feature_sets=ext_feature_sets,
-                                      subset=args.subset,
                                       skip_images=not params.has_internal_features())
 
     encoder = EncoderCNN(params, ef_dims[0]).eval()
@@ -220,9 +219,6 @@ if __name__ == '__main__':
     parser.add_argument('image_files', type=str, nargs='*')
     parser.add_argument('--image_dir', type=str,
                         help='input image dir for generating captions')
-    parser.add_argument('--subset', type=str,
-                        help='path to (optional) new-line separated file '
-                        'listing ids of images to include')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
     parser.add_argument('--vocab_path', type=str, help='path for vocabulary wrapper')
@@ -232,10 +228,6 @@ if __name__ == '__main__':
                         'used for training), comma separated')
     parser.add_argument('--ext_persist_features', type=str,
                         help='paths for external persist features')
-    # parser.add_argument('--features_path', type=str,
-    #                    help='directory of external feature files, if not '
-    #                    'specified should be given with absolute paths, or '
-    #                    'expected to be found in the working directory')
     parser.add_argument('--output_file', type=str,
                         help='path for output JSON, default: model_name.json')
     parser.add_argument('--verbose', help='verbose output',

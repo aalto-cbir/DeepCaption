@@ -349,8 +349,6 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
                         help='location of dataset configuration file')
-    parser.add_argument('--subset', type=str, default=None,
-                        help='file defining the subset of training images')
     parser.add_argument('--load_model', type=str,
                         help='existing model, for continuing training')
     parser.add_argument('--model_name', type=str)
@@ -362,15 +360,9 @@ if __name__ == '__main__':
                         help='size for randomly cropping images')
     parser.add_argument('--vocab_path', type=str, default=None,
                         help='path for vocabulary wrapper')
-    # parser.add_argument('--image_dir', type=str, default=None,
-    #                    help='directory for resized images'
-    #                    'if "image_dir" points to zip archive - extract '
-    #                    'to /tmp/ , use the extracted images to train')
     parser.add_argument('--tmp_dir_prefix', type=str,
                         default='image_captioning',
                         help='where in /tmp folder to store project data')
-    # parser.add_argument('--caption_path', type=str, default=None,
-    #                    help='path for train annotation json file')
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for printing log info')
     parser.add_argument('--resume', action="store_true",
@@ -389,10 +381,6 @@ if __name__ == '__main__':
     parser.add_argument('--persist_features', type=str,
                         help='features accessible in all caption generation '
                         'steps, given as comma separated list')
-    # parser.add_argument('--features_path', type=str,
-    #                    help='directory of external feature files, if not '
-    #                    'specified should be given with absolute paths, or '
-    #                    'expected to be found in the working directory')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
