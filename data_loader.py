@@ -261,7 +261,7 @@ class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -274,26 +274,33 @@ class CocoDataset(data.Dataset):
         from pycocotools.coco import COCO
         self.root = root
         self.coco = COCO(json_file)
-        self.ids = list(self.coco.anns.keys())
+        self.iter_over_images = iter_over_images
+        if iter_over_images:
+            self.ids = list(self.coco.imgs.keys())
+        else:
+            self.ids = list(self.coco.anns.keys())
         self.vocab = vocab
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
 
         print("COCO info loaded for {} images and {} captions.".format(len(self.coco.imgs),
-                                                                       len(self.ids)))
+                                                                       len(self.coco.anns)))
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
-        coco = self.coco
-        vocab = self.vocab
-        ann_id = self.ids[index]
-        caption = coco.anns[ann_id]['caption']
-        img_id = coco.anns[ann_id]['image_id']
-        path = coco.loadImgs(img_id)[0]['file_name']
+        if self.iter_over_images:
+            img_id = self.ids[index]
+            caption = [a['caption'] for a in self.coco.imgToAnns[img_id]]
+            assert self.vocab is None, 'iter_over_images=True and tokenization not supported!'
+        else:
+            ann_id = self.ids[index]
+            caption = self.coco.anns[ann_id]['caption']
+            img_id = self.coco.anns[ann_id]['image_id']
 
-        # Yes, this works... for now
-        if not path.startswith('COCO'):
+        # Get image path
+        path = self.coco.loadImgs(img_id)[0]['file_name']
+        if not path.startswith('COCO'):  # Yes, this works... for now
             path = 'COCO_val2014_' + path
 
         if not self.skip_images:
@@ -306,7 +313,7 @@ class CocoDataset(data.Dataset):
         # Prepare external features, we use paths to access features
         # NOTE: this only works with lmdb
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
-        target = tokenize_caption(caption, vocab)
+        target = tokenize_caption(caption, self.vocab)
 
         return image, target, img_id, feature_sets
 
@@ -319,7 +326,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None):
         """Set the path for images, captions and vocabulary wrapper.
         Args:
             root: image directory.
@@ -395,7 +402,7 @@ class VistDataset(data.Dataset):
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -477,7 +484,7 @@ class MSRVTTDataset(data.Dataset):
     """MSR-VTT Custom Dataset compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -542,7 +549,7 @@ class MSRVTTDataset(data.Dataset):
 
 class TRECVID2018Dataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None):
         self.root = root
         self.vocab = vocab
         self.transform = transform
@@ -592,7 +599,7 @@ class TRECVID2018Dataset(data.Dataset):
 
 class GenericDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None):
         self.filelist = root
         self.vocab = vocab
         self.transform = transform
@@ -653,7 +660,10 @@ def collate_fn(data):
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
 
-    if type(captions[0]) is str:
+    if type(captions[0]) is str:  # we are returning non-tokenized strings
+        targets = captions
+        lengths = None
+    elif type(captions[0]) is list:  # we are returning a list of strings
         targets = captions
         lengths = None
     elif captions[0] is not None:
@@ -755,7 +765,8 @@ def get_dataset_class(cls_name):
 
 
 def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
-               ext_feature_sets=None, skip_images=False, _collate_fn=collate_fn):
+               ext_feature_sets=None, skip_images=False, iter_over_images=False,
+               _collate_fn=collate_fn):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     datasets = []
@@ -782,7 +793,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
 
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
                               subset=subset, transform=transform, skip_images=skip_images,
-                              feature_loaders=loaders)
+                              iter_over_images=iter_over_images, feature_loaders=loaders)
 
         datasets.append(dataset)
 

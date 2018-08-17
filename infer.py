@@ -131,10 +131,14 @@ def main(args):
     print("Loading dataset: {}".format(args.dataset))
 
     ext_feature_sets = [params.features.external, params.persist_features.external]
-    data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
-                                      shuffle=False, num_workers=args.num_workers,
+
+    # We ask it to iterate over images instead of all (image, caption) pairs
+    data_loader, ef_dims = get_loader(dataset_params, vocab=None, transform=transform,
+                                      batch_size=args.batch_size, shuffle=False,
+                                      num_workers=args.num_workers,
                                       ext_feature_sets=ext_feature_sets,
-                                      skip_images=not params.has_internal_features())
+                                      skip_images=not params.has_internal_features(),
+                                      iter_over_images=True)
 
     encoder = EncoderCNN(params, ef_dims[0]).eval()
     decoder = DecoderRNN(params, len(vocab), ef_dims[1]).eval()
@@ -149,7 +153,7 @@ def main(args):
 
     print('Starting inference...')
     show_progress = sys.stderr.isatty() and not args.verbose
-    for i, (images, captions, lengths, image_ids,
+    for i, (images, ref_captions, lengths, image_ids,
             features) in enumerate(tqdm(data_loader, disable=not show_progress)):
         images = images.to(device)
 
