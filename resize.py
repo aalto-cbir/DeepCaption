@@ -38,9 +38,12 @@ def resize_images(image_dir, output_dir, create_zip, size):
         subset_ids = [line.rstrip() for line in open(args.subset, 'r')]
         images = []
         for img_id in subset_ids:
-            # Attempt to auto-detect file extension:
-            img_ext = glob.glob(os.path.join(image_dir, img_id) + '.*')[0].split('.')[-1]
-            images.append("{}.{}".format(img_id, img_ext))
+            # Try with all the supported image types
+            for image_type in image_types:
+                test_path = os.path.join(image_dir, img_id + image_type[1:])
+                if os.path.exists(test_path):
+                    images.append(test_path)
+                    break
     else:
         print('Resizing all images...')
         images = []
@@ -56,24 +59,23 @@ def resize_images(image_dir, output_dir, create_zip, size):
     with pymp.Parallel(num_cores) as p:
         for i in p.range(num_images):
             image = images[i]
-            output_path = os.path.join(output_dir, image)
+            output_path = os.path.join(output_dir, os.path.basename(image))
             if os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
                 print("{} exists, skipping...".format(output_path))
             else:
-                img = cv2.imread(os.path.join(image_dir, image))
+                img = cv2.imread(image)
                 if img is not None:
                     img = resize_image(img, size)
                     save_image(output_path, img)
                 else:
-                    print('image {} not found or corrupted'.format(os.path.join(image_dir,
-                                                                                image)))
+                    print('image {} not found or corrupted'.format(image))
 
             with p.lock:
                 counter[0] += 1
-                i = int(counter[0])
-                if (i + 1) % 100 == 0:
+                j = int(counter[0])
+                if (j + 1) % 100 == 0:
                     print("[{}/{}] Resized the images and saved into '{}'."
-                          .format(i + 1, num_images, output_dir))
+                          .format(j + 1, num_images, output_dir))
 
     if create_zip:
         print("Creating a zip file: {}".format(output_dir + '.zip'))
