@@ -143,6 +143,11 @@ def find_matching_model(args, params):
 
 
 def main(args):
+    if args.validate is None and args.lr_scheduler:
+        print('ERROR: you need to enable validation in order to use the lr_scheduler')
+        print('Hint: use something like --validate=coco:val2017')
+        sys.exit(1)
+
     # Create model directory
     if not os.path.exists(args.model_path):
         os.makedirs(args.model_path)
@@ -239,7 +244,7 @@ def main(args):
     else:
         params.learning_rate = default_lr
 
-    if args.lr_scheduler:
+    if args.validate is not None and args.lr_scheduler:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
 
@@ -336,8 +341,8 @@ def main(args):
             print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
                 epoch + 1, end - begin, val_loss))
 
-        if args.lr_scheduler:
-            scheduler.step(val_loss)
+            if args.lr_scheduler:
+                scheduler.step(val_loss)
 
         all_stats[epoch+1] = stats
         save_stats(args, params, all_stats)
