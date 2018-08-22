@@ -60,15 +60,19 @@ def main(args):
 
     map_size = X.nbytes * 10
 
-    # Replace 'mylmdb' with path to file
+    # Replace 'mylmdb' with path to lmdb file to be created
     env = lmdb.open('mylmdb', map_size=map_size)
  
     show_progress = sys.stderr.isatty() and not args.verbose
     for i, (images, _, _,
             image_ids, _) in enumerate(tqdm(data_loader, disable=not show_progress)):
         images = images.to(device)
-        features = extractor(images).data
+        features = extractor(images).data.cpu().numpy()
 
+        # Write to LMDB object:
+        with env.begin(write=True) as txn:
+            for j, image_id in enumerate(image_ids):
+                txn.put(image_id.encode('ascii'), datum.SerializeToString())
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
