@@ -640,7 +640,7 @@ class GenericDataset(data.Dataset):
         path = os.path.basename(image_path)
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
 
-        return image, None, basename(image_path), feature_sets
+        return image, None, path, feature_sets
 
     def __len__(self):
         return len(self.filelist)
