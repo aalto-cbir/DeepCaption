@@ -119,6 +119,7 @@ class FeatureExtractor(nn.Module):
         elif model_name == 'inceptionv3':
             if debug:
                 print('Using Inception V3, features shape 1000')
+                print('WARNING: Inception requires input images to be 299x299')
             model = models.inception_v3(pretrained=True)
             model.aux_logits = False
             self.extractor = model
