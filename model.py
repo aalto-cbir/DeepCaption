@@ -245,3 +245,36 @@ class DecoderRNN(nn.Module):
         # sampled_ids: (batch_size, max_seq_length)
         sampled_ids = torch.stack(sampled_ids, 1)
         return sampled_ids
+
+
+class EncoderDecoder(nn.Module):
+    def __init__(self, params, device, vocab, state, ef_dims):
+        """Vanilla EncoderDecoder model"""
+        super(EncoderDecoder, self).__init__()
+        print('Using device: {}'.format(device.type))
+        print('Initializing EncoderDecoder model...')
+        self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
+        self.decoder = DecoderRNN(params, len(vocab), ef_dims[1]).to(device)
+
+        self.opt_params = (list(decoder.parameters()) +
+                           list(encoder.linear.parameters()) +
+                           list(encoder.bn.parameters()))
+
+        if state:
+            self.encoder.load_state_dict(state['encoder'])
+            self.decoder.load_state_dict(state['decoder'])
+
+
+    def forward(self, images, init_features, captions, lengths, persist_features):
+
+        features = self.encoder(images, init_features)
+        outputs = self.decoder(features, captions, lengths, images, persist_features)
+        return outputs
+
+    def sample(self, image_tensor, init_features, persist_features, states=None,
+               max_seq_length=20):
+        feature = self.encoder(image_tensor, init_features)
+        sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
+                                          max_seq_length=max_seq_length)
+
+        return sampled_ids

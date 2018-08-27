@@ -15,7 +15,7 @@ from torchvision import transforms
 
 from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
-from model import ModelParams, EncoderCNN, DecoderRNN
+from model import ModelParams, EncoderDecoder
 
 try:
     from tqdm import tqdm
@@ -140,14 +140,8 @@ def main(args):
                                       skip_images=not params.has_internal_features(),
                                       iter_over_images=True)
 
-    encoder = EncoderCNN(params, ef_dims[0]).eval()
-    decoder = DecoderRNN(params, len(vocab), ef_dims[1]).eval()
-    encoder = encoder.to(device)
-    decoder = decoder.to(device)
-
-    # Load the trained model parameters
-    encoder.load_state_dict(state['encoder'])
-    decoder.load_state_dict(state['decoder'])
+    # Build the models
+    model = EncoderDecoder(params, device, vocab, state, ef_dims).eval()
 
     output_data = []
 
@@ -161,9 +155,8 @@ def main(args):
         persist_features = features[1].to(device) if len(features) > 1 else None
 
         # Generate a caption from the image
-        encoded = encoder(images, init_features)
-        sampled_ids_batch = decoder.sample(encoded, images, persist_features,
-                                           max_seq_length=args.max_seq_length)
+        sampled_ids_batch = model.sample(images, init_features, persist_features,
+                                         max_seq_length=args.max_seq_length)
 
         for i in range(sampled_ids_batch.shape[0]):
             sampled_ids = sampled_ids_batch[i].cpu().numpy()
