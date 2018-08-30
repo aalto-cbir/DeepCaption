@@ -122,10 +122,9 @@ def main(args):
     print(params)
 
     if params.has_external_features() and any(dc.name == 'generic' for dc in dataset_params):
-        print('ERROR: you cannot use external features without specifying all datasets in '
+        print('WARNING: you cannot use external features without specifying all datasets in '
               'datasets.conf.')
         print('Hint: take a look at datasets/datasets.conf.default.')
-        sys.exit(1)
 
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))

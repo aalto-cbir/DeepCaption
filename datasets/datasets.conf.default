@@ -24,7 +24,7 @@
 dataset_class = CocoDataset
 image_dir = defined_in_children
 vocab_path = datasets/processed/COCO/vocab.pkl
-features_path = 
+features_path = features
 subset = 
 
 [coco:train2014]
@@ -41,6 +41,7 @@ dataset_class = VisualGenomeIM2PDataset
 image_dir = datasets/processed/VisualGenome/resized_vg_all
 caption_path = datasets/data/VisualGenome/im2p/paragraphs_v1.json
 vocab_path = datasets/processed/COCO/vocab.pkl
+features_path = features
 
 [vgim2p:train]
 subset = datasets/data/VisualGenome/im2p/train_split.json
@@ -78,5 +79,5 @@ dataset_class = GenericDataset
 image_dir =
 caption_path =
 vocab_path = datasets/processed/COCO/vocab.pkl
-features_path =
+features_path = features
 subset = 

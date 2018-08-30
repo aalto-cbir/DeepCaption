@@ -16,10 +16,9 @@ __pycache__
 submit.sh
 .idea
 datasets/pycocoevalcap
-datasets/datasets.conf
 *.pkl
 /logs
 /*.prof
+/datasets/datasets.conf
 .*
 /random_image_dir/
-
