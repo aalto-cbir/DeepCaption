@@ -206,6 +206,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('image_files', type=str, nargs='*')
+    parser.add_argument('--image_dir', type=str,
+                        help='input image dir for generating captions')
     parser.add_argument('--dataset', type=str, default='generic',
                         help='which dataset to use')
     parser.add_argument('--dataset_config_file', type=str,
@@ -215,9 +218,6 @@ if __name__ == '__main__':
                         help='resize input image to this size')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
-    parser.add_argument('image_files', type=str, nargs='*')
-    parser.add_argument('--image_dir', type=str,
-                        help='input image dir for generating captions')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
     parser.add_argument('--vocab_path', type=str, help='path for vocabulary wrapper')
