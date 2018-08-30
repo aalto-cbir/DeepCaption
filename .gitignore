@@ -21,3 +21,5 @@ datasets/datasets.conf
 /logs
 /*.prof
 .*
+/random_image_dir/
+
