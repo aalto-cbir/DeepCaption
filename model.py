@@ -9,6 +9,9 @@ from torch.nn.utils.rnn import pack_padded_sequence
 
 Features = namedtuple('Features', 'external, internal')
 
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 class ModelParams:
     def __init__(self, d):
@@ -21,6 +24,7 @@ class ModelParams:
         self.features = self._get_features(d, 'features', 'resnet152')
         self.persist_features = self._get_features(d, 'persist_features', '')
         self.encoder_dropout = self._get_param(d, 'encoder_dropout', 0)
+        self.disable_teacher_forcing = self._get_param(d, 'disable_teacher_forcing', False)
 
     @classmethod
     def fromargs(cls, args):
@@ -193,6 +197,7 @@ class DecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
+        self.disable_teacher_forcing = p.disable_teacher_forcing
         self.embed = nn.Embedding(vocab_size, p.embed_size)
 
         (self.extractors,
@@ -236,11 +241,36 @@ class DecoderRNN(nn.Module):
                 persist_features = (persist_features.unsqueeze(1).
                                     expand(-1, seq_length, -1))
 
-        inputs = torch.cat([embeddings, persist_features], 2)
+        if self.disable_teacher_forcing or not self.training:
+            # Teacher forcing disabled or we are in inference/validation mode -
+            # Feed decoder output at each time-step when training:
+            batch_size = features.size()[0]
+            vocab_size = self.linear.out_features
+            outputs = torch.zeros(batch_size, seq_length, vocab_size).to(device)
+            states = None
+            inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
-        packed = pack_padded_sequence(inputs, lengths, batch_first=True)
-        hiddens, _ = self.lstm(packed)
-        outputs = self.linear(hiddens[0])
+            for t in range(seq_length):
+                hiddens, states = self.lstm(inputs, states)
+                step_output = self.linear(hiddens.squeeze(1))
+                _, predicted = step_output.max(1)
+                outputs[:, t, :] = step_output
+                embeddings = self.embed(predicted)
+                inputs = torch.cat([embeddings, persist_features], 1).unsqueeze(1)
+
+            # Generate a packed sequence of outputs with generated captions assuming
+            # exactly the same lengths are ground-truth. If needed, model could be modified
+            # to check for the <end> token (by for-example hardcoding it to same value
+            # for all models):
+            outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
+        else:
+            # Teacher forcing enabled -
+            # Feed ground truth as next input at each time-step when training:
+            inputs = torch.cat([embeddings, persist_features], 2)
+            packed = pack_padded_sequence(inputs, lengths, batch_first=True)
+            hiddens, _ = self.lstm(packed)
+            outputs = self.linear(hiddens[0])
+
         return outputs
 
     def sample(self, features, images, external_features, states=None, max_seq_length=20):

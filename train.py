@@ -70,6 +70,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'encoder_dropout': params.encoder_dropout,
         'features': params.features,
         'persist_features': params.persist_features,
+        'disable_teacher_forcing': params.disable_teacher_forcing
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -402,6 +403,8 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
+    parser.add_argument('--disable_teacher_forcing', action='store_true',
+                        help='disables teacher forcing when training the decoder RNN')
 
     args = parser.parse_args()
 
