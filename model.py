@@ -256,17 +256,18 @@ class EncoderDecoder(nn.Module):
         self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
         self.decoder = DecoderRNN(params, len(vocab), ef_dims[1]).to(device)
 
-        self.opt_params = (list(decoder.parameters()) +
-                           list(encoder.linear.parameters()) +
-                           list(encoder.bn.parameters()))
+        self.opt_params = (list(self.decoder.parameters()) +
+                           list(self.encoder.linear.parameters()) +
+                           list(self.encoder.bn.parameters()))
 
         if state:
             self.encoder.load_state_dict(state['encoder'])
             self.decoder.load_state_dict(state['decoder'])
 
+    def get_opt_params(self):
+        return self.opt_params
 
     def forward(self, images, init_features, captions, lengths, persist_features):
-
         features = self.encoder(images, init_features)
         outputs = self.decoder(features, captions, lengths, images, persist_features)
         return outputs

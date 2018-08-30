@@ -211,14 +211,16 @@ def main(args):
                                      skip_images=not params.has_internal_features())
 
     # Build the models
-    model, opt_params = EncoderDecoder(params, device, vocab, state, ef_dims)
+    model = EncoderDecoder(params, device, vocab, state, ef_dims)
+    opt_params = model.get_opt_params()
 
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
 
     default_lr = 0.001
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(opt_params, lr=default_lr, weight_decay=args.weight_decay)
+        optimizer = torch.optim.Adam(opt_params, lr=default_lr,
+                                     weight_decay=args.weight_decay)
     elif args.optimizer == 'rmsprop':
         optimizer = torch.optim.RMSprop(opt_params, lr=default_lr,
                                         weight_decay=args.weight_decay)
@@ -292,7 +294,7 @@ def main(args):
 
         end = datetime.now()
 
-        stats['training_loss'] = total_loss/num_batches
+        stats['training_loss'] = total_loss / num_batches
         print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                     stats['training_loss']))
         save_model(args, params, model.encoder, model.decoder, optimizer, epoch)
