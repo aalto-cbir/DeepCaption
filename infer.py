@@ -95,6 +95,7 @@ def main(args):
 
     # Image preprocessing
     transform = transforms.Compose([
+        transforms.Resize((args.crop_size, args.crop_size)),
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
@@ -210,6 +211,8 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
                         help='location of dataset configuration file')
+    parser.add_argument('--image_size', type=int, default=224,
+                        help='size for cropping images')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('image_files', type=str, nargs='*')
