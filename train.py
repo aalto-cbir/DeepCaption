@@ -70,7 +70,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'encoder_dropout': params.encoder_dropout,
         'features': params.features,
         'persist_features': params.persist_features,
-        'disable_teacher_forcing': params.disable_teacher_forcing
+        'teacher_forcing_ratio': params.teacher_forcing_ratio
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -269,7 +269,10 @@ def main(args):
             persist_features = features[1].to(device) if len(features) > 1 else None
 
             # Forward, backward and optimize
-            outputs = model(images, init_features, captions, lengths, persist_features)
+            use_teacher_forcing = (True if np.random.random() < params.teacher_forcing_ratio
+                                   else False)
+            outputs = model(images, init_features, captions, lengths, persist_features,
+                            use_teacher_forcing)
             loss = criterion(outputs, targets)
             model.zero_grad()
             loss.backward()
@@ -403,8 +406,9 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
-    parser.add_argument('--disable_teacher_forcing', action='store_true',
-                        help='disables teacher forcing when training the decoder RNN')
+    parser.add_argument('--teacher_forcing_ratio', type=float, default=1,
+                        help='Value between 0 and 1, determines a probability '
+                             'with which current batch will use teacher forcing')
 
     args = parser.parse_args()
 

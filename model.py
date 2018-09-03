@@ -24,7 +24,7 @@ class ModelParams:
         self.features = self._get_features(d, 'features', 'resnet152')
         self.persist_features = self._get_features(d, 'persist_features', '')
         self.encoder_dropout = self._get_param(d, 'encoder_dropout', 0)
-        self.disable_teacher_forcing = self._get_param(d, 'disable_teacher_forcing', False)
+        self.teacher_forcing_ratio = self._get_param(d, 'teacher_forcing_ratio', 1)
 
     @classmethod
     def fromargs(cls, args):
@@ -197,7 +197,6 @@ class DecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
-        self.disable_teacher_forcing = p.disable_teacher_forcing
         self.embed = nn.Embedding(vocab_size, p.embed_size)
 
         (self.extractors,
@@ -222,7 +221,8 @@ class DecoderRNN(nn.Module):
         # Return concatenated features, empty tensor if none
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
-    def forward(self, features, captions, lengths, images, external_features=None):
+    def forward(self, features, captions, lengths, images, external_features=None,
+                use_teacher_forcing=True):
         """Decode image feature vectors and generates captions."""
 
         # First, construct embeddings input, with initial feature as
@@ -241,7 +241,14 @@ class DecoderRNN(nn.Module):
                 persist_features = (persist_features.unsqueeze(1).
                                     expand(-1, seq_length, -1))
 
-        if self.disable_teacher_forcing or not self.training:
+        if use_teacher_forcing:
+            # Teacher forcing enabled -
+            # Feed ground truth as next input at each time-step when training:
+            inputs = torch.cat([embeddings, persist_features], 2)
+            packed = pack_padded_sequence(inputs, lengths, batch_first=True)
+            hiddens, _ = self.lstm(packed)
+            outputs = self.linear(hiddens[0])
+        else:
             # Teacher forcing disabled or we are in inference/validation mode -
             # Feed decoder output at each time-step when training:
             batch_size = features.size()[0]
@@ -263,13 +270,6 @@ class DecoderRNN(nn.Module):
             # to check for the <end> token (by for-example hardcoding it to same value
             # for all models):
             outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
-        else:
-            # Teacher forcing enabled -
-            # Feed ground truth as next input at each time-step when training:
-            inputs = torch.cat([embeddings, persist_features], 2)
-            packed = pack_padded_sequence(inputs, lengths, batch_first=True)
-            hiddens, _ = self.lstm(packed)
-            outputs = self.linear(hiddens[0])
 
         return outputs
 
@@ -320,9 +320,11 @@ class EncoderDecoder(nn.Module):
     def get_opt_params(self):
         return self.opt_params
 
-    def forward(self, images, init_features, captions, lengths, persist_features):
+    def forward(self, images, init_features, captions, lengths, persist_features,
+                use_teacher_forcing=True):
         features = self.encoder(images, init_features)
-        outputs = self.decoder(features, captions, lengths, images, persist_features)
+        outputs = self.decoder(features, captions, lengths, images, persist_features,
+                               use_teacher_forcing)
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
