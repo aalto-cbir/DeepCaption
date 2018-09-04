@@ -187,6 +187,8 @@ def main(args):
         if params.features.external != external_features:
             print('WARNING: external features changed: ',
                   params.features.external, external_features)
+            print('Updating feature paths...')
+            params.update_ext_features(args.features)
         start_epoch = state['epoch']
         print('Loading model {} at epoch {}.'.format(args.load_model,
                                                      start_epoch))

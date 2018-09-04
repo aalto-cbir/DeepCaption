@@ -36,18 +36,19 @@ class DatasetParams:
 
         config_path = self._get_config_path(dataset_config_file)
 
+        # Generic, "fall back" dataset
+        self.config['generic'] = {'dataset_class': 'GenericDataset'}
+
         # If the configuration file is not found, we can still use
         # 'generic' dataset with sensible defaults when infering.
         if not config_path:
             print('Config file not found. Loading default settings for generic dataset.')
             print('Hint: you can use datasets/datasets.conf.default as a starting point.')
+
         # Otherwise all is good, and we are using the config file as
         else:
             print("Loading dataset configuration from {}...".format(config_path))
             self.config.read(config_path)
-
-        # Generic, "fall back" dataset
-        self.config['generic'] = {'dataset_class': 'GenericDataset'}
 
     def _get_config_path(self, dataset_config_file):
         """Try to intelligently find the configuration file"""
@@ -315,6 +316,11 @@ class CocoDataset(data.Dataset):
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
         target = tokenize_caption(caption, self.vocab)
 
+        # We are in feature extraction-only mode,
+        # use image filename as image identifier in lmdb:
+        if self.vocab is None and self.feature_loaders is None:
+            img_id = path
+
         return image, target, img_id, feature_sets
 
     def __len__(self):
@@ -377,19 +383,23 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
     def __getitem__(self, index):
         """Returns one data pair (image and paragraph)."""
-        vocab = self.vocab
         cap = self.paragraphs[index]['caption']
         img_id = self.paragraphs[index]['image_id']
-        img_path = os.path.join(self.root, str(img_id) + '.jpg')
+        path = os.path.join(self.root, str(img_id) + '.jpg')
 
-        image = Image.open(img_path).convert('RGB')
+        image = Image.open(path).convert('RGB')
         if self.transform is not None:
             image = self.transform(image)
 
         # Prepare external features
         # TODO probably wrong index ...
-        feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
-        target = tokenize_caption(cap, vocab)
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
+        target = tokenize_caption(cap, self.vocab)
+
+        # We are in feature extraction-only mode,
+        # use image filename as image identifier in lmdb:
+        if self.vocab is None and self.feature_loaders is None:
+            img_id = path
 
         return image, target, img_id, feature_sets
 
@@ -627,9 +637,10 @@ class GenericDataset(data.Dataset):
             image = torch.zeros(1, 1)
 
         # Prepare external features
-        feature_sets = ExternalFeature.load_sets(self.feature_loaders, index)
+        path = os.path.basename(image_path)
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
 
-        return image, None, basename(image_path), feature_sets
+        return image, None, path, feature_sets
 
     def __len__(self):
         return len(self.filelist)
