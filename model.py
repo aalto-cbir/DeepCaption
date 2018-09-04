@@ -79,29 +79,52 @@ class ModelParams:
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model_name, debug=False):
-        """Load the pretrained model and replace top fc layer."""
+        """Load the pretrained model and replace top fc layer.
+        Inception assumes input image size to be 299x299.
+        Other models assume input image of size 224x224
+        More info: https://pytorch.org/docs/stable/torchvision/models.html """
         super(FeatureExtractor, self).__init__()
 
         if model_name == 'alexnet':
             if debug:
                 print('Using AlexNet, features shape 256 x 6 x 6')
             model = models.alexnet(pretrained=True)
-            self.output_dim = 256*6*6
+            self.output_dim = 256 * 6 * 6
+            modules = list(model.children())[:-1]
+            self.extractor = nn.Sequential(*modules)
         elif model_name == 'densenet201':
             if debug:
                 print('Using DenseNet 201, features shape 1920 x 7 x 7')
             model = models.densenet201(pretrained=True)
-            self.output_dim = 1920*7*7
+            self.output_dim = 1920 * 7 * 7
+            modules = list(model.children())[:-1]
+            self.extractor = nn.Sequential(*modules)
         elif model_name == 'resnet152':
             if debug:
                 print('Using resnet 152, features shape 2048')
             model = models.resnet152(pretrained=True)
             self.output_dim = 2048
+            modules = list(model.children())[:-1]
+            self.extractor = nn.Sequential(*modules)
+        elif model_name == 'vgg16':
+            if debug:
+                print('Using vgg 16, features shape 4096')
+            model = models.vgg16(pretrained=True)
+            self.output_dim = 4096
+            num_features = model.classifier[6].in_features
+            features = list(model.classifier.children())[:-1]
+            features.extend([nn.Linear(num_features, self.output_dim)])
+            model.classifier = nn.Sequential(*features)
+            self.extractor = model
+        elif model_name == 'inceptionv3':
+            if debug:
+                print('Using Inception V3, features shape 1000')
+                print('WARNING: Inception requires input images to be 299x299')
+            model = models.inception_v3(pretrained=True)
+            model.aux_logits = False
+            self.extractor = model
         else:
             raise ValueError('Unknown model name: {}'.format(model_name))
-
-        modules = list(model.children())[:-1]
-        self.extractor = nn.Sequential(*modules)
 
     def forward(self, images):
         """Extract feature vectors from input images."""
