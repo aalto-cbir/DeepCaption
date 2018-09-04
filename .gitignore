@@ -21,4 +21,4 @@ datasets/pycocoevalcap
 /*.prof
 /datasets/datasets.conf
 .*
-/random_image_dir
+/random_image_dir/

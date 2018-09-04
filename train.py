@@ -16,7 +16,7 @@ from torchvision import transforms
 
 from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, DatasetParams
-from model import ModelParams, EncoderCNN, DecoderRNN
+from model import ModelParams, EncoderDecoder
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -213,22 +213,16 @@ def main(args):
                                      skip_images=not params.has_internal_features())
 
     # Build the models
-    print('Using device: {}'.format(device.type))
-    print('Initializing model...')
-    encoder = EncoderCNN(params, ef_dims[0]).to(device)
-    decoder = DecoderRNN(params, len(vocab), ef_dims[1]).to(device)
-    if state:
-        encoder.load_state_dict(state['encoder'])
-        decoder.load_state_dict(state['decoder'])
+    model = EncoderDecoder(params, device, vocab, state, ef_dims)
+    opt_params = model.get_opt_params()
 
     # Loss and optimizer
     criterion = nn.CrossEntropyLoss()
-    opt_params = (list(decoder.parameters()) +
-                  list(encoder.linear.parameters()) +
-                  list(encoder.bn.parameters()))
+
     default_lr = 0.001
     if args.optimizer == 'adam':
-        optimizer = torch.optim.Adam(opt_params, lr=default_lr, weight_decay=args.weight_decay)
+        optimizer = torch.optim.Adam(opt_params, lr=default_lr,
+                                     weight_decay=args.weight_decay)
     elif args.optimizer == 'rmsprop':
         optimizer = torch.optim.RMSprop(opt_params, lr=default_lr,
                                         weight_decay=args.weight_decay)
@@ -274,11 +268,9 @@ def main(args):
             persist_features = features[1].to(device) if len(features) > 1 else None
 
             # Forward, backward and optimize
-            encoded = encoder(images, init_features)
-            outputs = decoder(encoded, captions, lengths, images, persist_features)
+            outputs = model(images, init_features, captions, lengths, persist_features)
             loss = criterion(outputs, targets)
-            decoder.zero_grad()
-            encoder.zero_grad()
+            model.zero_grad()
             loss.backward()
 
             # grad_norms = [x.grad.data.norm(2) for x in opt_params]
@@ -304,15 +296,14 @@ def main(args):
 
         end = datetime.now()
 
-        stats['training_loss'] = total_loss/num_batches
+        stats['training_loss'] = total_loss / num_batches
         print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                     stats['training_loss']))
-        save_model(args, params, encoder, decoder, optimizer, epoch)
+        save_model(args, params, model.encoder, model.decoder, optimizer, epoch)
 
         if args.validate is not None and (epoch + 1) % args.validation_step == 0:
             begin = datetime.now()
-            encoder = encoder.eval()
-            decoder = decoder.eval()
+            model.eval()
 
             total_loss = 0
             num_batches = 0
@@ -327,15 +318,13 @@ def main(args):
 
                 # Forward, backward and optimize
                 with torch.no_grad():
-                    encoded = encoder(images, init_features)
-                    outputs = decoder(encoded, captions, lengths, images, persist_features)
+                    outputs = model(images, init_features, captions, lengths, persist_features)
                 loss = criterion(outputs, targets)
 
                 total_loss += loss.item()
                 num_batches += 1
 
-            encoder = encoder.train()
-            decoder = decoder.train()
+            model.train()
 
             end = datetime.now()
             val_loss = total_loss/num_batches
