@@ -24,7 +24,6 @@ class ModelParams:
         self.features = self._get_features(d, 'features', 'resnet152')
         self.persist_features = self._get_features(d, 'persist_features', '')
         self.encoder_dropout = self._get_param(d, 'encoder_dropout', 0)
-        self.teacher_forcing_ratio = self._get_param(d, 'teacher_forcing_ratio', 1)
 
     @classmethod
     def fromargs(cls, args):
