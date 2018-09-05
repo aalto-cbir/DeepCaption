@@ -226,7 +226,7 @@ def main(args):
                                      skip_images=not params.has_internal_features())
 
     # Build the models
-    model = EncoderDecoder(params, device, vocab, state, ef_dims)
+    model = EncoderDecoder(params, device, len(vocab), state, ef_dims)
     opt_params = model.get_opt_params()
 
     # Loss and optimizer

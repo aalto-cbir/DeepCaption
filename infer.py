@@ -141,7 +141,7 @@ def main(args):
                                       iter_over_images=True)
 
     # Build the models
-    model = EncoderDecoder(params, device, vocab, state, ef_dims).eval()
+    model = EncoderDecoder(params, device, len(vocab), state, ef_dims).eval()
 
     output_data = []
 

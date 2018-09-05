@@ -300,13 +300,13 @@ class DecoderRNN(nn.Module):
 
 
 class EncoderDecoder(nn.Module):
-    def __init__(self, params, device, vocab, state, ef_dims):
+    def __init__(self, params, device, vocab_size, state, ef_dims):
         """Vanilla EncoderDecoder model"""
         super(EncoderDecoder, self).__init__()
         print('Using device: {}'.format(device.type))
         print('Initializing EncoderDecoder model...')
         self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
-        self.decoder = DecoderRNN(params, len(vocab), ef_dims[1]).to(device)
+        self.decoder = DecoderRNN(params, vocab_size, ef_dims[1]).to(device)
 
         self.opt_params = (list(self.decoder.parameters()) +
                            list(self.encoder.linear.parameters()) +
