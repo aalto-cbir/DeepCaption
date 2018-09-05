@@ -69,8 +69,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'dropout': params.dropout,
         'encoder_dropout': params.encoder_dropout,
         'features': params.features,
-        'persist_features': params.persist_features,
-        'teacher_forcing_ratio': params.teacher_forcing_ratio
+        'persist_features': params.persist_features
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -141,6 +140,19 @@ def find_matching_model(args, params):
         print("Warning: Failed to intelligently resume...")
 
     return model_file_path
+
+
+def teacher_forcing_on(k, epoch, batch_iter, batches_per_epoch):
+    """Inverse sigmed sampling scheduler determines the probability
+    with which teacher forcing is turned off, more info here:
+    https://arxiv.org/pdf/1506.03099.pdf"""
+    if k == 0:
+        return True
+
+    i = epoch * batches_per_epoch + batch_iter
+    eps = k / (k + np.exp(i / k))
+
+    return np.random.random() < eps
 
 
 def main(args):
@@ -245,6 +257,13 @@ def main(args):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
 
+    if args.teacher_forcing_schedule_constant is not None:
+        # Set k to number of mini-batches matching number of epochs to convergence
+        batches_per_epoch = len(data_loader)
+        k = args.teacher_forcing_schedule_constant * batches_per_epoch
+    else:
+        k = 0
+
     # Train the models
     total_step = len(data_loader)
     if args.load_model:
@@ -269,8 +288,9 @@ def main(args):
             persist_features = features[1].to(device) if len(features) > 1 else None
 
             # Forward, backward and optimize
-            use_teacher_forcing = (True if np.random.random() < params.teacher_forcing_ratio
-                                   else False)
+            # Decide whether to use teacher forcing or not:
+            use_teacher_forcing = teacher_forcing_on(k, epoch - start_epoch,
+                                                     i, batches_per_epoch)
             outputs = model(images, init_features, captions, lengths, persist_features,
                             use_teacher_forcing)
             loss = criterion(outputs, targets)
@@ -406,9 +426,11 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
-    parser.add_argument('--teacher_forcing_ratio', type=float, default=1,
-                        help='Value between 0 and 1, determines a probability '
-                             'with which current batch will use teacher forcing')
+    # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
+    parser.add_argument('--teacher_forcing_schedule_constant', type=float, default=None,
+                        help='When set, replaces teacher forcing the RNN with scheduled '
+                             'sampling with constant set to to expected number of epochs '
+                             'before convergence')
 
     args = parser.parse_args()
 
