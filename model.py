@@ -221,7 +221,7 @@ class DecoderRNN(nn.Module):
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
     def forward(self, features, captions, lengths, images, external_features=None,
-                use_teacher_forcing=True):
+                teacher_p=1.0):
         """Decode image feature vectors and generates captions."""
 
         # First, construct embeddings input, with initial feature as
@@ -240,7 +240,7 @@ class DecoderRNN(nn.Module):
                 persist_features = (persist_features.unsqueeze(1).
                                     expand(-1, seq_length, -1))
 
-        if use_teacher_forcing:
+        if teacher_p == 1.0:
             # Teacher forcing enabled -
             # Feed ground truth as next input at each time-step when training:
             inputs = torch.cat([embeddings, persist_features], 2)
@@ -248,21 +248,24 @@ class DecoderRNN(nn.Module):
             hiddens, _ = self.lstm(packed)
             outputs = self.linear(hiddens[0])
         else:
-            # Teacher forcing disabled or we are in inference/validation mode -
-            # Feed decoder output at each time-step when training:
+            # Sampled mode on, sample next token from lstm with probability (1 - prob_teacher):
             batch_size = features.size()[0]
             vocab_size = self.linear.out_features
             outputs = torch.zeros(batch_size, seq_length, vocab_size).to(device)
             states = None
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
-            for t in range(seq_length):
+            for t in range(seq_length - 1):
                 hiddens, states = self.lstm(inputs, states)
                 step_output = self.linear(hiddens.squeeze(1))
-                _, predicted = step_output.max(1)
                 outputs[:, t, :] = step_output
-                embeddings = self.embed(predicted)
-                inputs = torch.cat([embeddings, persist_features], 1).unsqueeze(1)
+                if float(torch.rand(1)) < teacher_p:
+                    embed_t = embeddings[:, t + 1]
+                else:
+                    _, predicted = step_output.max(1)
+                    embed_t = self.embed(predicted)
+
+                inputs = torch.cat([embed_t, persist_features], 1).unsqueeze(1)
 
             # Generate a packed sequence of outputs with generated captions assuming
             # exactly the same lengths are ground-truth. If needed, model could be modified
@@ -320,10 +323,10 @@ class EncoderDecoder(nn.Module):
         return self.opt_params
 
     def forward(self, images, init_features, captions, lengths, persist_features,
-                use_teacher_forcing=True):
+                teacher_p=1.0):
         features = self.encoder(images, init_features)
         outputs = self.decoder(features, captions, lengths, images, persist_features,
-                               use_teacher_forcing)
+                               teacher_p)
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,

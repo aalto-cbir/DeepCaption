@@ -142,17 +142,18 @@ def find_matching_model(args, params):
     return model_file_path
 
 
-def teacher_forcing_on(k, epoch, batch_iter, batches_per_epoch):
+def get_teacher_prob(k, i, alpha=1, beta=1):
     """Inverse sigmed sampling scheduler determines the probability
     with which teacher forcing is turned off, more info here:
     https://arxiv.org/pdf/1506.03099.pdf"""
     if k == 0:
-        return True
+        return 1.0
 
-    i = epoch * batches_per_epoch + batch_iter
-    eps = k / (k + np.exp(i / k))
+    k = k * alpha
+    i = i * beta
+    p = k / (k + np.exp(i / k))
 
-    return np.random.random() < eps
+    return p
 
 
 def main(args):
@@ -257,12 +258,13 @@ def main(args):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
 
-    if args.teacher_forcing_schedule_constant is not None:
+    # Configure scheduled sampling for LSTM:
+    #if args.curriculum_constant != 0:
         # Set k to number of mini-batches matching number of epochs to convergence
-        batches_per_epoch = len(data_loader)
-        k = args.teacher_forcing_schedule_constant * batches_per_epoch
-    else:
-        k = 0
+    #    batches_per_epoch = len(data_loader)
+    #    k = args.curriculum_constant * batches_per_epoch
+    #else:
+    #    k = 0
 
     # Train the models
     total_step = len(data_loader)
@@ -288,11 +290,19 @@ def main(args):
             persist_features = features[1].to(device) if len(features) > 1 else None
 
             # Forward, backward and optimize
-            # Decide whether to use teacher forcing or not:
-            use_teacher_forcing = teacher_forcing_on(k, epoch - start_epoch,
-                                                     i, batches_per_epoch)
+            # Calculate the probability whether to use teacher forcing or not:
+            if args.sample_sched_alpha == 1:
+                # Iterate over epochs:
+                iteration_n = epoch - start_epoch
+            else:
+                # Iterate over batches:
+                iteration_n = (epoch - start_epoch) * len(data_loader) + i
+
+            teacher_p = get_teacher_prob(args.sample_sched_k, iteration_n,
+                                         args.sample_sched_alpha, args.sample_sched_beta)
+
             outputs = model(images, init_features, captions, lengths, persist_features,
-                            use_teacher_forcing)
+                            teacher_p)
             loss = criterion(outputs, targets)
             model.zero_grad()
             loss.backward()
@@ -427,10 +437,14 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
-    parser.add_argument('--teacher_forcing_schedule_constant', type=float, default=None,
+    parser.add_argument('--sample_sched_k', type=float, default=0,
                         help='When set, replaces teacher forcing the RNN with scheduled '
                              'sampling with constant set to to expected number of epochs '
                              'before convergence')
+    parser.add_argument('--sample_sched_alpha', type=float, default=1,
+                        help='sample scheduling parameter that is multiplied with k')
+    parser.add_argument('--sample_sched_beta', type=float, default=1,
+                        help='sample scheduling parameter that is multiplied with iterations')
 
     args = parser.parse_args()
 
