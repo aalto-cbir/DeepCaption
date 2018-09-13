@@ -29,7 +29,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def basename(fname):
-    fname.split(':')
     return os.path.splitext(os.path.basename(fname))[0]
 
 
@@ -182,22 +181,23 @@ def main(args):
             output_data.append({'caption': caption, 'image_id': image_ids[i]})
 
     output_file = None
+
     if not args.output_file and not args.print_results:
-        output_file = basename(args.model) + '.txt'
+        model_name = args.model.split(os.sep)[-2]
+        model_epoch = basename(args.model)
+        output_file = '{}-{}.{}'.format(model_name, model_epoch, args.output_format)
     else:
         output_file = args.output_file
 
     if output_file:
-        output_format = 'plain text'
-        if output_file.endswith('.json'):
+        if args.output_format == 'json':
             json.dump(output_data, open(os.path.join(args.results_path, output_file), 'w'))
-            output_format = 'COCO json'
         else:
             with open(output_file, 'w') as fp:
                 for data in output_data:
                     print(data['image_id'], data['caption'], file=fp)
 
-        print('Wrote generated captions to {} as {}'.format(output_file, output_format))
+        print('Wrote generated captions to {} as {}'.format(output_file, args.output_format))
 
     if args.print_results:
         for d in output_data:
@@ -228,7 +228,9 @@ if __name__ == '__main__':
     parser.add_argument('--ext_persist_features', type=str,
                         help='paths for external persist features')
     parser.add_argument('--output_file', type=str,
-                        help='path for output JSON, default: model_name.json')
+                        help='path for output file, default: model_name.txt')
+    parser.add_argument('--output_format', type=str, default='txt',
+                        help='format of the output file')
     parser.add_argument('--verbose', help='verbose output',
                         action='store_true')
     parser.add_argument('--results_path', type=str, default='results/',
