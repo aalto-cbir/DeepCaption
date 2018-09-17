@@ -610,11 +610,20 @@ class TRECVID2018Dataset(data.Dataset):
 class GenericDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
                  iter_over_images=False, feature_loaders=None):
-        self.filelist = root
         self.vocab = vocab
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+
+        if os.path.isdir(root):
+            self.filelist = []
+            for filename in glob.glob(root + '/*.jpeg'):
+                self.filelist.append(filename)
+        elif type(self.filelist) is list:
+            self.filelist = root
+        else:
+            print('ERROR: root neither file list or dir!')
+            sys.exit(1)
 
         print("GenericDataset: loaded {} images.".format(len(self.filelist)))
 
@@ -637,7 +646,7 @@ class GenericDataset(data.Dataset):
             image = torch.zeros(1, 1)
 
         # Prepare external features
-        path = os.path.basename(image_path)
+        path = os.path.splitext(os.path.basename(image_path))[0]
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
 
         return image, None, path, feature_sets
