@@ -1,2 +1,5 @@
 DeepCaption
 Copyright 2018 Aalto University
+
+Parts of the code were originally based on the image captioning based on tutorial by yunjey, which is licensed under MIT:
+https://github.com/yunjey/pytorch-tutorial/tree/master/tutorials/03-advanced/image_captioning
