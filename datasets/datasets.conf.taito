@@ -25,15 +25,15 @@ dataset_class = MSRVTTDataset
 root_dir = /proj/mediaind/picsom/databases/MSR-VTT
 image_dir = middleframes/resized/
 caption_path = download/train_val_videodatainfo.json
-vocab_path = analysis/mvsjober/image_captioning/vocab.pkl
+vocab_path = image_captioning/vocab.pkl
 features_path = features/
 
 [msrvtt:train]
-split = train
+subset = train
 
 [msrvtt:validate]
 # MSR-VTT validation set
-split = validate
+subset = validate
 
 [trecvid2018]
 dataset_class = TRECVID2018Dataset
