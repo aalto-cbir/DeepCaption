@@ -114,7 +114,10 @@ def main(args):
     # Build models
     print('Bulding models.')
 
-    state = torch.load(args.model)
+    if device.type == 'cpu':
+        state = torch.load(args.model, map_location=lambda storage, loc: storage)
+    else:
+        state = torch.load(args.model)
     params = ModelParams(state)
     if args.ext_features:
         params.update_ext_features(args.ext_features)
