@@ -22,7 +22,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def main(args):
     # Image preprocessing
-
     if args.feature_type == 'plain':
         transform = transforms.Compose([
             transforms.Resize((args.image_size, args.image_size)),
@@ -42,6 +41,8 @@ def main(args):
     else:
         print("Invalid feature type specified {}".args.feature_type)
         sys.exit(1)
+
+    print("Creating features of type: {}".format(args.feature_type))
 
     # Get dataset parameters and vocabulary wrapper:
     dataset_configs = DatasetParams(args.dataset_config_file)
@@ -87,7 +88,7 @@ def main(args):
 
         # If we are dealing with cropped images, image dimensions are is: bs, ncrops, c, h, w
         if images.dim() == 5:
-            bs, ncrops, c, h, w = input.size()
+            bs, ncrops, c, h, w = images.size()
             # fuse batch size and ncrops:
             raw_features = extractor(images.view(-1, c, h, w))
 
@@ -115,7 +116,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
                         help='location of dataset configuration file')
-    parser.add_argument('--feature_type', type=str, default='plain',
+    parser.add_argument('--feature_type', type=str, default='max',
                         help='type of a feature output - can be:'
                         'plain - use the input image as is - no cropping or pooling'
                         'following two feature types use transform.TenCrop - each image is '
