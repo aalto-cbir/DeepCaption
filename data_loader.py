@@ -615,12 +615,12 @@ class GenericDataset(data.Dataset):
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
 
-        if os.path.isdir(root):
+        if type(root) is list:
+            self.filelist = root
+        elif os.path.isdir(root):
             self.filelist = []
             for filename in glob.glob(root + '/*.jpeg'):
                 self.filelist.append(filename)
-        elif type(self.filelist) is list:
-            self.filelist = root
         else:
             print('ERROR: root neither file list or dir!')
             sys.exit(1)
