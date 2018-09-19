@@ -88,7 +88,9 @@ def remove_incomplete_sentences(caption):
         return caption
 
 
-def main(args):
+def infer(ext_args=None):
+    args = parse_args(ext_args)
+
     # Create model directory
     if not os.path.exists(args.results_path):
         os.makedirs(args.results_path)
@@ -206,8 +208,10 @@ def main(args):
         for d in output_data:
             print('{}: {}'.format(d['image_id'], d['caption']))
 
+    return output_data
 
-if __name__ == '__main__':
+
+def parse_args(ext_args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='generic',
                         help='which dataset to use')
@@ -243,14 +247,14 @@ if __name__ == '__main__':
                         help='allow repeating sentences inside a paragraph')
     parser.add_argument('--only_complete_sentences', action='store_true')
 
-    args = parser.parse_args()
-    # if not args.image_files and not args.image_dir:
-    #     args.image_dir = 'datasets/data/COCO/images/val2014'
+    return parser.parse_args(ext_args)
 
+
+if __name__ == '__main__':    
     begin = datetime.now()
     print('Started inference at {}.'.format(begin))
 
-    main(args)
+    infer()
 
     end = datetime.now()
     print('Inference ended at {}. Total time: {}.'.format(end, end - begin))
