@@ -30,14 +30,35 @@ def main(args):
                                  (0.229, 0.224, 0.225))])
     elif args.feature_type == 'avg' or args.feature_type == 'max':
         # See example here: https://pytorch.org/docs/stable/torchvision/transforms.html
-        transform = transforms.Compose([
-            transforms.Resize((args.image_size, args.image_size)),
-            transforms.TenCrop((args.crop_size, args.crop_size)),
-            # Apply next two transforms to each crop in turn and then stack them to a single tensor:
-            transforms.Lambda(lambda crops: torch.stack([
-                transforms.Normalize((0.485, 0.456, 0.406),
-                                     (0.229, 0.224, 0.225))(transforms.ToTensor()(crop))
-                for crop in crops]))])
+        if args.num_crops == 12:
+            transform = transforms.Compose([
+                transforms.Resize((args.image_size, args.image_size)),
+                # Custom 12-crop implementation experiment:
+                transforms.Lambda(lambda img:
+                                   # Create a tuple of different transforms:
+                                   (transforms.Resize((args.crop_size, args.crop_size))(img), ) +
+                                   (transforms.Resize((args.crop_size, args.crop_size))(transforms.functional.hflip(img)), ) +
+                                   transforms.TenCrop((args.crop_size, args.crop_size))(img)
+                                  ),
+                # Apply next two transforms to each crop in turn and then stack them
+                # to a single tensor:
+                transforms.Lambda(lambda crops: torch.stack([
+                    transforms.Normalize((0.485, 0.456, 0.406),
+                                         (0.229, 0.224, 0.225))(transforms.ToTensor()(crop))
+                    for crop in crops]))])
+        elif args.num_crops == 10:
+            transform = transforms.Compose([
+                transforms.Resize((args.image_size, args.image_size)),
+                # 10-crop implementation as described in PyTorch documentation:
+                transforms.TenCrop((args.crop_size, args.crop_size)),
+                transforms.Lambda(lambda crops: torch.stack([
+                    transforms.Normalize((0.485, 0.456, 0.406),
+                                         (0.229, 0.224, 0.225))(transforms.ToTensor()(crop))
+                    for crop in crops]))])
+        else:
+            print("Invalid number of crops specified, {}.".format(args.num_crops))
+            sys.exit(1)
+
     else:
         print("Invalid feature type specified {}".args.feature_type)
         sys.exit(1)
@@ -69,7 +90,8 @@ def main(args):
     if args.output_file:
         file_name = args.output_file
     else:
-        file_name = '{}-{}-{}.lmdb'.format(args.dataset, args.extractor, args.feature_type)
+        file_name = '{}-{}-{}-n{}.lmdb'.format(args.dataset, args.extractor,
+                                               args.feature_type, args.num_crops)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -93,7 +115,7 @@ def main(args):
             raw_features = extractor(images.view(-1, c, h, w))
 
             if args.feature_type == 'avg':
-                # Average of over crops:
+                # Average over crops:
                 features = raw_features.view(bs, ncrops, -1).mean(1).data.cpu().numpy()
             elif args.feature_type == 'max':
                 # Max over crops:
@@ -120,14 +142,15 @@ if __name__ == '__main__':
                         help='type of a feature output - can be:'
                         'plain - use the input image as is - no cropping or pooling'
                         'following two feature types use transform.TenCrop - each image is '
-                        'has 5 crops created - 4 from the corners, and one from center, '
-                        'each crop is then horizontally flipped, producing 10 images total'
-                        'avg - elementwise average of features obtained from TenCrop input'
-                        'max - elementwise maximum of features obtained from TenCrop input')
+                        'has several crops created - depending on the value of --num_crops'
+                        'avg - elementwise average of features obtained from cropped inputs'
+                        'max - elementwise maximum of features obtained from cropped inputs')
     parser.add_argument('--image_size', type=int, default=256,
                         help='resize input images to this size')
     parser.add_argument('--crop_size', type=int, default=224,
                         help='crop size used by "avg" and "max" feature types')
+    parser.add_argument('--num_crops', type=int, default=12,
+                        help='number of crops to perform for avg and max feature types')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--output_dir', type=str, default='features/',
