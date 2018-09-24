@@ -129,6 +129,11 @@ def main(args):
             for j, image_id in enumerate(image_ids):
                 txn.put(str(image_id).encode('ascii'), features[j])
 
+        # Print log info
+        if not show_progress and ((i + 1) % args.log_step == 0):
+            print('Batch [{}/{}]'.format(i + 1, len(data_loader)))
+            sys.stdout.flush()
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -160,6 +165,8 @@ if __name__ == '__main__':
                              'defaults to "dataset_name-extractor.lmdb"')
     parser.add_argument('--extractor', type=str, default='resnet152',
                         help='name of the extractor, ex: alexnet, resnet152, densenet201')
+    parser.add_argument('--log_step', type=int, default=10,
+                        help='How often do we want to log output')
 
     args = parser.parse_args()
     main(args=args)
