@@ -258,14 +258,6 @@ def main(args):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
 
-    # Configure scheduled sampling for LSTM:
-    #if args.curriculum_constant != 0:
-        # Set k to number of mini-batches matching number of epochs to convergence
-    #    batches_per_epoch = len(data_loader)
-    #    k = args.curriculum_constant * batches_per_epoch
-    #else:
-    #    k = 0
-
     # Train the models
     total_step = len(data_loader)
     if args.load_model:
@@ -291,18 +283,16 @@ def main(args):
 
             # Forward, backward and optimize
             # Calculate the probability whether to use teacher forcing or not:
-            if args.sample_sched_alpha == 1:
-                # Iterate over epochs:
-                iteration_n = epoch - start_epoch
-            else:
-                # Iterate over batches:
-                iteration_n = (epoch - start_epoch) * len(data_loader) + i
 
-            teacher_p = get_teacher_prob(args.sample_sched_k, iteration_n,
+            # Iterate over batches:
+            iteration = (epoch - start_epoch) * len(data_loader) + i
+
+            teacher_p = get_teacher_prob(args.teacher_forcing_param_k, iteration,
                                          args.sample_sched_alpha, args.sample_sched_beta)
 
             outputs = model(images, init_features, captions, lengths, persist_features,
-                            teacher_p)
+                            teacher_p, args.teacher_forcing)
+
             loss = criterion(outputs, targets)
             model.zero_grad()
             loss.backward()
@@ -437,10 +427,16 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
-    parser.add_argument('--sample_sched_k', type=float, default=0,
-                        help='When set, replaces teacher forcing the RNN with scheduled '
-                             'sampling with constant set to to expected number of epochs '
-                             'before convergence')
+    parser.add_argument('--teacher_forcing', type=str, default='always',
+                        help='Type of teacher forcing to use for training the Decoder RNN: \n'
+                             'always: always use groundruth as LSTM input when training'
+                             'sampled: follow a sampling schedule detemined by the value '
+                             'of teacher_forcing_parameter\n'
+                             'additive: use the sampling schedule formula to determine weight '
+                             'ratio between the teacher and model inputs')
+    parser.add_argument('--teacher_forcing_param_k', type=float, default=6500,
+                        help='value of the sampling schedule parameter k. '
+                        'Good values can be found in a range between 400 - 20000')
     parser.add_argument('--sample_sched_alpha', type=float, default=1,
                         help='sample scheduling parameter that is multiplied with k')
     parser.add_argument('--sample_sched_beta', type=float, default=1,
