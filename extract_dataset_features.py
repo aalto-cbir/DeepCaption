@@ -29,34 +29,37 @@ def main(args):
             transforms.Normalize((0.485, 0.456, 0.406),
                                  (0.229, 0.224, 0.225))])
     elif args.feature_type == 'avg' or args.feature_type == 'max':
+        # Try with no normalization
+        # Try with subtracting 0.5 from all values
         # See example here: https://pytorch.org/docs/stable/torchvision/transforms.html
-        if args.num_crops == 12:
+
+        if args.normalize == 'default':
             transform = transforms.Compose([
                 transforms.Resize((args.image_size, args.image_size)),
-                # Custom 12-crop implementation experiment:
-                transforms.Lambda(lambda img:
-                                   # Create a tuple of different transforms:
-                                   (transforms.Resize((args.crop_size, args.crop_size))(img), ) +
-                                   (transforms.Resize((args.crop_size, args.crop_size))(transforms.functional.hflip(img)), ) +
-                                   transforms.TenCrop((args.crop_size, args.crop_size))(img)
-                                  ),
+                # 10-crop implementation as described in PyTorch documentation:
+                transforms.TenCrop((args.crop_size, args.crop_size)),
                 # Apply next two transforms to each crop in turn and then stack them
                 # to a single tensor:
                 transforms.Lambda(lambda crops: torch.stack([
                     transforms.Normalize((0.485, 0.456, 0.406),
                                          (0.229, 0.224, 0.225))(transforms.ToTensor()(crop))
                     for crop in crops]))])
-        elif args.num_crops == 10:
+        elif args.normalize == 'skip':
             transform = transforms.Compose([
                 transforms.Resize((args.image_size, args.image_size)),
-                # 10-crop implementation as described in PyTorch documentation:
                 transforms.TenCrop((args.crop_size, args.crop_size)),
                 transforms.Lambda(lambda crops: torch.stack([
-                    transforms.Normalize((0.485, 0.456, 0.406),
-                                         (0.229, 0.224, 0.225))(transforms.ToTensor()(crop))
+                    transforms.ToTensor()(crop)
                     for crop in crops]))])
+        elif args.normalize == 'subtract_half':
+            transform = transforms.Compose([
+                transforms.Resize((args.image_size, args.image_size)),
+                transforms.TenCrop((args.crop_size, args.crop_size)),
+                transforms.Lambda(lambda crops: torch.stack([
+                    transforms.ToTensor()(crop)
+                    for crop in crops]) - 0.5)])
         else:
-            print("Invalid number of crops specified, {}.".format(args.num_crops))
+            print("Invalid normalization parameter")
             sys.exit(1)
 
     else:
@@ -90,8 +93,8 @@ def main(args):
     if args.output_file:
         file_name = args.output_file
     else:
-        file_name = '{}-{}-{}-n{}.lmdb'.format(args.dataset, args.extractor,
-                                               args.feature_type, args.num_crops)
+        file_name = '{}-{}-{}-normalize-{}.lmdb'.format(args.dataset, args.extractor,
+                                                        args.feature_type, args.normalize)
 
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -143,13 +146,18 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
                         help='location of dataset configuration file')
-    parser.add_argument('--feature_type', type=str, default='max',
+    parser.add_argument('--feature_type', type=str, default='avg',
                         help='type of a feature output - can be:'
-                        'plain - use the input image as is - no cropping or pooling'
+                        'plain - use the input image as is - no cropping or pooling\n'
                         'following two feature types use transform.TenCrop - each image is '
-                        'has several crops created - depending on the value of --num_crops'
+                        'cropped from corners and center, each crop is horizontally flipped:\n'
                         'avg - elementwise average of features obtained from cropped inputs'
                         'max - elementwise maximum of features obtained from cropped inputs')
+    parser.add_argument('--normalize', type=str, default='default',
+                        help='image normalization to apply\n'
+                        'default: applies default PyTorch normalization parameters\n'
+                        'skip: applies no normalization at all\n'
+                        'substract_half: subtracts 0.5 from each pixel value')
     parser.add_argument('--image_size', type=int, default=256,
                         help='resize input images to this size')
     parser.add_argument('--crop_size', type=int, default=224,
