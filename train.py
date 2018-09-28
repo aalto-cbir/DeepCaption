@@ -142,14 +142,13 @@ def find_matching_model(args, params):
     return model_file_path
 
 
-def get_teacher_prob(k, i, alpha=1, beta=1):
+def get_teacher_prob(k, i, beta=1):
     """Inverse sigmed sampling scheduler determines the probability
     with which teacher forcing is turned off, more info here:
     https://arxiv.org/pdf/1506.03099.pdf"""
     if k == 0:
         return 1.0
 
-    k = k * alpha
     i = i * beta
     p = k / (k + np.exp(i / k))
 
@@ -266,6 +265,10 @@ def main(args):
         all_stats = {}
 
     print('Start Training... ')
+    print('Teacher forcing: {}'.format(args.teacher_forcing))
+    if args.teacher_forcing != 'always':
+        print('\t k: {}'.format(args.teacher_forcing_k))
+        print('\t beta: {}'.format(args.teacher_forcing_beta))
     print('Optimizer:', optimizer)
     for epoch in range(start_epoch, args.num_epochs):
         stats = {}
@@ -287,8 +290,8 @@ def main(args):
             # Iterate over batches:
             iteration = (epoch - start_epoch) * len(data_loader) + i
 
-            teacher_p = get_teacher_prob(args.teacher_forcing_param_k, iteration,
-                                         args.sample_sched_alpha, args.sample_sched_beta)
+            teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration, 
+                                         args.teacher_forcing_beta)
 
             outputs = model(images, init_features, captions, lengths, persist_features,
                             teacher_p, args.teacher_forcing)
@@ -434,13 +437,14 @@ if __name__ == '__main__':
                              'of teacher_forcing_parameter\n'
                              'additive: use the sampling schedule formula to determine weight '
                              'ratio between the teacher and model inputs')
-    parser.add_argument('--teacher_forcing_param_k', type=float, default=6500,
+    parser.add_argument('--teacher_forcing_k', type=float, default=6500,
                         help='value of the sampling schedule parameter k. '
-                        'Good values can be found in a range between 400 - 20000')
-    parser.add_argument('--sample_sched_alpha', type=float, default=1,
-                        help='sample scheduling parameter that is multiplied with k')
-    parser.add_argument('--sample_sched_beta', type=float, default=1,
-                        help='sample scheduling parameter that is multiplied with iterations')
+                        'Good values can be found in a range between 400 - 20000'
+                        'small values = start using model output quickly, large values -'
+                        ' wait for a while before start using model output')
+    parser.add_argument('--teacher_forcing_beta', type=float, default=1,
+                        help='sample scheduling parameter that determins the slope of '
+                        'the middle segment of the sigmoid')
 
     args = parser.parse_args()
 
