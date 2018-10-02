@@ -156,13 +156,13 @@ $ python eval2csv.py --evaluations_dir path/containing/eval_files --output_file 
 
 You can use `extract_dataset_features.py` to extract features from one of the convolutional models made available in `models.py`. Currently the following CNN models from PyTorch `torchvision` are supported `alexnet`, `Densenet 20`, `Resnet-152`, `VGG-16`, and `Inception V3`, all trained on ImageNet classification task. The exctracted features are either taken from the already flattened pre-classification layer, or by flattening the final convolutional or pooling layer.
 
-The resulting features are saved using `lmdb` file format. Example command for generating featured computed from images in MS-COCO training and validation sets using ResNet-152 CNN:
+The resulting features are saved using `lmdb` file format. Example command for generating features computed from images in MS-COCO training and validation sets using ResNet-152 CNN:
 
 ```bash
 $ python extract_dataset_features.py --dataset coco:train2014+coco:val2014 --extractor resnet152
 ```
 
-The feature extraction script currently supports the feature types specified by `--feature_type`:
+Feature extraction script currently supports the feature types specified by `--feature_type`:
 
 * **plain** - takes an input image, resizes it and calculates features without any augmentation
 * **avg** - takes 5 different crops of a resized input image - 4 corners + center, and then flips each crop horizontally, producing in total 10 cropped images. These images are then processed by the specified CNN separately, and the resulting single feature vector output produced by the feature extractor is formed by applying elementwise avareging over 10 feature vectors
@@ -175,12 +175,5 @@ Three different pixel value normalization strategies are currently supported for
 * **substract_half** - subtract `0.5` from each pixel value, after the pixel values have been converted to be between `0` and `1`.
 
 Feature extractor supports the same dataset configuration format as the `train.py` and `infer.py` scripts.
-
-To extract features run:
-
-
-```bash
-$ python extract_dataset_features.py 
-```
 
 
