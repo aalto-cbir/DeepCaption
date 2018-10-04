@@ -7,6 +7,8 @@ import torchvision.models as models
 from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence
 
+import external_models as ext_models
+
 Features = namedtuple('Features', 'external, internal')
 
 
@@ -103,6 +105,13 @@ class FeatureExtractor(nn.Module):
             if debug:
                 print('Using resnet 152, features shape 2048')
             model = models.resnet152(pretrained=True)
+            self.output_dim = 2048
+            modules = list(model.children())[:-1]
+            self.extractor = nn.Sequential(*modules)
+        elif model_name == 'resnet152caffe':
+            if debug:
+                print('Using resnet 152 converted from caffe, features shape 2048')
+            model = ext_models.resnet152caffe(pretrained=True)
             self.output_dim = 2048
             modules = list(model.children())[:-1]
             self.extractor = nn.Sequential(*modules)
