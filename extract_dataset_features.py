@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import lmdb
+import numpy as np
 
 import torch
 from torchvision import transforms
@@ -23,11 +24,25 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 def main(args):
     # Image preprocessing
     if args.feature_type == 'plain':
-        transform = transforms.Compose([
-            transforms.Resize((args.image_size, args.image_size)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406),
-                                 (0.229, 0.224, 0.225))])
+        if args.extractor == 'resnet152caffe-original':
+            # Use custom transform:
+            transform = transforms.Compose([
+                transforms.Resize((args.crop_size, args.crop_size)),
+                # Swap color space from RGB to BGR and subtract caffe-specific
+                # channel values from each pixel
+                transforms.Lambda(lambda img: np.array(img, dtype=np.float32)
+                                  [..., [2, 0, 1]] - [103.939, 116.779, 123.68]),
+                # Create a torch tensor and put channels first:
+                transforms.Lambda(lambda img: torch.from_numpy(img).permute(2, 0, 1)),
+                # Cast tensor to correct type:
+                transforms.Lambda(lambda img: img.type('torch.FloatTensor'))])
+
+        else:
+            transform = transforms.Compose([
+                transforms.Resize((args.image_size, args.image_size)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.485, 0.456, 0.406),
+                                     (0.229, 0.224, 0.225))])
     elif args.feature_type == 'avg' or args.feature_type == 'max':
         # Try with no normalization
         # Try with subtracting 0.5 from all values

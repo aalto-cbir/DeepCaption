@@ -1,11 +1,19 @@
-# Load models/external/resnet152.pth
+# Load resnet152.pth provided by https://github.com/ruotianluo/pytorch-resnet/
 # Follow code from: https://github.com/ruotianluo/pytorch-resnet/blob/master/resnet.py
 import torch.nn as nn
 from torchvision.models.resnet import Bottleneck, ResNet
 import torch.utils.model_zoo as model_zoo
+import sys
+# Add path to pytorch-caffe (marvis)
+# sys.path.append('pytorch-caffe')
+# from caffenet import *
 
 model_urls = {
-    'resnet152caffe': 'resnet152-caffe-95e0e999.pth'
+    # RGB input, normalized same way as input for Torchvision models,
+    # pixel values between 0 and 1:
+    'resnet152caffe_torchvision': 'resnet152-caffe-torchvision-style-95e0e999.pth',
+    # BGR input, caffe normalization, pixel values between 0 and 255:
+    'resnet152caffe_original': 'resnet152-caffe-original-4d2cc6ef.pth'
 }
 
 
@@ -18,14 +26,27 @@ class CaffeResNet(ResNet):
             getattr(self, 'layer%d' % i)[0].conv2.stride = (1, 1)
 
 
-def resnet152caffe(pretrained=False):
+def resnet152caffe_torchvision(pretrained=False):
     """Constructs a ResNet-152 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
     model = CaffeResNet(Bottleneck, [3, 8, 36, 3])
     if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet152caffe'],
+        model.load_state_dict(model_zoo.load_url(model_urls['resnet152caffe_torchvision'],
+                                                 model_dir='models/external'))
+
+    return model
+
+
+def resnet152caffe_original(pretrained=False):
+    """Constructs a ResNet-152 model.
+    Args:
+        pretrained (bool): If True, returns a model pre-trained on ImageNet
+    """
+    model = CaffeResNet(Bottleneck, [3, 8, 36, 3])
+    if pretrained:
+        model.load_state_dict(model_zoo.load_url(model_urls['resnet152caffe_original'],
                                                  model_dir='models/external'))
 
     return model

@@ -1,0 +1,4 @@
+[submodule "pytorch-caffe"]
+	path = pytorch-caffe
+	url = https://github.com/marvis/pytorch-caffe.git
+	branch = master
