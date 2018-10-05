@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
+import numpy as np
+
 from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence
 
@@ -47,6 +49,8 @@ class ModelParams:
         ext_feat = []
         int_feat = []
         for fn in features:
+            # Check if feature has an extension, if yes assum it's
+            # an external feature contained in a file with extension '.$ext':
             (tmp, ext) = os.path.splitext(fn)
             if ext:
                 ext_feat.append(fn)
@@ -87,11 +91,14 @@ class FeatureExtractor(nn.Module):
         More info: https://pytorch.org/docs/stable/torchvision/models.html """
         super(FeatureExtractor, self).__init__()
 
+        # Set flatten to False if we do not want to flatten the output features
+        self.flatten = True
+
         if model_name == 'alexnet':
             if debug:
                 print('Using AlexNet, features shape 256 x 6 x 6')
             model = models.alexnet(pretrained=True)
-            self.output_dim = 256 * 6 * 6
+            self.output_dim = np.array([256 * 6 * 6], dtype=np.int32)
             modules = list(model.children())[:-1]
             self.extractor = nn.Sequential(*modules)
         elif model_name == 'densenet201':
@@ -108,13 +115,39 @@ class FeatureExtractor(nn.Module):
             self.output_dim = 2048
             modules = list(model.children())[:-1]
             self.extractor = nn.Sequential(*modules)
-        elif model_name == 'resnet152caffe':
+        elif model_name == 'resnet152-conv':
+            if debug:
+                print('Using resnet 152, '
+                      'last convolutional layer, features shape 2048 x 7 x 7')
+            model = models.resnet152(pretrained=True)
+            self.output_dim = np.array([2048, 7, 7], dtype=np.int32)
+            modules = list(model.children())[:-2]
+            self.extractor = nn.Sequential(*modules)
+            self.flatten = False
+        elif model_name == 'resnet152caffe-torchvision':
             if debug:
                 print('Using resnet 152 converted from caffe, features shape 2048')
-            model = ext_models.resnet152caffe(pretrained=True)
+            model = ext_models.resnet152caffe_torchvision(pretrained=True)
             self.output_dim = 2048
             modules = list(model.children())[:-1]
             self.extractor = nn.Sequential(*modules)
+        elif model_name == 'resnet152caffe-original':
+            if debug:
+                print('Using resnet 152 converted from caffe, requires BGR images with '
+                      ' pixel values in range 0..255 features shape 2048')
+            model = ext_models.resnet152caffe_original(pretrained=True)
+            self.output_dim = 2048
+            modules = list(model.children())[:-1]
+            self.extractor = nn.Sequential(*modules)
+        elif model_name == 'resnet152caffe-conv':
+            if debug:
+                print('Using resnet 152 converted from caffe, '
+                      'last convolutional layer, features shape 2048 x 7 x 7')
+            model = ext_models.resnet152caffe_torchvision(pretrained=True)
+            self.output_dim = np.array([2048, 7, 7], dtype=np.int32)
+            modules = list(model.children())[:-2]
+            self.extractor = nn.Sequential(*modules)
+            self.flatten = False
         elif model_name == 'vgg16':
             if debug:
                 print('Using vgg 16, features shape 4096')
@@ -139,7 +172,10 @@ class FeatureExtractor(nn.Module):
         """Extract feature vectors from input images."""
         with torch.no_grad():
             features = self.extractor(images)
-        return features.reshape(features.size(0), -1)
+
+        if self.flatten:
+            features = features.reshape(features.size(0), -1)
+        return features
 
     @classmethod
     def list(cls, internal_features):
