@@ -29,7 +29,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def basename(fname):
-    fname.split(':')
     return os.path.splitext(os.path.basename(fname))[0]
 
 
@@ -88,9 +87,7 @@ def remove_incomplete_sentences(caption):
         return caption
 
 
-def infer(ext_args=None):
-    args = parse_args(ext_args)
-
+def main(args):
     # Create model directory
     if not os.path.exists(args.results_path):
         os.makedirs(args.results_path)
@@ -116,10 +113,7 @@ def infer(ext_args=None):
     # Build models
     print('Bulding models.')
 
-    if device.type == 'cpu':
-        state = torch.load(args.model, map_location=lambda storage, loc: storage)
-    else:
-        state = torch.load(args.model)
+    state = torch.load(args.model)
     params = ModelParams(state)
     if args.ext_features:
         params.update_ext_features(args.ext_features)
@@ -146,7 +140,7 @@ def infer(ext_args=None):
                                       iter_over_images=True)
 
     # Build the models
-    model = EncoderDecoder(params, device, vocab, state, ef_dims).eval()
+    model = EncoderDecoder(params, device, len(vocab), state, ef_dims).eval()
 
     output_data = []
 
@@ -187,32 +181,34 @@ def infer(ext_args=None):
             output_data.append({'caption': caption, 'image_id': image_ids[i]})
 
     output_file = None
+
     if not args.output_file and not args.print_results:
-        output_file = basename(args.model) + '.txt'
+        model_name = args.model.split(os.sep)[-2]
+        model_epoch = basename(args.model)
+        output_file = '{}-{}.{}'.format(model_name, model_epoch, args.output_format)
     else:
         output_file = args.output_file
 
     if output_file:
-        output_format = 'plain text'
-        if output_file.endswith('.json'):
+        if args.output_format == 'json':
             json.dump(output_data, open(os.path.join(args.results_path, output_file), 'w'))
-            output_format = 'COCO json'
         else:
             with open(output_file, 'w') as fp:
                 for data in output_data:
                     print(data['image_id'], data['caption'], file=fp)
 
-        print('Wrote generated captions to {} as {}'.format(output_file, output_format))
+        print('Wrote generated captions to {} as {}'.format(output_file, args.output_format))
 
     if args.print_results:
         for d in output_data:
             print('{}: {}'.format(d['image_id'], d['caption']))
 
-    return output_data
 
-
-def parse_args(ext_args=None):
+if __name__ == '__main__':
     parser = argparse.ArgumentParser()
+    parser.add_argument('image_files', type=str, nargs='*')
+    parser.add_argument('--image_dir', type=str,
+                        help='input image dir for generating captions')
     parser.add_argument('--dataset', type=str, default='generic',
                         help='which dataset to use')
     parser.add_argument('--dataset_config_file', type=str,
@@ -222,9 +218,6 @@ def parse_args(ext_args=None):
                         help='resize input image to this size')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
-    parser.add_argument('image_files', type=str, nargs='*')
-    parser.add_argument('--image_dir', type=str,
-                        help='input image dir for generating captions')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
     parser.add_argument('--vocab_path', type=str, help='path for vocabulary wrapper')
@@ -235,7 +228,9 @@ def parse_args(ext_args=None):
     parser.add_argument('--ext_persist_features', type=str,
                         help='paths for external persist features')
     parser.add_argument('--output_file', type=str,
-                        help='path for output JSON, default: model_name.json')
+                        help='path for output file, default: model_name.txt')
+    parser.add_argument('--output_format', type=str, default='txt',
+                        help='format of the output file')
     parser.add_argument('--verbose', help='verbose output',
                         action='store_true')
     parser.add_argument('--results_path', type=str, default='results/',
@@ -247,14 +242,14 @@ def parse_args(ext_args=None):
                         help='allow repeating sentences inside a paragraph')
     parser.add_argument('--only_complete_sentences', action='store_true')
 
-    return parser.parse_args(ext_args)
+    args = parser.parse_args()
+    # if not args.image_files and not args.image_dir:
+    #     args.image_dir = 'datasets/data/COCO/images/val2014'
 
-
-if __name__ == '__main__':    
     begin = datetime.now()
     print('Started inference at {}.'.format(begin))
 
-    infer()
+    main(args)
 
     end = datetime.now()
     print('Inference ended at {}. Total time: {}.'.format(end, end - begin))
