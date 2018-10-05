@@ -197,7 +197,13 @@ class ExternalFeature:
             c = self.lmdb.cursor()
             assert c.first(), full_path
             x1 = self._lmdb_to_numpy(c.value())
-            self._vdim = x1.shape[0]
+
+            # Get feature dimension. metadata if available:
+            vdim_data = self.lmdb.get('@vdim'.encode('ascii'))
+            if vdim_data is not None:
+                self._vdim = list(self._lmdb_to_numpy(vdim_data, dtype=np.int32))
+            else:
+                self._vdim = x1.shape[0]
 
         assert not np.isnan(x1).any(), full_path
 
@@ -206,12 +212,13 @@ class ExternalFeature:
     def vdim(self):
         return self._vdim
 
-    def _lmdb_to_numpy(self, value):
-        return np.frombuffer(value, dtype=np.float32)
+    def _lmdb_to_numpy(self, value, dtype=np.float32):
+        return np.frombuffer(value, dtype=dtype)
 
     def get_feature(self, idx):
         if self.lmdb is not None:
             x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+            x.reshape(self._vdim)
         else:
             x = self.data[idx]
 

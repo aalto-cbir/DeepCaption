@@ -31,7 +31,7 @@ def main(args):
                 # Swap color space from RGB to BGR and subtract caffe-specific
                 # channel values from each pixel
                 transforms.Lambda(lambda img: np.array(img, dtype=np.float32)
-                                  [..., [2, 0, 1]] - [103.939, 116.779, 123.68]),
+                                  [..., [2, 1, 0]] - [103.939, 116.779, 123.68]),
                 # Create a torch tensor and put channels first:
                 transforms.Lambda(lambda img: torch.from_numpy(img).permute(2, 0, 1)),
                 # Cast tensor to correct type:
@@ -39,7 +39,7 @@ def main(args):
 
         else:
             transform = transforms.Compose([
-                transforms.Resize((args.image_size, args.image_size)),
+                transforms.Resize((args.crop_size, args.crop_size)),
                 transforms.ToTensor(),
                 transforms.Normalize((0.485, 0.456, 0.406),
                                      (0.229, 0.224, 0.225))])
@@ -121,6 +121,12 @@ def main(args):
     print("Starting to extract features from dataset {} using {}...".
           format(args.dataset, args.extractor))
     show_progress = sys.stderr.isatty()
+
+    # If feature shape is not 1-dimensional, store feature shape metadata:
+    if isinstance(extractor.output_dim, np.ndarray):
+        with env.begin(write=True) as txn:
+            txn.put(str('@vdim').encode('ascii'), extractor.output_dim)
+
     for i, (images, _, _,
             image_ids, _) in enumerate(tqdm(data_loader, disable=not show_progress)):
 
@@ -145,7 +151,13 @@ def main(args):
         # Write to LMDB object:
         with env.begin(write=True) as txn:
             for j, image_id in enumerate(image_ids):
-                txn.put(str(image_id).encode('ascii'), features[j])
+
+                if isinstance(extractor.output_dim, np.ndarray):
+                    _feature = features[j].flatten()
+                else:
+                    _feature = features[j]
+
+                txn.put(str(image_id).encode('ascii'), _feature)
 
         # Print log info
         if not show_progress and ((i + 1) % args.log_step == 0):
