@@ -199,7 +199,8 @@ def main(args):
 
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
-    ext_feature_sets = [params.features.external, params.persist_features.external]
+    ext_feature_sets = [params.features.external, params.persist_features.external,
+                        params.attention_features.external]
     data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
                                       shuffle=True, num_workers=args.num_workers,
                                       ext_feature_sets=ext_feature_sets,
@@ -377,6 +378,8 @@ if __name__ == '__main__':
     parser.add_argument('--persist_features', type=str,
                         help='features accessible in all caption generation '
                         'steps, given as comma separated list')
+    parser.add_argument('--attention_features', type=str,
+                        help='features used by attention mechanism')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
