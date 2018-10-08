@@ -42,3 +42,17 @@ image_dir = middleframes/
 features_path = features/
 
 [trecvid2016]
+
+
+[picsom]
+#dataset_class = PicSOMDataset
+#root_dir = /m/cs/scratch/imagedb/picsom
+
+[picsom:conceptualcaptions]
+dataset_class = PicSOMDataset
+root_dir = /m/cs/scratch/imagedb/picsom
+features_path = databases/conceptualcaptions/features
+#features = c_in12_rn152_pool5o_d_c
+vocab_path = databases/conceptualcaptions/analysis/jorma/image_captioning/vocab.pkl
+image_dir = 
+subset = trainx
