@@ -191,7 +191,6 @@ class ExternalFeature:
         if filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
             self.bin = picsom_bin_data(full_path)
-            self.bin_lock = threading.Lock()
             print(('PicSOM binary data {:s} contains {:d}'+
                    ' objects of dimensionality {:d}').format(self.bin.path(),
                                                              self.bin.nobjects(),
