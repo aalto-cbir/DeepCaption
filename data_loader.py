@@ -183,12 +183,12 @@ class ExternalFeature:
             import h5py
             self.f = h5py.File(full_path, 'r')
             self.data = self.f['data']
-        if filename.endswith('.lmdb'):
+        elif filename.endswith('.lmdb'):
             import lmdb
             self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
                                readahead=False, meminit=False)
             self.lmdb = self.f.begin(write=False)
-        if filename.endswith('.bin'):
+        elif filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
             self.bin = picsom_bin_data(full_path)
             print(('PicSOM binary data {:s} contains {:d}'+
@@ -691,7 +691,7 @@ class PicSOMDataset(data.Dataset):
         label_text = self.texts[index]
         label = label_text[0]
         bin_data_idx = self.labels.index_by_label(label)
-        # print('getitem() {:d} {:s} {:d}'.format(index, label, bin_data_idx))
+        print('PicSOMDataset.getitem() {:d} {:s} {:d}'.format(index, label, bin_data_idx))
         
         image = torch.zeros(1, 1)
 
