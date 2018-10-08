@@ -183,12 +183,12 @@ class ExternalFeature:
             import h5py
             self.f = h5py.File(full_path, 'r')
             self.data = self.f['data']
-        if filename.endswith('.lmdb'):
+        elif filename.endswith('.lmdb'):
             import lmdb
             self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
                                readahead=False, meminit=False)
             self.lmdb = self.f.begin(write=False)
-        if filename.endswith('.bin'):
+        elif filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
             self.bin = picsom_bin_data(full_path)
             print(('PicSOM binary data {:s} contains {:d}' +
@@ -212,7 +212,7 @@ class ExternalFeature:
 
         assert x1 is None or not np.isnan(x1).any(), full_path
 
-        print('Loaded feature {} with dim {}.'.format(filename, self.vdim()))
+        print('Loaded feature {} with dim {}.'.format(full_path, self.vdim()))
 
     def vdim(self):
         return self._vdim
@@ -649,16 +649,14 @@ class PicSOMDataset(data.Dataset):
                 print('WARNING: filename {} could not be parsed, skipping...'.format(filename))
 
         dbname = 'conceptualcaptions'
-        f = 'c_in12_rn152_pool5o_d_c'
         t = 'gt-raw.txt'
         self.db_root = self.root #+'/databases/'+dbname
 
         self.labels = picsom_label_index(self.db_root+'/labels.txt')
         print('PicSOM database {:s} contains {:d} objects'.format(dbname, self.labels.nobjects()))
 
-        #self.bin_data = picsom_bin_data(self.db_root+'/features/'+f+'.bin')
-        #print('PicSOM binary data {:s} contains {:d} objects'.format(self.bin_data.path(),
-        #                                                             self.bin_data.nobjects()))
+        use_lmdb = self.feature_loaders[0][0].lmdb is not None
+        print('PicSOM using {} features'.format('LMDB' if use_lmdb else 'BIN'))
 
         subset = self.db_root+'/classes/'+self.subset
         # print(subset)
@@ -688,17 +686,19 @@ class PicSOMDataset(data.Dataset):
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
 
+        use_lmdb = self.feature_loaders[0][0].lmdb is not None
+
         label_text = self.texts[index]
         label = label_text[0]
-        bin_data_idx = self.labels.index_by_label(label)
-        # print('getitem() {:d} {:s} {:d}'.format(index, label, bin_data_idx))
+        bin_data_idx = -1 if use_lmdb else self.labels.index_by_label(label)
+        # print('PicSOMDataset.getitem() {:d} {:s} {:d}'.format(index, label, bin_data_idx))
         
         image = torch.zeros(1, 1)
 
         caption = label_text[1]
         target  = tokenize_caption(caption, self.vocab)
-        
-        feature_sets = ExternalFeature.load_sets(self.feature_loaders, bin_data_idx)
+
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, label if use_lmdb else bin_data_idx)
 
         #print('__getitem__ ending', target, feature_sets)
         
