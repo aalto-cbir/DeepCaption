@@ -191,8 +191,7 @@ class ExternalFeature:
         if filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
             self.bin = picsom_bin_data(full_path)
-            self.bin_lock = threading.Lock()
-            print(('PicSOM binary data {:s} contains {:d}'+
+            print(('PicSOM binary data {:s} contains {:d}' +
                    ' objects of dimensionality {:d}').format(self.bin.path(),
                                                              self.bin.nobjects(),
                                                              self.bin.vdim()))
@@ -652,7 +651,7 @@ class PicSOMDataset(data.Dataset):
         dbname = 'conceptualcaptions'
         f = 'c_in12_rn152_pool5o_d_c'
         t = 'gt-raw.txt'
-        self.db_root = self.root+'/databases/'+dbname
+        self.db_root = self.root #+'/databases/'+dbname
 
         self.labels = picsom_label_index(self.db_root+'/labels.txt')
         print('PicSOM database {:s} contains {:d} objects'.format(dbname, self.labels.nobjects()))
