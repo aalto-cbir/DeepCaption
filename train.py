@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#! /usr/bin/env python3
 
 import argparse
 import torch
@@ -18,9 +18,8 @@ from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pic
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder
 
-# Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+# Device configuration now in main()
+device = None
 
 def feats_to_str(feats):
     return '+'.join(feats.internal + [os.path.splitext(os.path.basename(f))[0]
@@ -143,6 +142,10 @@ def find_matching_model(args, params):
 
 
 def main(args):
+    global device
+    device = torch.device('cuda' if torch.cuda.is_available()
+                          and not args.cpu else 'cpu')
+
     if args.validate is None and args.lr_scheduler:
         print('ERROR: you need to enable validation in order to use the lr_scheduler')
         print('Hint: use something like --validate=coco:val2017')
@@ -198,7 +201,7 @@ def main(args):
         start_epoch = args.force_epoch - 1
 
     # Build data loader
-    print("Loading dataset: {}".format(args.dataset))
+    print('Loading dataset: {} with {} workers'.format(args.dataset, args.num_workers))
     ext_feature_sets = [params.features.external, params.persist_features.external]
     data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
                                       shuffle=True, num_workers=args.num_workers,
@@ -251,7 +254,8 @@ def main(args):
     else:
         all_stats = {}
 
-    print('Start Training... ')
+    print('Start training with num_epochs={:d} num_batches={:d} ...'.
+          format(args.num_epochs, args.num_batches))
     print('Optimizer:', optimizer)
     for epoch in range(start_epoch, args.num_epochs):
         stats = {}
@@ -294,6 +298,9 @@ def main(args):
                              np.exp(loss.item())))
                 sys.stdout.flush()
 
+            if i+1==args.num_batches:
+                break
+                
         end = datetime.now()
 
         stats['training_loss'] = total_loss / num_batches
@@ -339,8 +346,11 @@ def main(args):
         save_stats(args, params, all_stats)
 
 if __name__ == '__main__':
+    default_dataset  = 'coco:train2014'
+    default_features = 'resnet152'
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='coco:train2014',
+    parser.add_argument('--dataset', type=str, default=default_dataset,
                         help='which dataset to use')
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
@@ -365,9 +375,12 @@ if __name__ == '__main__':
                         help="Resume from largest epoch checkpoint matching \
                         current parameters")
     parser.add_argument('--verbose', action="store_true", help="Increase verbosity")
+    parser.add_argument('--profiler', action="store_true", help="Run in profiler")
+    parser.add_argument('--cpu', action="store_true",
+                        help="Use CPU even when GPU is available")
 
     # Model parameters
-    parser.add_argument('--features', type=str, default='resnet152',
+    parser.add_argument('--features', type=str, default=default_features,
                         help='features to use as the initial input for the '
                         'caption generator, given as comma separated list, '
                         'multiple features are concatenated, '
@@ -392,6 +405,7 @@ if __name__ == '__main__':
     parser.add_argument('--force_epoch', type=int, default=0,
                         help='Force start epoch (for broken model files...)')
     parser.add_argument('--num_epochs', type=int, default=5)
+    parser.add_argument('--num_batches', type=int, default=0)
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--learning_rate', type=float)
@@ -408,9 +422,11 @@ if __name__ == '__main__':
     begin = datetime.now()
     print('Started training at {}.'.format(begin))
 
-    # import cProfile
-    # cProfile.run('main(args=args)', filename='train.prof')
-    main(args=args)
+    if args.profiler:
+        import cProfile
+        cProfile.run('main(args=args)', filename='train.prof')
+    else:
+        main(args=args)
 
     end = datetime.now()
     print('Training ended at {}. Total training time: {}.'.format(end, end - begin))
