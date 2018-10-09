@@ -63,17 +63,14 @@ def main(args):
 
     # Create a vocab wrapper and add some special tokens
     vocab = Vocabulary()
-    vocab.add_word('<pad>')
-    vocab.add_word('<start>')
-    vocab.add_word('<end>')
-    vocab.add_word('<unk>')
+    vocab.add_special_tokens()
 
     # Add the words to the vocabulary
     for word in words:
         vocab.add_word(word)
 
-    with open(vocab_path, 'wb') as f:
-        pickle.dump(vocab, f)
+    # Save it
+    vocab.save(vocab_path)
 
     print("Total vocabulary size: {}".format(len(vocab)))
     print("Saved the vocabulary to '{}'".format(vocab_path))
