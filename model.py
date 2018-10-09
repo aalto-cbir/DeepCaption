@@ -283,6 +283,23 @@ class DecoderRNN(nn.Module):
 
                     # Weighted sum of the above embeddings:
                     embed_t = teacher_p * embed_gt_t + (1 - teacher_p) * embed_sampled_t
+                elif teacher_forcing == 'additive_sampled':
+                    # If we are in teacher forcing use ground truth as input
+                    if float(torch.rand(1)) < teacher_p:
+                        embed_t = embeddings[:, t + 1]
+                    # Otherwise use additive input
+                    else:
+                        teacher_p = torch.tensor([teacher_p]).to(device)
+
+                        # Embedding of the next token from the ground truth:
+                        embed_gt_t = embeddings[:, t + 1]
+
+                        _, predicted = step_output.max(1)
+                        # Embedding of the next token sampled from the model:
+                        embed_sampled_t = self.embed(predicted)
+
+                        # Weighted sum of the above embeddings:
+                        embed_t = teacher_p * embed_gt_t + (1 - teacher_p) * embed_sampled_t
                 else:
                     # Invalid teacher forcing mode specified
                     return None

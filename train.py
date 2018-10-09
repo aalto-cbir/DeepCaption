@@ -436,7 +436,8 @@ if __name__ == '__main__':
                              'sampled: follow a sampling schedule detemined by the value '
                              'of teacher_forcing_parameter\n'
                              'additive: use the sampling schedule formula to determine weight '
-                             'ratio between the teacher and model inputs')
+                             'ratio between the teacher and model inputs\n'
+                             'additive_sampled: combines two of the above modes')
     parser.add_argument('--teacher_forcing_k', type=float, default=6500,
                         help='value of the sampling schedule parameter k. '
                         'Good values can be found in a range between 400 - 20000'
