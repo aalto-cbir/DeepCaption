@@ -14,7 +14,7 @@ from datetime import datetime
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
-from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder
 
@@ -170,7 +170,15 @@ def main(args):
     dataset_configs = DatasetParams(args.dataset_config_file)
     dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
                                                             vocab_path=args.vocab_path)
-    vocab = get_vocab(vocab_path)
+    vocab_is_txt = re.search('\\.txt$', vocab_path)
+    vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
+    print('Size of the vocabulary is {}'.format(len(vocab)))
+
+    if False:
+        vocl = vocab.get_list()
+        with open('vocab-dump.txt', 'w') as vocf:
+            print('\n'.join(vocl), file=vocf)
+    
     if args.validate is not None:
         validation_dataset_params, _ = dataset_configs.get_params(args.validate)
 
