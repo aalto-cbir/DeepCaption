@@ -77,7 +77,8 @@ class DatasetParams:
         datasets = args_dataset.split('+')
         configs = []
         for dataset in datasets:
-            dataset = dataset.lower()
+            dataset_name_orig = dataset # needed if lower-casing is used
+            # dataset = dataset.lower() # disabled temporarily
 
             if dataset not in self.config:
                 print('No such dataset configured:', dataset)
@@ -110,7 +111,7 @@ class DatasetParams:
                 subset = cfg.get('subset')
 
                 config_dict = { i: cfg[i] for i in cfg.keys() }
-                config_dict['dataset_name'] = dataset_name
+                config_dict['dataset_name'] = dataset_name_orig
                 
                 dataset_config = DatasetConfig(dataset_name,
                                                child_split,
@@ -669,6 +670,7 @@ class PicSOMDataset(data.Dataset):
         
         self.texts = []
         tt = json_file
+        ll = {}
         # print(tt)
         with open(tt) as fp:
             for l in fp:
@@ -677,13 +679,15 @@ class PicSOMDataset(data.Dataset):
                 a = re.match('([^ ]+) (.*)', l)
                 assert a
                 label = a.group(1)
-                text  = a.group(2)
                 if label in restr_set:
-                    self.texts.append((label, text))
+                    ll[label] = 1
+                    texts = a.group(2).split(' # ')
+                    for text in texts:
+                        self.texts.append((label, text))
         
-        print('PicSOM info loaded for {} images and texts from {}'.format(len(self.texts),
-                                                                          tt))
-        
+        print('PicSOM {} texts loaded for {} images from {}'.
+              format(len(self.texts), len(ll), tt))
+
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
 
