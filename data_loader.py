@@ -657,8 +657,9 @@ class PicSOMDataset(data.Dataset):
         print('PicSOM database {:s} contains {:d} objects'.format(self.picsom_database, 
                                                                   self.labels.nobjects()))
 
-        use_lmdb = self.feature_loaders[0][0].lmdb is not None
-        print('PicSOM using {} features'.format('LMDB' if use_lmdb else 'BIN'))
+        self.use_lmdb = self.feature_loaders is not None and \
+                        self.feature_loaders[0][0].lmdb is not None
+        print('PicSOM using {} features'.format('LMDB' if self.use_lmdb else 'BIN'))
 
         subset = self.db_root+'/classes/'+self.subset
         # print(subset)
@@ -682,6 +683,8 @@ class PicSOMDataset(data.Dataset):
                 if label in restr_set:
                     ll[label] = 1
                     texts = a.group(2).split(' # ')
+                    #if len(texts)!=1:
+                    #    print(label, len(texts))
                     for text in texts:
                         self.texts.append((label, text))
         
@@ -691,11 +694,9 @@ class PicSOMDataset(data.Dataset):
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
 
-        use_lmdb = self.feature_loaders[0][0].lmdb is not None
-
         label_text = self.texts[index]
         label = label_text[0]
-        bin_data_idx = -1 if use_lmdb else self.labels.index_by_label(label)
+        bin_data_idx = -1 if self.use_lmdb else self.labels.index_by_label(label)
         # print('PicSOMDataset.getitem() {:d} {:s} {:d}'.format(index, label, bin_data_idx))
         
         image = torch.zeros(1, 1)
@@ -703,7 +704,8 @@ class PicSOMDataset(data.Dataset):
         caption = label_text[1]
         target  = tokenize_caption(caption, self.vocab)
 
-        feature_sets = ExternalFeature.load_sets(self.feature_loaders, label if use_lmdb else bin_data_idx)
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, 
+                                                 label if self.use_lmdb else bin_data_idx)
 
         #print('__getitem__ ending', target, feature_sets)
         
