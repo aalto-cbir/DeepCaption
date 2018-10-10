@@ -1,4 +1,5 @@
 import pickle
+import re
 
 
 class Vocabulary(object):
@@ -30,8 +31,15 @@ class Vocabulary(object):
         self.add_word('<unk>')
 
     def save(self, vocab_path):
-        with open(vocab_path, 'wb') as f:
-            pickle.dump(self, f)
+        is_txt = re.search('\\.txt$', vocab_path)
+        if is_txt:
+            ll = self.get_list()
+            with open(vocab_path, 'w') as f:
+                for l in ll:
+                    f.write(l+'\n')
+        else:
+            with open(vocab_path, 'wb') as f:
+                pickle.dump(self, f)
 
     def get_list(self):
         return [ self.idx2word[i] for i in range(self.__len__()) ]
@@ -53,6 +61,7 @@ def get_vocab_from_txt(vocab_path):
         for a in f:
             b = a.split()
             l.extend(b)
+            
     return get_vocab_from_list(l, True)
 
 
