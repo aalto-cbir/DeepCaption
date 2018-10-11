@@ -23,7 +23,7 @@ def basename(fname):
 
 DatasetConfig = namedtuple('DatasetConfig',
                            'name, child_split, dataset_class, image_dir, caption_path, '
-                           'vocab_path, features_path, subset')
+                           'vocab_path, features_path, subset, config_dict')
 
 
 class DatasetParams:
@@ -77,7 +77,8 @@ class DatasetParams:
         datasets = args_dataset.split('+')
         configs = []
         for dataset in datasets:
-            dataset = dataset.lower()
+            dataset_name_orig = dataset # needed if lower-casing is used
+            # dataset = dataset.lower() # disabled temporarily
 
             if dataset not in self.config:
                 print('No such dataset configured:', dataset)
@@ -109,6 +110,9 @@ class DatasetParams:
                 features_path = self._cfg_path(cfg, 'features_path')
                 subset = cfg.get('subset')
 
+                config_dict = { i: cfg[i] for i in cfg.keys() }
+                config_dict['dataset_name'] = dataset_name_orig
+                
                 dataset_config = DatasetConfig(dataset_name,
                                                child_split,
                                                dataset_class,
@@ -116,7 +120,8 @@ class DatasetParams:
                                                caption_path,
                                                cfg_vocab_path,
                                                features_path,
-                                               subset)
+                                               subset,
+                                               config_dict)
 
                 configs.append(dataset_config)
             else:
@@ -138,16 +143,20 @@ class DatasetParams:
         """If dataset name is separated by 'parent_dataset:child_split' (i.e. 'coco:train2014')
         fallback to parent settings when child configuration has no corresponding parameter
         included"""
-        child_subset = None
-        if ":" in dataset:
-            (parent_dataset, child_subset) = tuple(dataset.split(':'))
+        if ":" not in dataset:
+            return self.config[dataset], None
+
+        h = dataset.split(':')
+        for i in range(-1, -len(h), -1):
+            a = ':'.join(h[0:i])
+            print(a)
 
             # Take defaults from parent and override them as needed:
-            for key in self.config[parent_dataset]:
+            for key in self.config[a]:
                 if self.config[dataset].get(key) is None:
-                    self.config[dataset][key] = self.config[parent_dataset][key]
-
-        return self.config[dataset], child_subset
+                    self.config[dataset][key] = self.config[a][key]
+        return self.config[dataset], h[-1]
+        
 
     def _cfg_path(self, cfg, s):
         path = cfg.get(s)
@@ -278,7 +287,7 @@ class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -348,7 +357,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         """Set the path for images, captions and vocabulary wrapper.
         Args:
             root: image directory.
@@ -428,7 +437,7 @@ class VistDataset(data.Dataset):
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -510,7 +519,7 @@ class MSRVTTDataset(data.Dataset):
     """MSR-VTT Custom Dataset compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -575,7 +584,7 @@ class MSRVTTDataset(data.Dataset):
 
 class TRECVID2018Dataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         self.root = root
         self.vocab = vocab
         self.transform = transform
@@ -625,7 +634,7 @@ class TRECVID2018Dataset(data.Dataset):
 
 class PicSOMDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         from picsom_label_index import picsom_label_index
         from picsom_class       import picsom_class
         from picsom_bin_data    import picsom_bin_data
@@ -636,27 +645,21 @@ class PicSOMDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.picsom_root = config_dict['picsom_root']
+        self.picsom_database = config_dict['dataset_name'].split(':')[1]
 
-        self.id_to_filename = {}
-        for filename in glob.glob(self.root + '/*.jpeg'):
-            m = re.match(r'(\d+):\d+$', basename(filename))
-            if m:
-                image_id = int(m.group(1))
-                assert image_id >= 0, 'filename={}'.format(filename)
-                assert image_id not in self.id_to_filename
-                self.id_to_filename[image_id] = filename
-            else:
-                print('WARNING: filename {} could not be parsed, skipping...'.format(filename))
-
-        dbname = 'conceptualcaptions'
-        t = 'gt-raw.txt'
-        self.db_root = self.root #+'/databases/'+dbname
+        print('PicSOM root={:s} database={:s}'.format(self.picsom_root,
+                                                      self.picsom_database))
+        
+        self.db_root = self.picsom_root+'/databases/'+self.picsom_database
 
         self.labels = picsom_label_index(self.db_root+'/labels.txt')
-        print('PicSOM database {:s} contains {:d} objects'.format(dbname, self.labels.nobjects()))
+        print('PicSOM database {:s} contains {:d} objects'.format(self.picsom_database, 
+                                                                  self.labels.nobjects()))
 
-        use_lmdb = self.feature_loaders[0][0].lmdb is not None
-        print('PicSOM using {} features'.format('LMDB' if use_lmdb else 'BIN'))
+        self.use_lmdb = self.feature_loaders is not None and \
+                        self.feature_loaders[0][0].lmdb is not None
+        print('PicSOM using {} features'.format('LMDB' if self.use_lmdb else 'BIN'))
 
         subset = self.db_root+'/classes/'+self.subset
         # print(subset)
@@ -667,30 +670,33 @@ class PicSOMDataset(data.Dataset):
         restr_set = self.restr.objects()
         
         self.texts = []
-        tt = self.db_root+'/textdumps/'+t
+        tt = json_file
+        ll = {}
         # print(tt)
-        with open(self.db_root+'/textdumps/'+t) as fp:
+        with open(tt) as fp:
             for l in fp:
                 l = l.rstrip()
                 #print(l)
                 a = re.match('([^ ]+) (.*)', l)
                 assert a
                 label = a.group(1)
-                text  = a.group(2)
                 if label in restr_set:
-                    self.texts.append((label, text))
+                    ll[label] = 1
+                    texts = a.group(2).split(' # ')
+                    #if len(texts)!=1:
+                    #    print(label, len(texts))
+                    for text in texts:
+                        self.texts.append((label, text))
         
-        print('PicSOM info loaded for {} images and texts from {}'.format(len(self.texts),
-                                                                          tt))
-        
+        print('PicSOM {} texts loaded for {} images from {}'.
+              format(len(self.texts), len(ll), tt))
+
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
 
-        use_lmdb = self.feature_loaders[0][0].lmdb is not None
-
         label_text = self.texts[index]
         label = label_text[0]
-        bin_data_idx = -1 if use_lmdb else self.labels.index_by_label(label)
+        bin_data_idx = -1 if self.use_lmdb else self.labels.index_by_label(label)
         # print('PicSOMDataset.getitem() {:d} {:s} {:d}'.format(index, label, bin_data_idx))
         
         image = torch.zeros(1, 1)
@@ -698,7 +704,8 @@ class PicSOMDataset(data.Dataset):
         caption = label_text[1]
         target  = tokenize_caption(caption, self.vocab)
 
-        feature_sets = ExternalFeature.load_sets(self.feature_loaders, label if use_lmdb else bin_data_idx)
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, 
+                                                 label if self.use_lmdb else bin_data_idx)
 
         #print('__getitem__ ending', target, feature_sets)
         
@@ -710,7 +717,7 @@ class PicSOMDataset(data.Dataset):
 
 class GenericDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         self.vocab = vocab
         self.transform = transform
         self.skip_images = skip_images
@@ -900,6 +907,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         json_file = dataset_config.caption_path
         subset = dataset_config.subset
         fpath = dataset_config.features_path
+        config_dict = dataset_config.config_dict
 
         loaders = None
         dims = None
@@ -917,12 +925,15 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         # if verbose:
         print((' root={!s:s}\n json_file={!s:s}\n vocab={!s:s}\n subset={!s:s}\n'+
                ' transform={!s:s}\n skip_images={!s:s}\n iter_over_images={!s:s}\n'+
-               ' loaders={!s:s}').format(root, json_file, vocab, subset, transform,
-                                         skip_images, iter_over_images, loaders))
+               ' loaders={!s:s}\n config_dict={!s:s}').format(root, json_file, vocab,
+                                                              subset, transform,
+                                                              skip_images, iter_over_images,
+                                                              loaders, config_dict))
 
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
                               subset=subset, transform=transform, skip_images=skip_images,
-                              iter_over_images=iter_over_images, feature_loaders=loaders)
+                              iter_over_images=iter_over_images, feature_loaders=loaders,
+                              config_dict=config_dict)
 
         datasets.append(dataset)
 

@@ -20,25 +20,24 @@ except ImportError as e:
 
 
 def main(args):
-    dataset_params = dl.DatasetParams.fromargs(args).configs
+    dataset_configs = dl.DatasetParams(args.dataset_config_file)
 
-    # Take vocab path from dataset config, can be overridden by
-    # command line argument
-    if args.vocab_path is None:
-        if len(dataset_params) == 1:
-            vocab_path = dataset_params[0].vocab_path
-        else:
-            print('ERROR: for combined datasets you need to define the vocabulary on the '
-                  'command line, e.g. --vocab_path=/some/dir/vocab.pkl')
-            sys.exit(1)
+    # Make sure that the user specifies vocab output path
+    # as an argument:
+    if args.vocab_output_path is None:
+        print('ERROR: When creating a vocabulary file you should always specify it on a '
+              'command line, e.g. --vocab_output_path=/some/dir/vocab.pkl')
+        sys.exit(1)
     else:
-        vocab_path = args.vocab_path
+        vocab_output_path = args.vocab_output_path
 
     # Check that we are not overwriting anything
-    if os.path.exists(vocab_path):
+    if os.path.exists(vocab_output_path):
         print('ERROR: {} exists, please remove it first if you really want to replace it.'.
-              format(vocab_path))
+              format(vocab_output_path))
         sys.exit(1)
+
+    dataset_params, _ = dataset_configs.get_params(args.dataset)
 
     # Get data loader
     data_loader, _ = dl.get_loader(dataset_params, None, None, 128, shuffle=False,
@@ -63,20 +62,17 @@ def main(args):
 
     # Create a vocab wrapper and add some special tokens
     vocab = Vocabulary()
-    vocab.add_word('<pad>')
-    vocab.add_word('<start>')
-    vocab.add_word('<end>')
-    vocab.add_word('<unk>')
+    vocab.add_special_tokens()
 
     # Add the words to the vocabulary
     for word in words:
         vocab.add_word(word)
 
-    with open(vocab_path, 'wb') as f:
-        pickle.dump(vocab, f)
+    # Save it
+    vocab.save(vocab_output_path)
 
     print("Total vocabulary size: {}".format(len(vocab)))
-    print("Saved the vocabulary to '{}'".format(vocab_path))
+    print("Saved the vocabulary to '{}'".format(vocab_output_path))
 
 
 if __name__ == '__main__':
@@ -85,7 +81,7 @@ if __name__ == '__main__':
                         help='which dataset to use')
     parser.add_argument('--dataset_config_file', type=str, default='datasets/datasets.conf',
                         help='location of dataset configuration file')
-    parser.add_argument('--vocab_path', type=str, help='path for saving vocabulary')
+    parser.add_argument('--vocab_output_path', type=str, help='path for saving vocabulary')
     parser.add_argument('--threshold', type=int, default=4,
                         help='minimum word count threshold')
     parser.add_argument('--num_workers', type=int, default=2)
