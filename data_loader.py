@@ -700,7 +700,7 @@ class PicSOMDataset(data.Dataset):
             with open(tt) as fp:
                 for l in fp:
                     l = l.rstrip()
-                    print(l)
+                    #print(l)
                     a = re.match('([^ ]+) (.*)', l)
                     assert a
                     label = a.group(1)
