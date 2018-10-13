@@ -236,6 +236,7 @@ class ExternalFeature:
             x = self.bin.get_float(idx)
             #if np.isnan(x).any():
             #    print('ERROR', idx, ':', x)
+            #print('QQQ', self.bin.path(), idx, x[0:5])
             #assert not np.isnan(x).any(), self.bin.path()+' '+str(idx)
         else:
             x = self.data[idx]
@@ -645,9 +646,10 @@ class PicSOMDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
-        self.picsom_root = config_dict['picsom_root']
-        self.picsom_database = config_dict['dataset_name'].split(':')[1]
-
+        self.picsom_root      = config_dict['picsom_root']
+        self.picsom_database  = config_dict['dataset_name'].split(':')[1]
+        self.picsom_label_map = config_dict.get('label_map', None)
+        
         print('PicSOM root={:s} database={:s}'.format(self.picsom_root,
                                                       self.picsom_database))
         
@@ -691,13 +693,34 @@ class PicSOMDataset(data.Dataset):
         print('PicSOM {} texts loaded for {} images from {}'.
               format(len(self.texts), len(ll), tt))
 
+        self.label_map = {}
+        if self.picsom_label_map is not None:
+            ll = {}
+            tt = self.db_root+"/"+self.picsom_label_map
+            with open(tt) as fp:
+                for l in fp:
+                    l = l.rstrip()
+                    print(l)
+                    a = re.match('([^ ]+) (.*)', l)
+                    assert a
+                    label = a.group(1)
+                    if label in restr_set:
+                        ll[label] = 1
+                        self.label_map[label] = a.group(2)
+            print('PicSOM {} label map entries loaded from {}'.
+                  format(len(ll), self.picsom_label_map))
+
+
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
 
         label_text = self.texts[index]
         label = label_text[0]
-        bin_data_idx = -1 if self.use_lmdb else self.labels.index_by_label(label)
-        # print('PicSOMDataset.getitem() {:d} {:s} {:d}'.format(index, label, bin_data_idx))
+        mlabel = self.label_map.get(label, label)
+        bin_data_idx = -1 if self.use_lmdb else self.labels.index_by_label(mlabel)
+        if False:
+            print('PicSOMDataset.getitem() {:d} {:s} {:s} {:d}'.
+                  format(index, label, mlabel, bin_data_idx))
         
         image = torch.zeros(1, 1)
 
