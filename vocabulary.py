@@ -17,9 +17,14 @@ class Vocabulary(object):
             self.idx += 1
 
     def __call__(self, word):
-        if word not in self.word2idx:
-            return self.word2idx['<unk>']
-        return self.word2idx[word]
+        if isinstance(word, str):
+            if word not in self.word2idx:
+                return self.word2idx['<unk>']
+            return self.word2idx[word]
+        else:
+            if word not in self.idx2word:
+                return -1
+            return self.idx2word[word]
 
     def __len__(self):
         return len(self.word2idx)
