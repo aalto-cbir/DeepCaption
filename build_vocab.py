@@ -54,15 +54,14 @@ def main(args):
     show_progress = sys.stderr.isatty()
     for _, captions, _, _, _ in tqdm(data_loader, disable=not show_progress):
         for caption in captions:
-            lowered = caption.lower()
             if args.no_tokenize:
-                words = lowered.split()
+                words = caption.split()
             else:
-                words = nltk.tokenize.word_tokenize(lowered)
+                words = nltk.tokenize.word_tokenize(caption.lower())
             if args.show_tokens:
                 joined = ' '.join(words)
-                diff_same = "DIFF" if lowered!=joined else "SAME"
-                print(diff_same, lowered, '=>', joined)                    
+                diff_same = "DIFF" if caption!=joined else "SAME"
+                print(diff_same, caption, '=>', joined)                    
             counter.update(words)
 
     if args.show_stats:
