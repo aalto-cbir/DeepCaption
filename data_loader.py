@@ -112,7 +112,7 @@ class DatasetParams:
 
                 config_dict = { i: cfg[i] for i in cfg.keys() }
                 config_dict['dataset_name'] = dataset_name_orig
-                
+
                 dataset_config = DatasetConfig(dataset_name,
                                                child_split,
                                                dataset_class,
@@ -267,20 +267,28 @@ class ExternalFeature:
         return (ef_loaders, feat_dim)
 
 
-def tokenize_caption(text, vocab):
+def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False):
     """Tokenize a single sentence / caption, convert tokens to vocabulary indices,
     and store the vocabulary index array into a torch tensor"""
 
     if vocab is None:
         return text
 
-    tokens = nltk.tokenize.word_tokenize(str(text).lower())
+    if no_tokenize:
+        tokens = str(text).split()
+    else:
+        tokens = nltk.tokenize.word_tokenize(str(text).lower())
+
     caption = []
     caption.append(vocab('<start>'))
     caption.extend([vocab(token) for token in tokens])
     caption.append(vocab('<end>'))
     target = torch.Tensor(caption)
 
+    if show_tokens:
+        joined = ' '.join([vocab(i) for i in caption])
+        print('TOKENS', joined)
+        
     return target
 
 
@@ -649,7 +657,9 @@ class PicSOMDataset(data.Dataset):
         self.picsom_root      = config_dict['picsom_root']
         self.picsom_database  = config_dict['dataset_name'].split(':')[1]
         self.picsom_label_map = config_dict.get('label_map', None)
-        
+        self.no_tokenize      = config_dict.get('no_tokenize', False)
+        self.show_tokens      = config_dict.get('show_tokens', False)
+
         print('PicSOM root={:s} database={:s}'.format(self.picsom_root,
                                                       self.picsom_database))
         
@@ -725,7 +735,8 @@ class PicSOMDataset(data.Dataset):
         image = torch.zeros(1, 1)
 
         caption = label_text[1]
-        target  = tokenize_caption(caption, self.vocab)
+        target  = tokenize_caption(caption, self.vocab,
+                                   no_tokenize=self.no_tokenize, show_tokens=self.show_tokens)
 
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, 
                                                  label if self.use_lmdb else bin_data_idx)
