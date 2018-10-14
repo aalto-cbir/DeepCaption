@@ -170,6 +170,10 @@ def main(args):
     dataset_configs = DatasetParams(args.dataset_config_file)
     dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
                                                             vocab_path=args.vocab_path)
+    for i in dataset_params:
+        i.config_dict['no_tokenize'] = args.no_tokenize
+        i.config_dict['show_tokens'] = args.show_tokens
+
     vocab_is_txt = re.search('\\.txt$', vocab_path)
     vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
     print('Size of the vocabulary is {}'.format(len(vocab)))
@@ -181,6 +185,9 @@ def main(args):
     
     if args.validate is not None:
         validation_dataset_params, _ = dataset_configs.get_params(args.validate)
+        for i in validation_dataset_params:
+            i.config_dict['no_tokenize'] = args.no_tokenize
+            i.config_dict['show_tokens'] = args.show_tokens
 
     params = ModelParams.fromargs(args)
     print(params)
@@ -424,6 +431,8 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
+    parser.add_argument('--no_tokenize', action='store_true')
+    parser.add_argument('--show_tokens', action='store_true')
 
     args = parser.parse_args()
 
