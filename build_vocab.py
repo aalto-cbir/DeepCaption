@@ -54,12 +54,27 @@ def main(args):
     show_progress = sys.stderr.isatty()
     for _, captions, _, _, _ in tqdm(data_loader, disable=not show_progress):
         for caption in captions:
-            tokens = nltk.tokenize.word_tokenize(caption.lower())
-            counter.update(tokens)
+            lowered = caption.lower()
+            if args.no_tokenize:
+                words = lowered.split()
+            else:
+                words = nltk.tokenize.word_tokenize(lowered)
+            if args.show_tokens:
+                joined = ' '.join(words)
+                diff_same = "DIFF" if lowered!=joined else "SAME"
+                print(diff_same, lowered, '=>', joined)                    
+            counter.update(words)
+
+    if args.show_stats:
+        for k in counter.keys():
+            print(k, counter[k])
 
     # If the word frequency is less than 'threshold', then the word is discarded
     words = [word for word, cnt in counter.items() if cnt >= args.threshold]
 
+    if True:
+        print(words)
+    
     # Create a vocab wrapper and add some special tokens
     vocab = Vocabulary()
     vocab.add_special_tokens()
@@ -85,5 +100,8 @@ if __name__ == '__main__':
     parser.add_argument('--threshold', type=int, default=4,
                         help='minimum word count threshold')
     parser.add_argument('--num_workers', type=int, default=2)
+    parser.add_argument('--show_stats', action="store_true")
+    parser.add_argument('--show_tokens', action="store_true")
+    parser.add_argument('--no_tokenize', action="store_true")
     args = parser.parse_args()
     main(args)
