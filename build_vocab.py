@@ -38,6 +38,9 @@ def main(args):
         sys.exit(1)
 
     dataset_params, _ = dataset_configs.get_params(args.dataset)
+    for i in dataset_params:
+        i.config_dict['no_tokenize'] = args.no_tokenize
+        i.config_dict['show_tokens'] = args.show_tokens
 
     # Get data loader
     data_loader, _ = dl.get_loader(dataset_params, None, None, 128, shuffle=False,
