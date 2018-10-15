@@ -253,6 +253,7 @@ class DecoderRNN(nn.Module):
         self.linear = nn.Linear(p.hidden_size, vocab_size)
 
     def _cat_features(self, images, external_features):
+        """Concatenate internal and external features"""
         feat_outputs = []
         # Extract features with each extractor (internal feature)
         for ext in self.extractors:
