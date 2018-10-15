@@ -101,7 +101,7 @@ def main(args):
     # To open an lmdb handle and prepare it for the right size
     # it needs to fit the total number of elements in the dataset
     # so we set a map_size to a largish value here:
-    map_size = 1e10
+    map_size = 1e12
 
     lmdb_path = None
     file_name = None
