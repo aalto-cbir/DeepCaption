@@ -47,8 +47,6 @@ def main(args):
                                 skip_images=True,
                                 iter_over_images=True)
 
-
-
     print("Getting file paths from dataset {}...".format(args.dataset))
     show_progress = sys.stderr.isatty()
     for i, (_, _, _,
