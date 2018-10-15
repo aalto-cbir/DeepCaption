@@ -22,6 +22,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def main(args):
+    #
     # Image preprocessing
     if args.feature_type == 'plain':
         if args.extractor == 'resnet152caffe-original':
@@ -116,8 +117,13 @@ def main(args):
 
     lmdb_path = os.path.join(args.output_dir, file_name)
 
+    # Check that we are not overwriting anything
+    if os.path.exists(lmdb_path):
+        print('ERROR: {} exists, please remove it first if you really want to replace it.'.
+              format(lmdb_path))
+        sys.exit(1)
+
     print("Preparing to store extracted features to {}...".format(lmdb_path))
-    env = lmdb.open(lmdb_path, map_size=map_size)
 
     print("Starting to extract features from dataset {} using {}...".
           format(args.dataset, args.extractor))
@@ -125,8 +131,9 @@ def main(args):
 
     # If feature shape is not 1-dimensional, store feature shape metadata:
     if isinstance(extractor.output_dim, np.ndarray):
-        with env.begin(write=True) as txn:
-            txn.put(str('@vdim').encode('ascii'), extractor.output_dim)
+        with lmdb.open(lmdb_path, map_size=map_size) as env:
+            with env.begin(write=True) as txn:
+                txn.put(str('@vdim').encode('ascii'), extractor.output_dim)
 
     for i, (images, _, _,
             image_ids, _) in enumerate(tqdm(data_loader, disable=not show_progress)):
@@ -150,19 +157,20 @@ def main(args):
             features = extractor(images).data.cpu().numpy()
 
         # Write to LMDB object:
-        with env.begin(write=True) as txn:
-            for j, image_id in enumerate(image_ids):
+        with lmdb.open(lmdb_path, map_size=map_size) as env:
+            with env.begin(write=True) as txn:
+                for j, image_id in enumerate(image_ids):
 
-                # If output dimension is not a scalar, flatten the array.
-                # When retrieving this feature from the LMDB, developer must take
-                # care to reshape the feature back to the correct dimensions!
-                if isinstance(extractor.output_dim, np.ndarray):
-                    _feature = features[j].flatten()
-                # Otherwise treat it as is:
-                else:
-                    _feature = features[j]
+                    # If output dimension is not a scalar, flatten the array.
+                    # When retrieving this feature from the LMDB, developer must take
+                    # care to reshape the feature back to the correct dimensions!
+                    if isinstance(extractor.output_dim, np.ndarray):
+                        _feature = features[j].flatten()
+                    # Otherwise treat it as is:
+                    else:
+                        _feature = features[j]
 
-                txn.put(str(image_id).encode('ascii'), _feature)
+                    txn.put(str(image_id).encode('ascii'), _feature)
 
         # Print log info
         if not show_progress and ((i + 1) % args.log_step == 0):
