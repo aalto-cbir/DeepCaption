@@ -407,6 +407,9 @@ if __name__ == '__main__':
                         'steps, given as comma separated list')
     parser.add_argument('--attention_features', type=str,
                         help='features used by attention mechanism')
+    parser.add_argument('--attention', type=str,
+                        help='type of attention mechanism to use '
+                        ' currently supported types: None, spatial')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
