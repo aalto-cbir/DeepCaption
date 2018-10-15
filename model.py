@@ -13,6 +13,9 @@ import external_models as ext_models
 
 Features = namedtuple('Features', 'external, internal')
 
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
 
 class ModelParams:
     def __init__(self, d):
@@ -264,7 +267,8 @@ class DecoderRNN(nn.Module):
         # Return concatenated features, empty tensor if none
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
-    def forward(self, features, captions, lengths, images, external_features=None):
+    def forward(self, features, captions, lengths, images, external_features=None,
+                teacher_p=1.0, teacher_forcing='always'):
         """Decode image feature vectors and generates captions."""
 
         # First, construct embeddings input, with initial feature as
@@ -283,11 +287,78 @@ class DecoderRNN(nn.Module):
                 persist_features = (persist_features.unsqueeze(1).
                                     expand(-1, seq_length, -1))
 
-        inputs = torch.cat([embeddings, persist_features], 2)
+        if teacher_forcing == 'always':
+            # Teacher forcing enabled -
+            # Feed ground truth as next input at each time-step when training:
+            inputs = torch.cat([embeddings, persist_features], 2)
+            packed = pack_padded_sequence(inputs, lengths, batch_first=True)
+            hiddens, _ = self.lstm(packed)
+            outputs = self.linear(hiddens[0])
+        else:
+            # Use sampled or additive mode:
+            batch_size = features.size()[0]
+            vocab_size = self.linear.out_features
+            outputs = torch.zeros(batch_size, seq_length, vocab_size).to(device)
+            states = None
+            inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
-        packed = pack_padded_sequence(inputs, lengths, batch_first=True)
-        hiddens, _ = self.lstm(packed)
-        outputs = self.linear(hiddens[0])
+            for t in range(seq_length - 1):
+                hiddens, states = self.lstm(inputs, states)
+                step_output = self.linear(hiddens.squeeze(1))
+                outputs[:, t, :] = step_output
+
+                if teacher_forcing == 'sampled':
+                    # Sampled mode: sample next token from lstm with probability
+                    # (1 - prob_teacher):
+                    if float(torch.rand(1)) < teacher_p:
+                        embed_t = embeddings[:, t + 1]
+                    else:
+                        _, predicted = step_output.max(1)
+                        embed_t = self.embed(predicted)
+                elif teacher_forcing == 'additive':
+                    # Additive mode: add embeddings using weights determined by
+                    # sampling schedule:
+
+                    teacher_p = torch.tensor([teacher_p]).to(device)
+
+                    # Embedding of the next token from the ground truth:
+                    embed_gt_t = embeddings[:, t + 1]
+
+                    _, predicted = step_output.max(1)
+                    # Embedding of the next token sampled from the model:
+                    embed_sampled_t = self.embed(predicted)
+
+                    # Weighted sum of the above embeddings:
+                    embed_t = teacher_p * embed_gt_t + (1 - teacher_p) * embed_sampled_t
+                elif teacher_forcing == 'additive_sampled':
+                    # If we are in teacher forcing use ground truth as input
+                    if float(torch.rand(1)) < teacher_p:
+                        embed_t = embeddings[:, t + 1]
+                    # Otherwise use additive input
+                    else:
+                        teacher_p = torch.tensor([teacher_p]).to(device)
+
+                        # Embedding of the next token from the ground truth:
+                        embed_gt_t = embeddings[:, t + 1]
+
+                        _, predicted = step_output.max(1)
+                        # Embedding of the next token sampled from the model:
+                        embed_sampled_t = self.embed(predicted)
+
+                        # Weighted sum of the above embeddings:
+                        embed_t = teacher_p * embed_gt_t + (1 - teacher_p) * embed_sampled_t
+                else:
+                    # Invalid teacher forcing mode specified
+                    return None
+
+                inputs = torch.cat([embed_t, persist_features], 1).unsqueeze(1)
+
+            # Generate a packed sequence of outputs with generated captions assuming
+            # exactly the same lengths are ground-truth. If needed, model could be modified
+            # to check for the <end> token (by for-example hardcoding it to same value
+            # for all models):
+            outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
+
         return outputs
 
     def sample(self, features, images, external_features, states=None, max_seq_length=20):
@@ -318,13 +389,13 @@ class DecoderRNN(nn.Module):
 
 
 class EncoderDecoder(nn.Module):
-    def __init__(self, params, device, vocab, state, ef_dims):
+    def __init__(self, params, device, vocab_size, state, ef_dims):
         """Vanilla EncoderDecoder model"""
         super(EncoderDecoder, self).__init__()
         print('Using device: {}'.format(device.type))
         print('Initializing EncoderDecoder model...')
         self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
-        self.decoder = DecoderRNN(params, len(vocab), ef_dims[1]).to(device)
+        self.decoder = DecoderRNN(params, vocab_size, ef_dims[1]).to(device)
 
         self.opt_params = (list(self.decoder.parameters()) +
                            list(self.encoder.linear.parameters()) +
@@ -337,9 +408,11 @@ class EncoderDecoder(nn.Module):
     def get_opt_params(self):
         return self.opt_params
 
-    def forward(self, images, init_features, captions, lengths, persist_features):
+    def forward(self, images, init_features, captions, lengths, persist_features,
+                teacher_p=1.0, teacher_forcing='always'):
         features = self.encoder(images, init_features)
-        outputs = self.decoder(features, captions, lengths, images, persist_features)
+        outputs = self.decoder(features, captions, lengths, images, persist_features,
+                               teacher_p, teacher_forcing)
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,

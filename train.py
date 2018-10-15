@@ -69,7 +69,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'dropout': params.dropout,
         'encoder_dropout': params.encoder_dropout,
         'features': params.features,
-        'persist_features': params.persist_features,
+        'persist_features': params.persist_features
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -140,6 +140,19 @@ def find_matching_model(args, params):
         print("Warning: Failed to intelligently resume...")
 
     return model_file_path
+
+
+def get_teacher_prob(k, i, beta=1):
+    """Inverse sigmed sampling scheduler determines the probability
+    with which teacher forcing is turned off, more info here:
+    https://arxiv.org/pdf/1506.03099.pdf"""
+    if k == 0:
+        return 1.0
+
+    i = i * beta
+    p = k / (k + np.exp(i / k))
+
+    return p
 
 
 def main(args):
@@ -214,7 +227,7 @@ def main(args):
                                      skip_images=not params.has_internal_features())
 
     # Build the models
-    model = EncoderDecoder(params, device, vocab, state, ef_dims)
+    model = EncoderDecoder(params, device, len(vocab), state, ef_dims)
     opt_params = model.get_opt_params()
 
     # Loss and optimizer
@@ -253,6 +266,10 @@ def main(args):
         all_stats = {}
 
     print('Start Training... ')
+    print('Teacher forcing: {}'.format(args.teacher_forcing))
+    if args.teacher_forcing != 'always':
+        print('\t k: {}'.format(args.teacher_forcing_k))
+        print('\t beta: {}'.format(args.teacher_forcing_beta))
     print('Optimizer:', optimizer)
     for epoch in range(start_epoch, args.num_epochs):
         stats = {}
@@ -269,7 +286,17 @@ def main(args):
             persist_features = features[1].to(device) if len(features) > 1 else None
 
             # Forward, backward and optimize
-            outputs = model(images, init_features, captions, lengths, persist_features)
+            # Calculate the probability whether to use teacher forcing or not:
+
+            # Iterate over batches:
+            iteration = (epoch - start_epoch) * len(data_loader) + i
+
+            teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration, 
+                                         args.teacher_forcing_beta)
+
+            outputs = model(images, init_features, captions, lengths, persist_features,
+                            teacher_p, args.teacher_forcing)
+
             loss = criterion(outputs, targets)
             model.zero_grad()
             loss.backward()
@@ -405,6 +432,23 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
+    # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
+    parser.add_argument('--teacher_forcing', type=str, default='always',
+                        help='Type of teacher forcing to use for training the Decoder RNN: \n'
+                             'always: always use groundruth as LSTM input when training'
+                             'sampled: follow a sampling schedule detemined by the value '
+                             'of teacher_forcing_parameter\n'
+                             'additive: use the sampling schedule formula to determine weight '
+                             'ratio between the teacher and model inputs\n'
+                             'additive_sampled: combines two of the above modes')
+    parser.add_argument('--teacher_forcing_k', type=float, default=6500,
+                        help='value of the sampling schedule parameter k. '
+                        'Good values can be found in a range between 400 - 20000'
+                        'small values = start using model output quickly, large values -'
+                        ' wait for a while before start using model output')
+    parser.add_argument('--teacher_forcing_beta', type=float, default=1,
+                        help='sample scheduling parameter that determins the slope of '
+                        'the middle segment of the sigmoid')
 
     args = parser.parse_args()
 
