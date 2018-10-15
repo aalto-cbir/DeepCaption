@@ -199,11 +199,25 @@ class ExternalFeature:
             self.lmdb = self.f.begin(write=False)
         elif filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
-            self.bin = picsom_bin_data(full_path)
+            self.bin = [ picsom_bin_data(full_path) ]
             print(('PicSOM binary data {:s} contains {:d}' +
-                   ' objects of dimensionality {:d}').format(self.bin.path(),
-                                                             self.bin.nobjects(),
-                                                             self.bin.vdim()))
+                   ' objects of dimensionality {:d}').format(self.bin[0].path(),
+                                                             self.bin[0].nobjects(),
+                                                             self.bin[0].vdim()))
+        elif filename.endswith('.txt'):
+            from picsom_bin_data import picsom_bin_data
+            self.bin = []
+            m = re.match('^(.*/)?[^/]+', full_path)
+            assert(m)
+            with open(full_path) as f:
+                for p in f:
+                    xp = m.group(1)+p.strip()
+                    i = len(self.bin)
+                    self.bin += [ picsom_bin_data(xp) ]
+                    print(('PicSOM binary data {:s} contains {:d}' +
+                           ' objects of dimensionality {:d}').format(self.bin[i].path(),
+                                                                     self.bin[i].nobjects(),
+                                                                     self.bin[i].vdim()))
         else:
             self.data = np.load(full_path)
 
@@ -214,7 +228,7 @@ class ExternalFeature:
             x1 = self._lmdb_to_numpy(c.value())
             self._vdim = x1.shape[0]
         elif self.bin is not None:
-            self._vdim = self.bin.vdim()
+            self._vdim = sum([i.vdim() for i in self.bin])
         else:
             x1 = self.data[0]
             self._vdim = self.data.shape[1]
@@ -233,7 +247,9 @@ class ExternalFeature:
         if self.lmdb is not None:
             x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
         elif self.bin is not None:
-            x = self.bin.get_float(idx)
+            x = []
+            for i in self.bin:
+                x += i.get_float(idx)
             #if np.isnan(x).any():
             #    print('ERROR', idx, ':', x)
             #print('QQQ', self.bin.path(), idx, x[0:5])
