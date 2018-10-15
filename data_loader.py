@@ -318,6 +318,7 @@ class CocoDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.config_dict = config_dict
 
         print("COCO info loaded for {} images and {} captions.".format(len(self.coco.imgs),
                                                                        len(self.coco.anns)))
@@ -354,6 +355,10 @@ class CocoDataset(data.Dataset):
         # use image filename as image identifier in lmdb:
         if self.vocab is None and self.feature_loaders is None:
             img_id = path
+
+        # We are in file list generation mode and want to output full paths to images:
+        if self.config_dict.get('return_full_image_path'):
+            img_id = os.path.join(self.root, path)
 
         return image, target, img_id, feature_sets
 
