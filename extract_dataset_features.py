@@ -38,6 +38,7 @@ def main(args):
                 transforms.Lambda(lambda img: img.type('torch.FloatTensor'))])
 
         else:
+            # Default transform
             transform = transforms.Compose([
                 transforms.Resize((args.crop_size, args.crop_size)),
                 transforms.ToTensor(),
@@ -132,7 +133,7 @@ def main(args):
 
         images = images.to(device)
 
-        # If we are dealing with cropped images, image dimensions are is: bs, ncrops, c, h, w
+        # If we are dealing with cropped images, image dimensions are: bs, ncrops, c, h, w
         if images.dim() == 5:
             bs, ncrops, c, h, w = images.size()
             # fuse batch size and ncrops:
@@ -152,8 +153,12 @@ def main(args):
         with env.begin(write=True) as txn:
             for j, image_id in enumerate(image_ids):
 
+                # If output dimension is not a scalar, flatten the array.
+                # When retrieving this feature from the LMDB, developer must take
+                # care to reshape the feature back to the correct dimensions!
                 if isinstance(extractor.output_dim, np.ndarray):
                     _feature = features[j].flatten()
+                # Otherwise treat it as is:
                 else:
                     _feature = features[j]
 
