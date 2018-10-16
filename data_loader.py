@@ -208,16 +208,18 @@ class ExternalFeature:
             from picsom_bin_data import picsom_bin_data
             self.bin = []
             m = re.match('^(.*/)?[^/]+', full_path)
-            assert(m)
+            assert m
             with open(full_path) as f:
                 for p in f:
-                    xp = m.group(1)+p.strip()
-                    i = len(self.bin)
-                    self.bin += [ picsom_bin_data(xp) ]
-                    print(('PicSOM binary data {:s} contains {:d}' +
-                           ' objects of dimensionality {:d}').format(self.bin[i].path(),
-                                                                     self.bin[i].nobjects(),
-                                                                     self.bin[i].vdim()))
+                    q = p.strip()
+                    if q!='' and q[0]!='#':
+                        xp = m.group(1)+q
+                        i = len(self.bin)
+                        self.bin += [ picsom_bin_data(xp) ]
+                        print(('PicSOM binary data {:s} contains {:d}' +
+                               ' objects of dimensionality {:d}').
+                              format(self.bin[i].path(), self.bin[i].nobjects(),
+                                     self.bin[i].vdim()))
         else:
             self.data = np.load(full_path)
 
@@ -711,7 +713,7 @@ class PicSOMDataset(data.Dataset):
                     l = l.rstrip()
                     #print(l)
                     a = re.match('([^ ]+) (.*)', l)
-                    assert a
+                    assert a, 'reading label_map failed'
                     label = a.group(1)
                     if label in restr_set:
                         ll[label] = 1
@@ -728,7 +730,7 @@ class PicSOMDataset(data.Dataset):
                 l = l.rstrip()
                 #print(l)
                 a = re.match('([^ ]+) (.*)', l)
-                assert a
+                assert a, 'reading <'+tt+'> failed'
                 label = a.group(1)
                 if label in restr_set:
                     ll[label] = 1
