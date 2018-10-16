@@ -447,9 +447,12 @@ class VisualGenomeIM2PDataset(data.Dataset):
         img_id = self.paragraphs[index]['image_id']
         path = os.path.join(self.root, str(img_id) + '.jpg')
 
-        image = Image.open(path).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
+        if not self.skip_images:
+            image = Image.open(path).convert('RGB')
+            if self.transform is not None:
+                image = self.transform(image)
+        else:
+            image = torch.zeros(1, 1)
 
         # Prepare external features
         # TODO probably wrong index ...
