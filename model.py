@@ -27,7 +27,6 @@ class ModelParams:
         self.learning_rate = self._get_param(d, 'learning_rate', 0.001)
         self.features = self._get_features(d, 'features', 'resnet152')
         self.persist_features = self._get_features(d, 'persist_features', '')
-        self.attention_features = self._get_features(d, 'attention_features', '')
         self.encoder_dropout = self._get_param(d, 'encoder_dropout', 0)
         self.attention = self._get_param(d, 'attention', None)
 
@@ -243,8 +242,7 @@ class DecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
-        # What type of attention do we have:
-        self.attn_type = p.attention
+
         self.embed = nn.Embedding(vocab_size, p.embed_size)
 
         (self.extractors,
@@ -257,33 +255,6 @@ class DecoderRNN(nn.Module):
         self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
                             p.num_layers, dropout=p.dropout, batch_first=True)
         self.linear = nn.Linear(p.hidden_size, vocab_size)
-
-        if self.attn_type is not None:
-            # Get the length of an individual annotation vector:
-            annotation_size = attn_features.size()[-1]
-            init_attention(hidden_size, annotation_size, vocab_size)
-
-    def init_attention(self, hidden_size, annotation_size, vocab_size):
-        """Initialize attention variables"""
-        # If attention type 1 - Soft
-
-        # Softmax used for calculating attention weights
-        self.softmax = nn.Softmax()
-
-        if self.attn_type == 'soft' or self.attn_type == 'spatial':
-            # Calculates attention logit e_ti for i-th annotation vector:
-            # In practice, we want K logits of shape (1) each corresponding
-            # to a weight for a given image region i:
-            self.attn_logits = nn.Linear(hidden_size + annotation_size, 1)
-            self.attn_fc = nn.Linear(hidden_size + annotation_size, vocab_size)
-
-        # If attention type 2 -
-
-        # If attention type 3 -
-        if self.attn_type == 'top_down':
-            pass
-
-        pass
 
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
@@ -298,7 +269,7 @@ class DecoderRNN(nn.Module):
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
     def forward(self, features, captions, lengths, images, external_features=None,
-                attention_features=None, teacher_p=1.0, teacher_forcing='always'):
+                teacher_p=1.0, teacher_forcing='always'):
         """Decode image feature vectors and generates captions."""
 
         # First, construct embeddings input, with initial feature as
@@ -317,14 +288,14 @@ class DecoderRNN(nn.Module):
                 persist_features = (persist_features.unsqueeze(1).
                                     expand(-1, seq_length, -1))
 
-        if self.attn_type is None and teacher_forcing == 'always':
+        if teacher_forcing == 'always':
             # Teacher forcing enabled -
             # Feed ground truth as next input at each time-step when training:
             inputs = torch.cat([embeddings, persist_features], 2)
             packed = pack_padded_sequence(inputs, lengths, batch_first=True)
             hiddens, _ = self.lstm(packed)
             outputs = self.linear(hiddens[0])
-        elif self.attn_type is None and teacher_forcing != 'always':
+        else:
             # Use sampled or additive scheduling mode:
             batch_size = features.size()[0]
             vocab_size = self.linear.out_features
@@ -383,37 +354,6 @@ class DecoderRNN(nn.Module):
 
                 inputs = torch.cat([embed_t, persist_features], 1).unsqueeze(1)
 
-        elif self.attn_type is not None:
-            # We care only about attention for now:
-            # Do we pass full image at time-step -1 or 0?
-            # Or do we only pass attention contexts???
-            bs, h, w, d = attention_features.size()
-            # Get channels first:
-            attention_features = attention_features.permute(0, 3, 1, 2)
-            # Flatten with respect to W & H:
-            attention_features = attention_features.view(bs, -1, d)
-            vocab_size = self.linear.out_features
-            if self.attn_type == 'spatial':
-                outputs = torch.zeros(bs, seq_length, vocab_size).to(device)
-                states = None
-                # simple model initialized with pooling layer output
-                inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
-
-                for t in range(seq_length - 1):
-                    hiddens, states = self.lstm(inputs, states)
-                    attention_logits = self.attn_logits(attention_features + hiddens)
-                    attention_weights = self.softmax(attention_logits)
-                    context_t = torch.sum(attention_weights * attention_features, (1, 2))
-
-                    # Populate output tensor for the loss
-                    step_output = self.attn_fc(hiddens.squeeze(1) + context_t)
-                    outputs[:, t, :] = step_output
-
-                    # Pick next token from ground truth (no teacher forcing sampling yet!)
-                    embed_t = embeddings[:, t + 1]
-
-                    inputs = torch.cat([embed_t, persist_features], 1).unsqueeze(1)
-
             # Generate a packed sequence of outputs with generated captions assuming
             # exactly the same lengths are ground-truth. If needed, model could be modified
             # to check for the <end> token (by for-example hardcoding it to same value
@@ -446,6 +386,169 @@ class DecoderRNN(nn.Module):
 
         # sampled_ids: (batch_size, max_seq_length)
         sampled_ids = torch.stack(sampled_ids, 1)
+        return sampled_ids
+
+
+class SpatialAttention(nn.Module):
+    """Spatial attention network implementation based on
+    "Knowing when to look" by Lu et al"""
+
+    def __init__(self, feature_size, num_attention_locs, hidden_size):
+        """Initialize a network that learns the attention weights for each time step
+        annotation_size - size C of a single 1x1xC tensor at each image location
+        hidden_size - size of the hidden layer of decoder LSTM
+        attention_size - size of the context vector produced by the attention network"""
+
+        super(SpatialAttention, self).__init__()
+
+        self.image_att = nn.Linear(feature_size, num_attention_locs)
+        self.lstm_att = nn.Linear(hidden_size, num_attention_locs)
+        self.combined_att = nn.Linear(num_attention_locs, 1)
+        self.relu = nn.ReLU()
+        self.softmax = nn.Softmax(dim=1)  # (dim=0 is our current minitbatch)
+
+    def forward(self, features, h):
+        """ Forward step for attention network
+        features - convolutional image features of shape ((W' * H') , C)
+        h - hidden state of the decoder"""
+
+        att_img = self.image_att(features)
+        att_h = self.lstm_att(h)
+
+        att_logits = self.combined_att(self.relu(att_img + att_h.unsqueeze(1))).squeeze(2)
+
+        alpha = self.softmax(att_logits)
+
+        att_context = (features * alpha.unsqueeze(2)).sum(dim=1)
+
+        return att_context, alpha
+
+
+class SpatialAttentionDecoderRNN(nn.Module):
+    def __init__(self, p, vocab_size, ext_features_dim):
+        """Set the hyper-parameters and build the layers."""
+        super(SpatialAttentionDecoderRNN, self).__init__()
+        self.embed = nn.Embedding(vocab_size, p.embed_size)
+
+        print('SpatialAttentionDecoderRNN: total feature dim: {}'.
+              format(ext_features_dim))
+
+        assert len(ext_features_dim) == 3, \
+            "wrong number of input feature dimensions %d" % len(ext_features_dim)
+
+        self.feature_size = ext_features_dim[0]
+        self.num_attention_locs = ext_features_dim[1] * ext_features_dim[2]
+
+        # Next 2 functions transform mean feature vector into c_0 and h_0
+        self.init_h = nn.Linear(self.feature_size, p.hidden_size)
+        self.init_c = nn.Linear(self.feature_size, p.hidden_size)
+
+        self.dropout = nn.Dropout(p=p.dropout)
+
+        self.lstm_step = nn.LSTMCell(p.embed_size, p.hidden_size)
+        self.attention = SpatialAttention(self.feature_size, self.num_attention_locs,
+                                          p.hidden_size)
+        self.linear = nn.Linear(p.hidden_size + self.feature_size, vocab_size)
+
+    def init_hidden_state(self, features):
+        """Initialize the initial hidden and cell state of the LSTM"""
+        mean_features = features.mean(dim=1)
+        h = self.init_h(mean_features)
+        c = self.init_c(mean_features)
+
+        return h, c
+
+    def forward(self, encoder_features, captions, lengths, images, external_features=None,
+                teacher_p=1.0, teacher_forcing='always'):
+        """Decode image feature vectors and generates captions."""
+        embeddings = self.embed(captions)
+        seq_length = embeddings.size()[1]
+        batch_size = embeddings.size()[0]
+
+        vocab_size = self.linear.out_features
+
+        features = external_features.view(batch_size, -1, self.feature_size)
+
+        h, c = self.init_hidden_state(features)
+
+        outputs = torch.zeros(batch_size, seq_length, vocab_size).to(device)
+        alphas = torch.zeros(batch_size, seq_length, self.num_attention_locs).to(device)
+
+        for t in range(seq_length):
+            batch_size_t = sum([l > t for l in lengths])
+            h, c = self.lstm_step(embeddings[:batch_size_t, t],
+                                  (h[:batch_size_t], c[:batch_size_t]))
+            att_context, alpha = self.attention(features[:batch_size_t], h[:batch_size_t])
+
+            outputs_t = self.linear(torch.cat([self.dropout(h), att_context], dim=1))
+            outputs[:batch_size_t, t] = outputs_t
+
+            alphas[:batch_size_t, t] = alpha
+
+        outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
+
+        return outputs, alphas
+
+    def sample(self, features, images, external_features, states=None, max_seq_length=20):
+        """Generate captions for given image features using greedy search."""
+        sampled_ids = []
+
+        # Concatenate internal and external features
+        persist_features = self._cat_features(images, external_features)
+        if persist_features is None:
+            persist_features = features.new_empty(0)
+
+        # inputs: (batch_size, 1, embed_size + len(external features))
+        inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
+
+        for i in range(max_seq_length):
+            hiddens, states = self.lstm(inputs, states)
+            outputs = self.linear(hiddens.squeeze(1))
+            _, predicted = outputs.max(1)
+            sampled_ids.append(predicted)
+
+            # inputs: (batch_size, 1, embed_size + len(external_features))
+            embeddings = self.embed(predicted)
+            inputs = torch.cat([embeddings, persist_features], 1).unsqueeze(1)
+
+        # sampled_ids: (batch_size, max_seq_length)
+        sampled_ids = torch.stack(sampled_ids, 1)
+        return sampled_ids
+
+
+class SpatialAttentionEncoderDecoder(nn.Module):
+    def __init__(self, params, device, vocab_size, state, ef_dims):
+        """Vanilla EncoderDecoder model"""
+        super(SpatialAttentionEncoderDecoder, self).__init__()
+        print('Using device: {}'.format(device.type))
+        print('Initializing SpatialAttentionEncoderDecoder model...')
+        self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
+        self.decoder = SpatialAttentionDecoderRNN(params, vocab_size, ef_dims[1]).to(device)
+
+        self.opt_params = (list(self.decoder.parameters()) +
+                           list(self.encoder.linear.parameters()) +
+                           list(self.encoder.bn.parameters()))
+
+        if state:
+            self.encoder.load_state_dict(state['encoder'])
+            self.decoder.load_state_dict(state['decoder'])
+
+    def get_opt_params(self):
+        return self.opt_params
+
+    def forward(self, images, init_features, captions, lengths, persist_features,
+                teacher_p=1.0, teacher_forcing='always'):
+        #features = self.encoder(images, init_features)
+        outputs, alphas = self.decoder(None, captions, lengths, images, persist_features,
+                                       teacher_p, teacher_forcing)
+        return outputs
+
+    def sample(self, image_tensor, init_features, states=None,
+               max_seq_length=20):
+        feature = self.encoder(image_tensor, init_features)
+        sampled_ids = self.decoder.sample(feature, image_tensor, states,
+                                          max_seq_length=max_seq_length)
+
         return sampled_ids
 
 
