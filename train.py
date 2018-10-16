@@ -16,7 +16,7 @@ from torchvision import transforms
 
 from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, DatasetParams
-from model import ModelParams, EncoderDecoder
+from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -69,7 +69,8 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'dropout': params.dropout,
         'encoder_dropout': params.encoder_dropout,
         'features': params.features,
-        'persist_features': params.persist_features
+        'persist_features': params.persist_features,
+        'attention': params.attention
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -212,8 +213,7 @@ def main(args):
 
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
-    ext_feature_sets = [params.features.external, params.persist_features.external,
-                        params.attention_features.external]
+    ext_feature_sets = [params.features.external, params.persist_features.external]
     data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
                                       shuffle=True, num_workers=args.num_workers,
                                       ext_feature_sets=ext_feature_sets,
@@ -227,7 +227,10 @@ def main(args):
                                      skip_images=not params.has_internal_features())
 
     # Build the models
-    model = EncoderDecoder(params, device, len(vocab), state, ef_dims)
+    if args.attention is None:
+        model = EncoderDecoder(params, device, len(vocab), state, ef_dims)
+    elif args.attention == 'spatial':
+        model = SpatialAttentionEncoderDecoder(params, device, len(vocab), state, ef_dims)
     opt_params = model.get_opt_params()
 
     # Loss and optimizer
@@ -282,8 +285,10 @@ def main(args):
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
-            init_features = features[0].to(device) if len(features) > 0 else None
-            persist_features = features[1].to(device) if len(features) > 1 else None
+            init_features = features[0].to(device)if len(features) > 0 and \
+                features[0] is not None else None
+            persist_features = features[1].to(device) if len(features) > 1 and \
+                features[1] is not None else None
 
             # Forward, backward and optimize
             # Calculate the probability whether to use teacher forcing or not:
@@ -291,11 +296,15 @@ def main(args):
             # Iterate over batches:
             iteration = (epoch - start_epoch) * len(data_loader) + i
 
-            teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration, 
+            teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                          args.teacher_forcing_beta)
 
-            outputs = model(images, init_features, captions, lengths, persist_features,
-                            teacher_p, args.teacher_forcing)
+            if args.attention is None:
+                outputs = model(images, init_features, captions, lengths, persist_features,
+                                teacher_p, args.teacher_forcing)
+            else:
+                outputs, _ = model(images, None, captions, lengths, persist_features,
+                                   teacher_p, args.teacher_forcing)
 
             loss = criterion(outputs, targets)
             model.zero_grad()
@@ -405,8 +414,6 @@ if __name__ == '__main__':
     parser.add_argument('--persist_features', type=str,
                         help='features accessible in all caption generation '
                         'steps, given as comma separated list')
-    parser.add_argument('--attention_features', type=str,
-                        help='features used by attention mechanism')
     parser.add_argument('--attention', type=str,
                         help='type of attention mechanism to use '
                         ' currently supported types: None, spatial')
