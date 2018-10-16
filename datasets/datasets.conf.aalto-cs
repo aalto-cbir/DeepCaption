@@ -45,14 +45,32 @@ features_path = features/
 
 
 [picsom]
-#dataset_class = PicSOMDataset
-#root_dir = /m/cs/scratch/imagedb/picsom
+dataset_class = PicSOMDataset
+picsom_root   = /m/cs/scratch/imagedb/picsom
+features_path = features
+image_dir     =
 
 [picsom:conceptualcaptions]
-dataset_class = PicSOMDataset
-root_dir = /m/cs/scratch/imagedb/picsom
-features_path = databases/conceptualcaptions/features
-#features = c_in12_rn152_pool5o_d_c
-vocab_path = databases/conceptualcaptions/analysis/jorma/image_captioning/vocab.pkl
-image_dir = 
-subset = trainx
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/conceptualcaptions
+vocab_path    = textdumps/vocab.txt
+caption_path  = textdumps/gt-cooked.txt
+
+[picsom:conceptualcaptions:train]
+subset        = trainx
+
+[picsom:MSR-VTT]
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/MSR-VTT
+vocab_path    = textdumps/vocab.txt
+caption_path  = textdumps/gt-train.txt
+
+[picsom:MSR-VTT:train]
+subset        = train
+
+[picsom:COCO]
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/COCO
+vocab_path    = textdumps/vocab.txt
+caption_path  = textdumps/gt-cooked.txt
+
+[picsom:COCO:train2014]
+subset        = train2014
+
