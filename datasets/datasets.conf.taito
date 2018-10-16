@@ -19,6 +19,24 @@ caption_path = download/annotations/captions_train2017.json
 caption_path = download/annotations/captions_val2017.json
 image_dir = image_captioning/val2014_256x256
 
+[vgim2p]
+# Visual Genome paragraph captions
+dataset_class = VisualGenomeIM2PDataset
+root_dir = /proj/mediaind/picsom/databases/visualgenome
+image_dir = image_captioning/images_256x256
+caption_path = download/im2p/paragraphs_v1.json
+# We use COCO vocab for pre-training compatibility:
+vocab_path = /proj/mediaind/picsom/databases/COCO/image_captioning/vocab.pkl
+features_path = features
+
+[vgim2p:train]
+subset = /proj/mediaind/picsom/databases/visualgenome/download/im2p/train_split.json
+
+[vgim2p:val]
+subset = /proj/mediaind/picsom/databases/visualgenome/download/im2p/val_split.json
+
+[vgim2p:test]
+subset = /proj/mediaind/picsom/databases/visualgenome/download/im2p/test_split.json
 
 [msrvtt]
 dataset_class = MSRVTTDataset
