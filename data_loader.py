@@ -199,11 +199,25 @@ class ExternalFeature:
             self.lmdb = self.f.begin(write=False)
         elif filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
-            self.bin = picsom_bin_data(full_path)
+            self.bin = [ picsom_bin_data(full_path) ]
             print(('PicSOM binary data {:s} contains {:d}' +
-                   ' objects of dimensionality {:d}').format(self.bin.path(),
-                                                             self.bin.nobjects(),
-                                                             self.bin.vdim()))
+                   ' objects of dimensionality {:d}').format(self.bin[0].path(),
+                                                             self.bin[0].nobjects(),
+                                                             self.bin[0].vdim()))
+        elif filename.endswith('.txt'):
+            from picsom_bin_data import picsom_bin_data
+            self.bin = []
+            m = re.match('^(.*/)?[^/]+', full_path)
+            assert(m)
+            with open(full_path) as f:
+                for p in f:
+                    xp = m.group(1)+p.strip()
+                    i = len(self.bin)
+                    self.bin += [ picsom_bin_data(xp) ]
+                    print(('PicSOM binary data {:s} contains {:d}' +
+                           ' objects of dimensionality {:d}').format(self.bin[i].path(),
+                                                                     self.bin[i].nobjects(),
+                                                                     self.bin[i].vdim()))
         else:
             self.data = np.load(full_path)
 
@@ -214,7 +228,7 @@ class ExternalFeature:
             x1 = self._lmdb_to_numpy(c.value())
             self._vdim = x1.shape[0]
         elif self.bin is not None:
-            self._vdim = self.bin.vdim()
+            self._vdim = sum([i.vdim() for i in self.bin])
         else:
             x1 = self.data[0]
             self._vdim = self.data.shape[1]
@@ -233,7 +247,13 @@ class ExternalFeature:
         if self.lmdb is not None:
             x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
         elif self.bin is not None:
-            x = self.bin.get_float(idx)
+            x = []
+            for i in self.bin:
+                for j in idx:
+                    v = i.get_float(j)
+                    if not np.isnan(v[0]):
+                        x += v
+                        break
             #if np.isnan(x).any():
             #    print('ERROR', idx, ':', x)
             #print('QQQ', self.bin.path(), idx, x[0:5])
@@ -688,31 +708,10 @@ class PicSOMDataset(data.Dataset):
         restr_size = len(self.restr.objects())
         print('PicSOM class file {:s} contains {:d} objects'.format(self.restr.path(),
                                                                     restr_size))
+
         restr_set = self.restr.objects()
         
-        self.texts = []
-        tt = json_file
-        ll = {}
-        # print(tt)
-        with open(tt) as fp:
-            for l in fp:
-                l = l.rstrip()
-                #print(l)
-                a = re.match('([^ ]+) (.*)', l)
-                assert a
-                label = a.group(1)
-                if label in restr_set:
-                    ll[label] = 1
-                    texts = a.group(2).split(' # ')
-                    #if len(texts)!=1:
-                    #    print(label, len(texts))
-                    for text in texts:
-                        self.texts.append((label, text))
-        
-        print('PicSOM {} texts loaded for {} images from {}'.
-              format(len(self.texts), len(ll), tt))
-
-        self.label_map = {}
+        label_map = {}
         if self.picsom_label_map is not None:
             ll = {}
             tt = self.db_root+"/"+self.picsom_label_map
@@ -725,37 +724,61 @@ class PicSOMDataset(data.Dataset):
                     label = a.group(1)
                     if label in restr_set:
                         ll[label] = 1
-                        self.label_map[label] = a.group(2)
+                        label_map[label] = a.group(2)
             print('PicSOM {} label map entries loaded from {}'.
                   format(len(ll), self.picsom_label_map))
+
+        self.data = []
+        tt = json_file
+        ll = {}
+        # print(tt)
+        with open(tt) as fp:
+            for l in fp:
+                l = l.rstrip()
+                #print(l)
+                a = re.match('([^ ]+) (.*)', l)
+                assert a
+                label = a.group(1)
+                if label in restr_set:
+                    ll[label] = 1
+                    idxs = []
+                    if not self.use_lmdb:
+                        idxs.append(self.labels.index_by_label(label))
+                        laa = label_map.get(label, '').split()
+                        for la in laa:
+                            idxs.append(self.labels.index_by_label(la))
+                            
+                    texts = a.group(2).split(' # ')
+                    #if len(texts)!=1:
+                    #    print(label, len(texts))
+                    for text in texts:
+                        self.data.append((label, text, idxs))
+        
+        print('PicSOM {} texts loaded for {} images from {}'.
+              format(len(self.data), len(ll), tt))
 
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
 
-        label_text = self.texts[index]
-        label = label_text[0]
-        mlabel = self.label_map.get(label, label)
-        bin_data_idx = -1 if self.use_lmdb else self.labels.index_by_label(mlabel)
+        label_text_index = self.data[index]
+        label = label_text_index[0]
+        label_or_idx = label if self.use_lmdb else label_text_index[2]
         if False:
-            print('PicSOMDataset.getitem() {:d} {:s} {:s} {:d}'.
-                  format(index, label, mlabel, bin_data_idx))
-        
-        image = torch.zeros(1, 1)
+            print('PicSOMDataset.getitem() {:d} {:s} {!s:s}'.
+                  format(index, label, label_or_idx))
 
-        caption = label_text[1]
-        target  = tokenize_caption(caption, self.vocab,
+        target  = tokenize_caption(label_text_index[1], self.vocab,
                                    no_tokenize=self.no_tokenize, show_tokens=self.show_tokens)
 
-        feature_sets = ExternalFeature.load_sets(self.feature_loaders, 
-                                                 label if self.use_lmdb else bin_data_idx)
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, label_or_idx)
 
         #print('__getitem__ ending', target, feature_sets)
         
-        return image, target, index, feature_sets
+        return torch.zeros(1, 1), target, index, feature_sets
 
     def __len__(self):
-        return len(self.texts)
+        return len(self.data)
         
 
 class GenericDataset(data.Dataset):
