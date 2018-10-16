@@ -201,7 +201,7 @@ class ExternalFeature:
             # Get feature dimension. metadata if available:
             vdim_data = self.lmdb.get('@vdim'.encode('ascii'))
             if vdim_data is not None:
-                self._vdim = list(self._lmdb_to_numpy(vdim_data, dtype=np.int32))
+                self._vdim = self._lmdb_to_numpy(vdim_data, dtype=np.int32).tolist()
             else:
                 self._vdim = x1.shape[0]
 
@@ -226,7 +226,10 @@ class ExternalFeature:
 
     @classmethod
     def load_set(cls, feature_loaders, idx):
-        return torch.cat([ef.get_feature(idx) for ef in feature_loaders])
+        if len(feature_loaders) == 0:
+            return None
+        else:
+            return torch.cat([ef.get_feature(idx) for ef in feature_loaders])
 
     @classmethod
     def load_sets(cls, feature_loader_sets, idx):
@@ -234,16 +237,24 @@ class ExternalFeature:
         # For each set we prepare a single tensor with all the features concatenated
         if feature_loader_sets is None:
             return None
-        return [cls.load_set(fls, idx) for fls in feature_loader_sets
-                if fls]
+        # NOTE: Removed "if fls" from the list comprehension handling below
+        # so that we if we don't specify the initial external features
+        # we can still use persistant external features:
+        return [cls.load_set(fls, idx) for fls in feature_loader_sets]
 
     @classmethod
     def loaders(cls, features, base_path):
         ef_loaders = []
         feat_dim = 0
+
         for fn in features:
             ef = cls(fn, base_path)
             ef_loaders.append(ef)
+            # When the number of features is 1 sometimes they come in none 1-d form
+            # if statement below takes care of this:
+            if len(features) == 1:
+                feat_dim = ef.vdim()
+                break
             feat_dim += ef.vdim()
         return (ef_loaders, feat_dim)
 
@@ -710,8 +721,14 @@ def collate_fn(data):
     if feature_sets[0] is not None:
         batch_size = len(feature_sets)
         num_feature_sets = len(feature_sets[0])
-        features = [torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0)
-                    for fs_i in range(num_feature_sets)]
+        features = list()
+
+        for fs_i in range(num_feature_sets):
+            if feature_sets[i][fs_i] is not None:
+                features.append(torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0))
+            else:
+                # Allow None features so that the feature type index in train.py stays correct 
+                features.append(None)
     else:
         features = None
 
