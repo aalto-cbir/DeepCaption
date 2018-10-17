@@ -200,6 +200,7 @@ class ExternalFeature:
         elif filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
             self.bin = [ picsom_bin_data(full_path) ]
+            self.binx = {}
             print(('PicSOM binary data {:s} contains {:d}' +
                    ' objects of dimensionality {:d}').format(self.bin[0].path(),
                                                              self.bin[0].nobjects(),
@@ -207,6 +208,7 @@ class ExternalFeature:
         elif filename.endswith('.txt'):
             from picsom_bin_data import picsom_bin_data
             self.bin = []
+            self.binx = {}
             m = re.match('^(.*/)?[^/]+', full_path)
             assert m
             with open(full_path) as f:
@@ -249,15 +251,27 @@ class ExternalFeature:
         if self.lmdb is not None:
             x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
         elif self.bin is not None:
+            from picsom_bin_data import picsom_bin_data
+            pid = os.getpid();
+            #print('get_feature()', pid)
+            if not pid in self.binx:
+                self.binx[pid] = []
+                for i in self.bin:
+                    self.binx[pid].append(picsom_bin_data(i.path()))
             x = []
-            for i in self.bin:
+            for i in self.binx[pid]:
+                found = False
                 for j in idx:
                     v = i.get_float(j)
                     if not np.isnan(v[0]):
+                        found = True
                         x += v
                         break
+                if not found:
+                    print('ERROR 1', idx)
+                    exit(1)
             #if np.isnan(x).any():
-            #    print('ERROR', idx, ':', x)
+            #    print('ERROR 2', idx, ':', x)
             #print('QQQ', self.bin.path(), idx, x[0:5])
             #assert not np.isnan(x).any(), self.bin.path()+' '+str(idx)
         else:
@@ -749,7 +763,7 @@ class PicSOMDataset(data.Dataset):
         
         print('PicSOM {} texts loaded for {} images from {}'.
               format(len(self.data), len(ll), tt))
-
+        
 
     def __getitem__(self, index):
         """Returns one training sample as a tuple (image, caption, image_id)."""
@@ -763,7 +777,7 @@ class PicSOMDataset(data.Dataset):
 
         target  = tokenize_caption(label_text_index[1], self.vocab,
                                    no_tokenize=self.no_tokenize, show_tokens=self.show_tokens)
-
+    
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, label_or_idx)
 
         #print('__getitem__ ending', target, feature_sets)
