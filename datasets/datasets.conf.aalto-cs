@@ -62,6 +62,7 @@ subset        = trainx
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/MSR-VTT
 vocab_path    = textdumps/vocab.txt
 caption_path  = textdumps/gt-train.txt
+label_map     = label-map.txt
 
 [picsom:MSR-VTT:train]
 subset        = train
