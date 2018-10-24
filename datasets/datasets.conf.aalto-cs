@@ -61,7 +61,7 @@ subset        = trainx
 [picsom:MSR-VTT]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/MSR-VTT
 vocab_path    = textdumps/vocab.txt
-caption_path  = textdumps/gt-train.txt
+caption_path  = textdumps/gt-cooked.txt
 label_map     = label-map.txt
 
 [picsom:MSR-VTT:train]
@@ -74,4 +74,47 @@ caption_path  = textdumps/gt-cooked.txt
 
 [picsom:COCO:train2014]
 subset        = train2014
+
+[picsom:trecvid2018]
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/trecvid2018
+features_path = features
+vocab_path    = textdumps/vocab.txt
+caption_path  = textdumps/gt-cooked.txt
+label_map     = label-map.txt
+image_dir     =
+
+[picsom:trecvid2018:test18g]
+subset        = test18g
+
+[picsom:trecvid2018:test17g]
+subset        = test17g
+
+[picsom:trecvid2018:test16g]
+subset        = test16g
+
+[picsom:trecvid2018:testall]
+subset        = testall
+
+[picsom:tgif]
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/tgif
+features_path = features
+vocab_path    = textdumps/vocab.txt
+caption_path  = textdumps/gt-cooked.txt
+label_map     = label-map.txt
+image_dir     =
+
+[picsom:tgif:imageset]
+subset        = imageset
+
+[picsom:msvd]
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/msvd
+#root_dir      = /l/jormal/picsom/databases/msvd
+features_path = features
+vocab_path    = textdumps/vocab.txt
+caption_path  = textdumps/gt-cooked.txt
+label_map     = label-map.txt
+image_dir     =
+
+[picsom:msvd:all]
+subset        = allx
 
