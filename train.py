@@ -277,7 +277,7 @@ def main(args):
         begin = datetime.now()
         total_loss = 0
         num_batches = 0
-        for i, (images, captions, lengths, image_ids, features) in enumerate(data_loader):
+        for i, (images, captions, lengths, _, features) in enumerate(data_loader):
             # Set mini-batch dataset
             images = images.to(device)
             captions = captions.to(device)
@@ -329,7 +329,7 @@ def main(args):
 
             total_loss = 0
             num_batches = 0
-            for i, (images, captions, lengths, image_ids, features) in enumerate(valid_loader):
+            for i, (images, captions, lengths, _, features) in enumerate(valid_loader):
                 # Set mini-batch dataset
                 images = images.to(device)
                 captions = captions.to(device)

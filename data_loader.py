@@ -782,7 +782,7 @@ class PicSOMDataset(data.Dataset):
 
         #print('__getitem__ ending', target, feature_sets)
         
-        return torch.zeros(1, 1), target, index, feature_sets
+        return torch.zeros(1, 1), target, label, feature_sets
 
     def __len__(self):
         return len(self.data)
