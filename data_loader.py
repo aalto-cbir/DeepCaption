@@ -77,7 +77,8 @@ class DatasetParams:
         datasets = args_dataset.split('+')
         configs = []
         for dataset in datasets:
-            dataset = dataset.lower()
+            dataset_name_orig = dataset # needed if lower-casing is used
+            # dataset = dataset.lower() # disabled temporarily
 
             if dataset not in self.config:
                 print('No such dataset configured:', dataset)
@@ -109,6 +110,9 @@ class DatasetParams:
                 features_path = self._cfg_path(cfg, 'features_path')
                 subset = cfg.get('subset')
 
+                config_dict = { i: cfg[i] for i in cfg.keys() }
+                config_dict['dataset_name'] = dataset_name_orig
+
                 dataset_config = DatasetConfig(dataset_name,
                                                child_split,
                                                dataset_class,
@@ -116,11 +120,12 @@ class DatasetParams:
                                                caption_path,
                                                cfg_vocab_path,
                                                features_path,
-                                               subset)
+                                               subset,
+                                               config_dict)
 
                 configs.append(dataset_config)
             else:
-                print('Invalid dataset specified')
+                print('Invalid dataset {:s} specified'.format(dataset))
                 sys.exit(1)
 
         # Vocab path can be overriden from arguments even for multiple datasets:
@@ -138,16 +143,20 @@ class DatasetParams:
         """If dataset name is separated by 'parent_dataset:child_split' (i.e. 'coco:train2014')
         fallback to parent settings when child configuration has no corresponding parameter
         included"""
-        child_subset = None
-        if ":" in dataset:
-            (parent_dataset, child_subset) = tuple(dataset.split(':'))
+        if ":" not in dataset:
+            return self.config[dataset], None
+
+        h = dataset.split(':')
+        for i in range(-1, -len(h), -1):
+            a = ':'.join(h[0:i])
+            print(a)
 
             # Take defaults from parent and override them as needed:
-            for key in self.config[parent_dataset]:
+            for key in self.config[a]:
                 if self.config[dataset].get(key) is None:
-                    self.config[dataset][key] = self.config[parent_dataset][key]
-
-        return self.config[dataset], child_subset
+                    self.config[dataset][key] = self.config[a][key]
+        return self.config[dataset], h[-1]
+        
 
     def _cfg_path(self, cfg, s):
         path = cfg.get(s)
@@ -175,6 +184,7 @@ class ExternalFeature:
     def __init__(self, filename, base_path):
         full_path = os.path.expanduser(os.path.join(base_path, filename))
         self.lmdb = None
+        self.bin  = None
         if not os.path.exists(full_path):
             print('ERROR: external feature file not found:', full_path)
             sys.exit(1)
@@ -182,18 +192,41 @@ class ExternalFeature:
             import h5py
             self.f = h5py.File(full_path, 'r')
             self.data = self.f['data']
-        if filename.endswith('.lmdb'):
+        elif filename.endswith('.lmdb'):
             import lmdb
             self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
                                readahead=False, meminit=False)
             self.lmdb = self.f.begin(write=False)
+        elif filename.endswith('.bin'):
+            from picsom_bin_data import picsom_bin_data
+            self.bin = [ picsom_bin_data(full_path) ]
+            self.binx = {}
+            print(('PicSOM binary data {:s} contains {:d}' +
+                   ' objects of dimensionality {:d}').format(self.bin[0].path(),
+                                                             self.bin[0].nobjects(),
+                                                             self.bin[0].vdim()))
+        elif filename.endswith('.txt'):
+            from picsom_bin_data import picsom_bin_data
+            self.bin = []
+            self.binx = {}
+            m = re.match('^(.*/)?[^/]+', full_path)
+            assert m
+            with open(full_path) as f:
+                for p in f:
+                    q = p.strip()
+                    if q!='' and q[0]!='#':
+                        xp = m.group(1)+q
+                        i = len(self.bin)
+                        self.bin += [ picsom_bin_data(xp) ]
+                        print(('PicSOM binary data {:s} contains {:d}' +
+                               ' objects of dimensionality {:d}').
+                              format(self.bin[i].path(), self.bin[i].nobjects(),
+                                     self.bin[i].vdim()))
         else:
             self.data = np.load(full_path)
 
-        if self.lmdb is None:
-            x1 = self.data[0]
-            self._vdim = self.data.shape[1]
-        else:
+        x1 = None
+        if self.lmdb is not None:
             c = self.lmdb.cursor()
             assert c.first(), full_path
             x1 = self._lmdb_to_numpy(c.value())
@@ -204,10 +237,15 @@ class ExternalFeature:
                 self._vdim = self._lmdb_to_numpy(vdim_data, dtype=np.int32).tolist()
             else:
                 self._vdim = x1.shape[0]
+        elif self.bin is not None:
+            self._vdim = sum([i.vdim() for i in self.bin])
+        else:
+            x1 = self.data[0]
+            self._vdim = self.data.shape[1]
 
-        assert not np.isnan(x1).any(), full_path
+        assert x1 is None or not np.isnan(x1).any(), full_path
 
-        print('Loaded feature {} with dim {}.'.format(filename, self.vdim()))
+        print('Loaded feature {} with dim {}.'.format(full_path, self.vdim()))
 
     def vdim(self):
         return self._vdim
@@ -219,6 +257,30 @@ class ExternalFeature:
         if self.lmdb is not None:
             x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
             x.reshape(self._vdim)
+        elif self.bin is not None:
+            from picsom_bin_data import picsom_bin_data
+            pid = os.getpid();
+            #print('get_feature()', pid)
+            if not pid in self.binx:
+                self.binx[pid] = []
+                for i in self.bin:
+                    self.binx[pid].append(picsom_bin_data(i.path()))
+            x = []
+            for i in self.binx[pid]:
+                found = False
+                for j in idx:
+                    v = i.get_float(j)
+                    if not np.isnan(v[0]):
+                        found = True
+                        x += v
+                        break
+                if not found:
+                    print('ERROR 1', idx)
+                    exit(1)
+            #if np.isnan(x).any():
+            #    print('ERROR 2', idx, ':', x)
+            #print('QQQ', self.bin.path(), idx, x[0:5])
+            #assert not np.isnan(x).any(), self.bin.path()+' '+str(idx)
         else:
             x = self.data[idx]
 
@@ -259,20 +321,28 @@ class ExternalFeature:
         return (ef_loaders, feat_dim)
 
 
-def tokenize_caption(text, vocab):
+def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False):
     """Tokenize a single sentence / caption, convert tokens to vocabulary indices,
     and store the vocabulary index array into a torch tensor"""
 
     if vocab is None:
         return text
 
-    tokens = nltk.tokenize.word_tokenize(str(text).lower())
+    if no_tokenize:
+        tokens = str(text).split()
+    else:
+        tokens = nltk.tokenize.word_tokenize(str(text).lower())
+
     caption = []
     caption.append(vocab('<start>'))
     caption.extend([vocab(token) for token in tokens])
     caption.append(vocab('<end>'))
     target = torch.Tensor(caption)
 
+    if show_tokens:
+        joined = ' '.join([vocab(i) for i in caption])
+        print('TOKENS', joined)
+        
     return target
 
 
@@ -280,7 +350,7 @@ class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -350,7 +420,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         """Set the path for images, captions and vocabulary wrapper.
         Args:
             root: image directory.
@@ -430,7 +500,7 @@ class VistDataset(data.Dataset):
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -512,7 +582,7 @@ class MSRVTTDataset(data.Dataset):
     """MSR-VTT Custom Dataset compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -577,7 +647,7 @@ class MSRVTTDataset(data.Dataset):
 
 class TRECVID2018Dataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         self.root = root
         self.vocab = vocab
         self.transform = transform
@@ -624,6 +694,117 @@ class TRECVID2018Dataset(data.Dataset):
     def __len__(self):
         return len(self.id_to_filename)
 
+
+class PicSOMDataset(data.Dataset):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
+        from picsom_label_index import picsom_label_index
+        from picsom_class       import picsom_class
+        from picsom_bin_data    import picsom_bin_data
+    
+        self.root = root
+        self.vocab = vocab
+        self.subset = subset
+        self.transform = transform
+        self.skip_images = skip_images
+        self.feature_loaders = feature_loaders
+        self.picsom_root      = config_dict['picsom_root']
+        self.picsom_database  = config_dict['dataset_name'].split(':')[1]
+        self.picsom_label_map = config_dict.get('label_map', None)
+        self.no_tokenize      = config_dict.get('no_tokenize', False)
+        self.show_tokens      = config_dict.get('show_tokens', False)
+
+        print('PicSOM root={:s} database={:s}'.format(self.picsom_root,
+                                                      self.picsom_database))
+        
+        self.db_root = self.picsom_root+'/databases/'+self.picsom_database
+
+        self.labels = picsom_label_index(self.db_root+'/labels.txt')
+        print('PicSOM database {:s} contains {:d} objects'.format(self.picsom_database, 
+                                                                  self.labels.nobjects()))
+
+        self.use_lmdb = self.feature_loaders is not None and \
+                        self.feature_loaders[0][0].lmdb is not None
+        print('PicSOM using {} features'.format('LMDB' if self.use_lmdb else 'BIN'))
+
+        subset = self.db_root+'/classes/'+self.subset
+        # print(subset)
+        self.restr = picsom_class(subset)
+        restr_size = len(self.restr.objects())
+        print('PicSOM class file {:s} contains {:d} objects'.format(self.restr.path(),
+                                                                    restr_size))
+
+        restr_set = self.restr.objects()
+        
+        label_map = {}
+        if self.picsom_label_map is not None:
+            ll = {}
+            tt = self.db_root+"/"+self.picsom_label_map
+            with open(tt) as fp:
+                for l in fp:
+                    l = l.rstrip()
+                    #print(l)
+                    a = re.match('([^ ]+) (.*)', l)
+                    assert a, 'reading label_map failed'
+                    label = a.group(1)
+                    if label in restr_set:
+                        ll[label] = 1
+                        label_map[label] = a.group(2)
+            print('PicSOM {} label map entries loaded from {}'.
+                  format(len(ll), self.picsom_label_map))
+
+        self.data = []
+        tt = json_file
+        ll = {}
+        # print(tt)
+        with open(tt) as fp:
+            for l in fp:
+                l = l.rstrip()
+                #print(l)
+                a = re.match('([^ ]+) (.*)', l)
+                assert a, 'reading <'+tt+'> failed'
+                label = a.group(1)
+                if label in restr_set:
+                    ll[label] = 1
+                    idxs = []
+                    if not self.use_lmdb:
+                        idxs.append(self.labels.index_by_label(label))
+                        laa = label_map.get(label, '').split()
+                        for la in laa:
+                            idxs.append(self.labels.index_by_label(la))
+                            
+                    texts = a.group(2).split(' # ')
+                    #if len(texts)!=1:
+                    #    print(label, len(texts))
+                    for text in texts:
+                        self.data.append((label, text, idxs))
+        
+        print('PicSOM {} texts loaded for {} images from {}'.
+              format(len(self.data), len(ll), tt))
+        
+
+    def __getitem__(self, index):
+        """Returns one training sample as a tuple (image, caption, image_id)."""
+
+        label_text_index = self.data[index]
+        label = label_text_index[0]
+        label_or_idx = label if self.use_lmdb else label_text_index[2]
+        if False:
+            print('PicSOMDataset.getitem() {:d} {:s} {!s:s}'.
+                  format(index, label, label_or_idx))
+
+        target  = tokenize_caption(label_text_index[1], self.vocab,
+                                   no_tokenize=self.no_tokenize, show_tokens=self.show_tokens)
+    
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, label_or_idx)
+
+        #print('__getitem__ ending', target, feature_sets)
+        
+        return torch.zeros(1, 1), target, label, feature_sets
+
+    def __len__(self):
+        return len(self.data)
+        
 
 class GenericDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
@@ -801,6 +982,8 @@ def get_dataset_class(cls_name):
         return MSRVTTDataset
     elif cls_name == 'TRECVID2018Dataset':
         return TRECVID2018Dataset
+    elif cls_name == 'PicSOMDataset':
+        return PicSOMDataset
     elif cls_name == 'GenericDataset':
         return GenericDataset
     else:
@@ -821,6 +1004,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         json_file = dataset_config.caption_path
         subset = dataset_config.subset
         fpath = dataset_config.features_path
+        config_dict = dataset_config.config_dict
 
         loaders = None
         dims = None
@@ -835,9 +1019,18 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         if isinstance(root, str) and zipfile.is_zipfile(root):
             root = unzip_image_dir(root)
 
+        # if verbose:
+        print((' root={!s:s}\n json_file={!s:s}\n vocab={!s:s}\n subset={!s:s}\n'+
+               ' transform={!s:s}\n skip_images={!s:s}\n iter_over_images={!s:s}\n'+
+               ' loaders={!s:s}\n config_dict={!s:s}').format(root, json_file, vocab,
+                                                              subset, transform,
+                                                              skip_images, iter_over_images,
+                                                              loaders, config_dict))
+
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
                               subset=subset, transform=transform, skip_images=skip_images,
-                              iter_over_images=iter_over_images, feature_loaders=loaders)
+                              iter_over_images=iter_over_images, feature_loaders=loaders,
+                              config_dict=config_dict)
 
         datasets.append(dataset)
 
