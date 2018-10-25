@@ -372,6 +372,7 @@ class CocoDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.config_dict = config_dict
 
         print("COCO info loaded for {} images and {} captions.".format(len(self.coco.imgs),
                                                                        len(self.coco.anns)))
@@ -409,6 +410,10 @@ class CocoDataset(data.Dataset):
         if self.vocab is None and self.feature_loaders is None:
             img_id = path
 
+        # We are in file list generation mode and want to output full paths to images:
+        if self.config_dict.get('return_full_image_path'):
+            img_id = os.path.join(self.root, path)
+
         return image, target, img_id, feature_sets
 
     def __len__(self):
@@ -434,6 +439,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.config_dict = config_dict
 
         self.paragraphs = []
 
@@ -475,9 +481,12 @@ class VisualGenomeIM2PDataset(data.Dataset):
         img_id = self.paragraphs[index]['image_id']
         path = os.path.join(self.root, str(img_id) + '.jpg')
 
-        image = Image.open(path).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
+        if not self.skip_images:
+            image = Image.open(path).convert('RGB')
+            if self.transform is not None:
+                image = self.transform(image)
+        else:
+            image = torch.zeros(1, 1)
 
         # Prepare external features
         # TODO probably wrong index ...
@@ -488,6 +497,9 @@ class VisualGenomeIM2PDataset(data.Dataset):
         # use image filename as image identifier in lmdb:
         if self.vocab is None and self.feature_loaders is None:
             img_id = path
+
+        if self.config_dict.get('return_full_image_path'):
+            img_id = os.path.join(self.root, path)
 
         return image, target, img_id, feature_sets
 
