@@ -371,8 +371,10 @@ def main(args):
                 captions = captions.to(device)
                 targets = pack_padded_sequence(captions, lengths,
                                                batch_first=True)[0]
-                init_features = features[0].to(device) if len(features) > 0 else None
-                persist_features = features[1].to(device) if len(features) > 1 else None
+                init_features = features[0].to(device)if len(features) > 0 and \
+                    features[0] is not None else None
+                persist_features = features[1].to(device) if len(features) > 1 and \
+                    features[1] is not None else None
 
                 # Forward, backward and optimize
                 with torch.no_grad():
