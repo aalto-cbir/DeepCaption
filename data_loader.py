@@ -23,7 +23,7 @@ def basename(fname):
 
 DatasetConfig = namedtuple('DatasetConfig',
                            'name, child_split, dataset_class, image_dir, caption_path, '
-                           'vocab_path, features_path, subset')
+                           'vocab_path, features_path, subset, config_dict')
 
 
 class DatasetParams:
@@ -820,7 +820,7 @@ class PicSOMDataset(data.Dataset):
 
 class GenericDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
         self.vocab = vocab
         self.transform = transform
         self.skip_images = skip_images
@@ -999,7 +999,7 @@ def get_dataset_class(cls_name):
     elif cls_name == 'GenericDataset':
         return GenericDataset
     else:
-        print("Invalid data set specified")
+        print('Invalid dataset {:s} specified'.format(cls_name))
         sys.exit(1)
 
 
