@@ -57,7 +57,8 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
 
     state = {
         'epoch': epoch + 1,
-        'encoder': encoder.state_dict(),
+        # Attention models can be trained without an encoder:
+        'encoder': encoder.state_dict() if encoder is not None else None,
         'decoder': decoder.state_dict(),
         'optimizer': optimizer.state_dict(),
         'embed_size': params.embed_size,
@@ -235,20 +236,25 @@ def main(args):
     data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
                                       shuffle=True, num_workers=args.num_workers,
                                       ext_feature_sets=ext_feature_sets,
-                                      skip_images=not params.has_internal_features())
+                                      skip_images=not params.has_internal_features(),
+                                      verbose=args.verbose)
 
     if args.validate is not None:
         valid_loader, _ = get_loader(validation_dataset_params, vocab, transform,
                                      args.batch_size, shuffle=True,
                                      num_workers=args.num_workers,
                                      ext_feature_sets=ext_feature_sets,
-                                     skip_images=not params.has_internal_features())
+                                     skip_images=not params.has_internal_features(),
+                                     verbose=args.verbose)
 
     # Build the models
     if args.attention is None:
-        model = EncoderDecoder(params, device, len(vocab), state, ef_dims)
-    elif args.attention == 'spatial':
-        model = SpatialAttentionEncoderDecoder(params, device, len(vocab), state, ef_dims)
+        _Model = EncoderDecoder
+    else:
+        _Model = SpatialAttentionEncoderDecoder
+
+    model = _Model(params, device, len(vocab), state, ef_dims)
+
     opt_params = model.get_opt_params()
 
     # Loss and optimizer
@@ -321,8 +327,8 @@ def main(args):
                 outputs = model(images, init_features, captions, lengths, persist_features,
                                 teacher_p, args.teacher_forcing)
             else:
-                outputs, _ = model(images, None, captions, lengths, persist_features,
-                                   teacher_p, args.teacher_forcing)
+                outputs = model(images, None, captions, lengths, persist_features,
+                                teacher_p, args.teacher_forcing)
 
             loss = criterion(outputs, targets)
             model.zero_grad()
