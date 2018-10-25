@@ -3,10 +3,6 @@
 import torch.nn as nn
 from torchvision.models.resnet import Bottleneck, ResNet
 import torch.utils.model_zoo as model_zoo
-import sys
-# Add path to pytorch-caffe (marvis)
-# sys.path.append('pytorch-caffe')
-# from caffenet import *
 
 model_urls = {
     # RGB input, normalized same way as input for Torchvision models,
