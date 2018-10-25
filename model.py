@@ -549,7 +549,7 @@ class SpatialAttentionEncoderDecoder(nn.Module):
         #features = self.encoder(images, init_features)
         outputs, alphas = self.decoder(None, captions, lengths, images, persist_features,
                                        teacher_p, teacher_forcing)
-        return outputs, alphas
+        return outputs
 
     def sample(self, image_tensor, init_features, states=None,
                max_seq_length=20):
