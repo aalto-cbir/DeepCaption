@@ -184,7 +184,10 @@ class ExternalFeature:
     def __init__(self, filename, base_path):
         full_path = os.path.expanduser(os.path.join(base_path, filename))
         self.lmdb = None
+        self.lmdb_path = None
         self.bin  = None
+        self.disable_cache = False
+
         if not os.path.exists(full_path):
             print('ERROR: external feature file not found:', full_path)
             sys.exit(1)
@@ -194,9 +197,8 @@ class ExternalFeature:
             self.data = self.f['data']
         elif filename.endswith('.lmdb'):
             import lmdb
-            self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
-                               readahead=False, meminit=False)
-            self.lmdb = self.f.begin(write=False)
+            self.lmdb = lmdb
+
         elif filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
             self.bin = [ picsom_bin_data(full_path) ]
@@ -227,16 +229,32 @@ class ExternalFeature:
 
         x1 = None
         if self.lmdb is not None:
-            c = self.lmdb.cursor()
-            assert c.first(), full_path
-            x1 = self._lmdb_to_numpy(c.value())
+            # Figure out the dimensions of our features:
+            with self.lmdb.open(self.lmdb_path, max_readers=1, readonly=True, lock=False,
+                                readahead=False, meminit=False) as env:
+                with env.begin(write=False) as txn:
+                    c = txn.cursor()
+                    assert c.first(), full_path
+                    x1 = self._lmdb_to_numpy(c.value())
 
-            # Get feature dimension. metadata if available:
-            vdim_data = self.lmdb.get('@vdim'.encode('ascii'))
-            if vdim_data is not None:
-                self._vdim = self._lmdb_to_numpy(vdim_data, dtype=np.int32).tolist()
+                    # Get feature dimension. metadata if available:
+                    vdim_data = txn.get('@vdim'.encode('ascii'))
+                    if vdim_data is not None:
+                        self._vdim = self._lmdb_to_numpy(vdim_data, dtype=np.int32).tolist()
+                    else:
+                        self._vdim = x1.shape[0]
+
+            # Figure out if our features are too large to cache:
+            if np.prod(self._vdim) > 1e5:
+                # Subsequent feature loading requests will reinitialize LMDB handle to
+                # clear any caches:
+                self.disable_cache = True
+                self.lmdb_path = full_path
             else:
-                self._vdim = x1.shape[0]
+                # Caching is on, so we can use the globally defined lmdb handle per featureset:
+                self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
+                                   readahead=False, meminit=False)
+                self.lmdb = self.f.begin(write=False)
         elif self.bin is not None:
             self._vdim = sum([i.vdim() for i in self.bin])
         else:
@@ -255,8 +273,15 @@ class ExternalFeature:
 
     def get_feature(self, idx):
         if self.lmdb is not None:
-            x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
-            x.reshape(self._vdim)
+            if self.disable_cache:
+                with self.lmdb.open(self.lmdb_path, max_readers=1, readonly=True, lock=False,
+                                    readahead=False, meminit=False) as env:
+                    with env.begin(write=False) as txn:
+                        x = self._lmdb_to_numpy(txn.get(str(idx).encode('ascii')))
+                        x.reshape(self._vdim)
+            else:
+                x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+                x.reshape(self._vdim)
         elif self.bin is not None:
             from picsom_bin_data import picsom_bin_data
             pid = os.getpid();
@@ -1005,7 +1030,7 @@ def get_dataset_class(cls_name):
 
 def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
                ext_feature_sets=None, skip_images=False, iter_over_images=False,
-               _collate_fn=collate_fn):
+               _collate_fn=collate_fn, verbose=False):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     datasets = []
@@ -1031,13 +1056,13 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         if isinstance(root, str) and zipfile.is_zipfile(root):
             root = unzip_image_dir(root)
 
-        # if verbose:
-        print((' root={!s:s}\n json_file={!s:s}\n vocab={!s:s}\n subset={!s:s}\n'+
-               ' transform={!s:s}\n skip_images={!s:s}\n iter_over_images={!s:s}\n'+
-               ' loaders={!s:s}\n config_dict={!s:s}').format(root, json_file, vocab,
-                                                              subset, transform,
-                                                              skip_images, iter_over_images,
-                                                              loaders, config_dict))
+        if verbose:
+            print((' root={!s:s}\n json_file={!s:s}\n vocab={!s:s}\n subset={!s:s}\n'+
+                   ' transform={!s:s}\n skip_images={!s:s}\n iter_over_images={!s:s}\n'+
+                   ' loaders={!s:s}\n config_dict={!s:s}').format(root, json_file, vocab,
+                                                                  subset, transform,
+                                                                  skip_images, iter_over_images,
+                                                                  loaders, config_dict))
 
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
                               subset=subset, transform=transform, skip_images=skip_images,
