@@ -15,7 +15,7 @@ from torchvision import transforms
 
 from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
-from model import ModelParams, EncoderDecoder
+from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
 
 try:
     from tqdm import tqdm
@@ -140,7 +140,12 @@ def main(args):
                                       iter_over_images=True)
 
     # Build the models
-    model = EncoderDecoder(params, device, len(vocab), state, ef_dims).eval()
+    if params.attention is None:
+        _Model = EncoderDecoder
+    else:
+        _Model = SpatialAttentionEncoderDecoder
+
+    model = _Model(params, device, len(vocab), state, ef_dims).eval()
 
     output_data = []
 
@@ -150,12 +155,18 @@ def main(args):
             features) in enumerate(tqdm(data_loader, disable=not show_progress)):
         images = images.to(device)
 
-        init_features = features[0].to(device) if len(features) > 0 else None
-        persist_features = features[1].to(device) if len(features) > 1 else None
+        init_features = features[0].to(device)if len(features) > 0 and \
+            features[0] is not None else None
+        persist_features = features[1].to(device) if len(features) > 1 and \
+            features[1] is not None else None
 
         # Generate a caption from the image
-        sampled_ids_batch = model.sample(images, init_features, persist_features,
-                                         max_seq_length=args.max_seq_length)
+        if args.attention is None:
+            sampled_ids_batch = model.sample(images, init_features, persist_features,
+                                             max_seq_length=args.max_seq_length)
+        else:
+            sampled_ids_batch, alphas = model.sample(images, init_features, persist_features,
+                                                     max_seq_length=args.max_seq_length)
 
         for i in range(sampled_ids_batch.shape[0]):
             sampled_ids = sampled_ids_batch[i].cpu().numpy()
