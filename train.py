@@ -470,6 +470,8 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
+    parser.add_argument('--no_tokenize', action='store_true')
+    parser.add_argument('--show_tokens', action='store_true')
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
     parser.add_argument('--teacher_forcing', type=str, default='always',
                         help='Type of teacher forcing to use for training the Decoder RNN: \n'
