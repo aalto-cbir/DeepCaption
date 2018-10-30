@@ -198,6 +198,7 @@ class ExternalFeature:
         elif filename.endswith('.lmdb'):
             import lmdb
             self.lmdb = lmdb
+            self.lmdb_path = full_path
 
         elif filename.endswith('.bin'):
             from picsom_bin_data import picsom_bin_data
@@ -237,7 +238,7 @@ class ExternalFeature:
                     assert c.first(), full_path
                     x1 = self._lmdb_to_numpy(c.value())
 
-                    # Get feature dimension. metadata if available:
+                    # Get feature dimension metadata if available:
                     vdim_data = txn.get('@vdim'.encode('ascii'))
                     if vdim_data is not None:
                         self._vdim = self._lmdb_to_numpy(vdim_data, dtype=np.int32).tolist()
@@ -249,7 +250,6 @@ class ExternalFeature:
                 # Subsequent feature loading requests will reinitialize LMDB handle to
                 # clear any caches:
                 self.disable_cache = True
-                self.lmdb_path = full_path
             else:
                 # Caching is on, so we can use the globally defined lmdb handle per featureset:
                 self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
@@ -936,13 +936,16 @@ def collate_fn(data):
 
     # Generate list of (batch_size, concatenated_feature_length) tensors,
     # one for each feature set
+    # feature_sets is a tuple of lists - 
+    # -- one tuple corresponds to an image
+    # -- list elements correspond to different feature types for the same image
     if feature_sets[0] is not None:
         batch_size = len(feature_sets)
         num_feature_sets = len(feature_sets[0])
         features = list()
 
         for fs_i in range(num_feature_sets):
-            if feature_sets[i][fs_i] is not None:
+            if feature_sets[0][fs_i] is not None:
                 features.append(torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0))
             else:
                 # Allow None features so that the feature type index in train.py stays correct 
