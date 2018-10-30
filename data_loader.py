@@ -198,7 +198,7 @@ class ExternalFeature:
                                readahead=False, meminit=False)
             self.lmdb = self.f.begin(write=False)
         elif filename.endswith('.bin'):
-            from picsom_bin_data import picsom_bin_data
+            from picsom.bin_data import picsom_bin_data
             self.bin = [ picsom_bin_data(full_path) ]
             self.binx = {}
             print(('PicSOM binary data {:s} contains {:d}' +
@@ -206,7 +206,7 @@ class ExternalFeature:
                                                              self.bin[0].nobjects(),
                                                              self.bin[0].vdim()))
         elif filename.endswith('.txt'):
-            from picsom_bin_data import picsom_bin_data
+            from picsom.bin_data import picsom_bin_data
             self.bin = []
             self.binx = {}
             m = re.match('^(.*/)?[^/]+', full_path)
@@ -251,7 +251,7 @@ class ExternalFeature:
         if self.lmdb is not None:
             x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
         elif self.bin is not None:
-            from picsom_bin_data import picsom_bin_data
+            from picsom.bin_data import picsom_bin_data
             pid = os.getpid();
             #print('get_feature()', pid)
             if not pid in self.binx:
@@ -680,9 +680,9 @@ class TRECVID2018Dataset(data.Dataset):
 class PicSOMDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
                  iter_over_images=False, feature_loaders=None, config_dict=None):
-        from picsom_label_index import picsom_label_index
-        from picsom_class       import picsom_class
-        from picsom_bin_data    import picsom_bin_data
+        from picsom.label_index import picsom_label_index
+        from picsom.class_file  import picsom_class
+        from picsom.bin_data    import picsom_bin_data
     
         self.root = root
         self.vocab = vocab
