@@ -87,7 +87,9 @@ def remove_incomplete_sentences(caption):
         return caption
 
 
-def main(args):
+def infer(ext_args=None):
+    args = parse_args(ext_args)
+
     # Create model directory
     if not os.path.exists(args.results_path):
         os.makedirs(args.results_path)
@@ -113,7 +115,10 @@ def main(args):
     # Build models
     print('Bulding models.')
 
-    state = torch.load(args.model)
+    if device.type == 'cpu':
+        state = torch.load(args.model, map_location=lambda storage, loc: storage)
+    else:
+        state = torch.load(args.model)
     params = ModelParams(state)
     if args.ext_features:
         params.update_ext_features(args.ext_features)
@@ -161,7 +166,7 @@ def main(args):
             features[1] is not None else None
 
         # Generate a caption from the image
-        if args.attention is None:
+        if params.attention is None:
             sampled_ids_batch = model.sample(images, init_features, persist_features,
                                              max_seq_length=args.max_seq_length)
         else:
@@ -193,6 +198,7 @@ def main(args):
 
     output_file = None
 
+    # Create a sensible default output path for results:
     if not args.output_file and not args.print_results:
         model_name = args.model.split(os.sep)[-2]
         model_epoch = basename(args.model)
@@ -214,12 +220,11 @@ def main(args):
         for d in output_data:
             print('{}: {}'.format(d['image_id'], d['caption']))
 
+    return output_data
 
-if __name__ == '__main__':
+
+def parse_args(ext_args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument('image_files', type=str, nargs='*')
-    parser.add_argument('--image_dir', type=str,
-                        help='input image dir for generating captions')
     parser.add_argument('--dataset', type=str, default='generic',
                         help='which dataset to use')
     parser.add_argument('--dataset_config_file', type=str,
@@ -229,6 +234,9 @@ if __name__ == '__main__':
                         help='resize input image to this size')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
+    parser.add_argument('image_files', type=str, nargs='*')
+    parser.add_argument('--image_dir', type=str,
+                        help='input image dir for generating captions')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
     parser.add_argument('--vocab_path', type=str, help='path for vocabulary wrapper')
@@ -253,14 +261,14 @@ if __name__ == '__main__':
                         help='allow repeating sentences inside a paragraph')
     parser.add_argument('--only_complete_sentences', action='store_true')
 
-    args = parser.parse_args()
-    # if not args.image_files and not args.image_dir:
-    #     args.image_dir = 'datasets/data/COCO/images/val2014'
+    return parser.parse_args(ext_args)
 
+
+if __name__ == '__main__':    
     begin = datetime.now()
     print('Started inference at {}.'.format(begin))
 
-    main(args)
+    infer()
 
     end = datetime.now()
     print('Inference ended at {}. Total time: {}.'.format(end, end - begin))
