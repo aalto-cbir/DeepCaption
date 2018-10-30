@@ -387,6 +387,10 @@ def main(args):
                 total_loss += loss.item()
                 num_batches += 1
 
+                # Used for testing:
+                if i + 1 == args.num_batches:
+                    break
+
             model.train()
 
             end = datetime.now()
