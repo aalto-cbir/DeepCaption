@@ -116,7 +116,7 @@ python3 $TRAIN_PY --dataset coco:train2014+msrvtt:train \
           --embed_size=512 --hidden_size=1024 \
           --num_layers=2 --dropout=0.5 --encoder_dropout=0.5 \
           --optimizer=rmsprop \
-          --validation msrvtt:validate --vocab_path vocab-coco+msrvtt.pkl \
+          --validate msrvtt:validate --vocab_path vocab-coco+msrvtt.pkl \
           --features $INIT \
           --num_workers 2 --num_epochs=11
 append_command_to_log
