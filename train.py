@@ -57,7 +57,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
 
     state = {
         'epoch': epoch + 1,
-        # Attention models can be trained without an encoder:
+        # Attention models can in principle be trained without an encoder:
         'encoder': encoder.state_dict() if encoder is not None else None,
         'decoder': decoder.state_dict(),
         'optimizer': optimizer.state_dict(),
@@ -323,12 +323,9 @@ def main(args):
             teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                          args.teacher_forcing_beta)
 
-            if args.attention is None:
-                outputs = model(images, init_features, captions, lengths, persist_features,
-                                teacher_p, args.teacher_forcing)
-            else:
-                outputs = model(images, None, captions, lengths, persist_features,
-                                teacher_p, args.teacher_forcing)
+
+            outputs = model(images, init_features, captions, lengths, persist_features,
+                            teacher_p, args.teacher_forcing)
 
             loss = criterion(outputs, targets)
             model.zero_grad()
