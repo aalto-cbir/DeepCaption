@@ -2,6 +2,7 @@ import argparse
 import os
 import sys
 import lmdb
+import numpy as np
 
 import torch
 from torchvision import transforms
@@ -21,13 +22,29 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def main(args):
+    #
     # Image preprocessing
     if args.feature_type == 'plain':
-        transform = transforms.Compose([
-            transforms.Resize((args.image_size, args.image_size)),
-            transforms.ToTensor(),
-            transforms.Normalize((0.485, 0.456, 0.406),
-                                 (0.229, 0.224, 0.225))])
+        if args.extractor == 'resnet152caffe-original':
+            # Use custom transform:
+            transform = transforms.Compose([
+                transforms.Resize((args.crop_size, args.crop_size)),
+                # Swap color space from RGB to BGR and subtract caffe-specific
+                # channel values from each pixel
+                transforms.Lambda(lambda img: np.array(img, dtype=np.float32)
+                                  [..., [2, 1, 0]] - [103.939, 116.779, 123.68]),
+                # Create a torch tensor and put channels first:
+                transforms.Lambda(lambda img: torch.from_numpy(img).permute(2, 0, 1)),
+                # Cast tensor to correct type:
+                transforms.Lambda(lambda img: img.type('torch.FloatTensor'))])
+
+        else:
+            # Default transform
+            transform = transforms.Compose([
+                transforms.Resize((args.crop_size, args.crop_size)),
+                transforms.ToTensor(),
+                transforms.Normalize((0.485, 0.456, 0.406),
+                                     (0.229, 0.224, 0.225))])
     elif args.feature_type == 'avg' or args.feature_type == 'max':
         # Try with no normalization
         # Try with subtracting 0.5 from all values
@@ -85,7 +102,7 @@ def main(args):
     # To open an lmdb handle and prepare it for the right size
     # it needs to fit the total number of elements in the dataset
     # so we set a map_size to a largish value here:
-    map_size = 1e10
+    map_size = 1e12
 
     lmdb_path = None
     file_name = None
@@ -100,18 +117,30 @@ def main(args):
 
     lmdb_path = os.path.join(args.output_dir, file_name)
 
+    # Check that we are not overwriting anything
+    if os.path.exists(lmdb_path):
+        print('ERROR: {} exists, please remove it first if you really want to replace it.'.
+              format(lmdb_path))
+        sys.exit(1)
+
     print("Preparing to store extracted features to {}...".format(lmdb_path))
-    env = lmdb.open(lmdb_path, map_size=map_size)
 
     print("Starting to extract features from dataset {} using {}...".
           format(args.dataset, args.extractor))
     show_progress = sys.stderr.isatty()
+
+    # If feature shape is not 1-dimensional, store feature shape metadata:
+    if isinstance(extractor.output_dim, np.ndarray):
+        with lmdb.open(lmdb_path, map_size=map_size) as env:
+            with env.begin(write=True) as txn:
+                txn.put(str('@vdim').encode('ascii'), extractor.output_dim)
+
     for i, (images, _, _,
             image_ids, _) in enumerate(tqdm(data_loader, disable=not show_progress)):
 
         images = images.to(device)
 
-        # If we are dealing with cropped images, image dimensions are is: bs, ncrops, c, h, w
+        # If we are dealing with cropped images, image dimensions are: bs, ncrops, c, h, w
         if images.dim() == 5:
             bs, ncrops, c, h, w = images.size()
             # fuse batch size and ncrops:
@@ -128,9 +157,20 @@ def main(args):
             features = extractor(images).data.cpu().numpy()
 
         # Write to LMDB object:
-        with env.begin(write=True) as txn:
-            for j, image_id in enumerate(image_ids):
-                txn.put(str(image_id).encode('ascii'), features[j])
+        with lmdb.open(lmdb_path, map_size=map_size) as env:
+            with env.begin(write=True) as txn:
+                for j, image_id in enumerate(image_ids):
+
+                    # If output dimension is not a scalar, flatten the array.
+                    # When retrieving this feature from the LMDB, developer must take
+                    # care to reshape the feature back to the correct dimensions!
+                    if isinstance(extractor.output_dim, np.ndarray):
+                        _feature = features[j].flatten()
+                    # Otherwise treat it as is:
+                    else:
+                        _feature = features[j]
+
+                    txn.put(str(image_id).encode('ascii'), _feature)
 
         # Print log info
         if not show_progress and ((i + 1) % args.log_step == 0):

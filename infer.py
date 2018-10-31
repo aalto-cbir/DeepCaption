@@ -15,7 +15,7 @@ from torchvision import transforms
 
 from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
-from model import ModelParams, EncoderDecoder
+from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
 
 try:
     from tqdm import tqdm
@@ -29,7 +29,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def basename(fname):
-    fname.split(':')
     return os.path.splitext(os.path.basename(fname))[0]
 
 
@@ -146,7 +145,12 @@ def infer(ext_args=None):
                                       iter_over_images=True)
 
     # Build the models
-    model = EncoderDecoder(params, device, vocab, state, ef_dims).eval()
+    if params.attention is None:
+        _Model = EncoderDecoder
+    else:
+        _Model = SpatialAttentionEncoderDecoder
+
+    model = _Model(params, device, len(vocab), state, ef_dims).eval()
 
     output_data = []
 
@@ -156,12 +160,18 @@ def infer(ext_args=None):
             features) in enumerate(tqdm(data_loader, disable=not show_progress)):
         images = images.to(device)
 
-        init_features = features[0].to(device) if len(features) > 0 else None
-        persist_features = features[1].to(device) if len(features) > 1 else None
+        init_features = features[0].to(device)if len(features) > 0 and \
+            features[0] is not None else None
+        persist_features = features[1].to(device) if len(features) > 1 and \
+            features[1] is not None else None
 
         # Generate a caption from the image
-        sampled_ids_batch = model.sample(images, init_features, persist_features,
-                                         max_seq_length=args.max_seq_length)
+        if params.attention is None:
+            sampled_ids_batch = model.sample(images, init_features, persist_features,
+                                             max_seq_length=args.max_seq_length)
+        else:
+            sampled_ids_batch, alphas = model.sample(images, init_features, persist_features,
+                                                     max_seq_length=args.max_seq_length)
 
         for i in range(sampled_ids_batch.shape[0]):
             sampled_ids = sampled_ids_batch[i].cpu().numpy()
@@ -187,22 +197,24 @@ def infer(ext_args=None):
             output_data.append({'caption': caption, 'image_id': image_ids[i]})
 
     output_file = None
+
+    # Create a sensible default output path for results:
     if not args.output_file and not args.print_results:
-        output_file = basename(args.model) + '.txt'
+        model_name = args.model.split(os.sep)[-2]
+        model_epoch = basename(args.model)
+        output_file = '{}-{}.{}'.format(model_name, model_epoch, args.output_format)
     else:
         output_file = args.output_file
 
     if output_file:
-        output_format = 'plain text'
-        if output_file.endswith('.json'):
+        if args.output_format == 'json':
             json.dump(output_data, open(os.path.join(args.results_path, output_file), 'w'))
-            output_format = 'COCO json'
         else:
             with open(output_file, 'w') as fp:
                 for data in output_data:
                     print(data['image_id'], data['caption'], file=fp)
 
-        print('Wrote generated captions to {} as {}'.format(output_file, output_format))
+        print('Wrote generated captions to {} as {}'.format(output_file, args.output_format))
 
     if args.print_results:
         for d in output_data:
@@ -235,7 +247,9 @@ def parse_args(ext_args=None):
     parser.add_argument('--ext_persist_features', type=str,
                         help='paths for external persist features')
     parser.add_argument('--output_file', type=str,
-                        help='path for output JSON, default: model_name.json')
+                        help='path for output file, default: model_name.txt')
+    parser.add_argument('--output_format', type=str, default='txt',
+                        help='format of the output file')
     parser.add_argument('--verbose', help='verbose output',
                         action='store_true')
     parser.add_argument('--results_path', type=str, default='results/',

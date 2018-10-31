@@ -1,4 +1,4 @@
-#! /usr/bin/env python3
+#!/usr/bin/env python3
 
 import argparse
 import torch
@@ -16,7 +16,7 @@ from torchvision import transforms
 
 from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, DatasetParams
-from model import ModelParams, EncoderDecoder
+from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
 
 # Device configuration now in main()
 device = None
@@ -57,7 +57,8 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
 
     state = {
         'epoch': epoch + 1,
-        'encoder': encoder.state_dict(),
+        # Attention models can in principle be trained without an encoder:
+        'encoder': encoder.state_dict() if encoder is not None else None,
         'decoder': decoder.state_dict(),
         'optimizer': optimizer.state_dict(),
         'embed_size': params.embed_size,
@@ -69,6 +70,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'encoder_dropout': params.encoder_dropout,
         'features': params.features,
         'persist_features': params.persist_features,
+        'attention': params.attention
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -139,6 +141,19 @@ def find_matching_model(args, params):
         print("Warning: Failed to intelligently resume...")
 
     return model_file_path
+
+
+def get_teacher_prob(k, i, beta=1):
+    """Inverse sigmed sampling scheduler determines the probability
+    with which teacher forcing is turned off, more info here:
+    https://arxiv.org/pdf/1506.03099.pdf"""
+    if k == 0:
+        return 1.0
+
+    i = i * beta
+    p = k / (k + np.exp(i / k))
+
+    return p
 
 
 def main(args):
@@ -221,17 +236,25 @@ def main(args):
     data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
                                       shuffle=True, num_workers=args.num_workers,
                                       ext_feature_sets=ext_feature_sets,
-                                      skip_images=not params.has_internal_features())
+                                      skip_images=not params.has_internal_features(),
+                                      verbose=args.verbose)
 
     if args.validate is not None:
         valid_loader, _ = get_loader(validation_dataset_params, vocab, transform,
                                      args.batch_size, shuffle=True,
                                      num_workers=args.num_workers,
                                      ext_feature_sets=ext_feature_sets,
-                                     skip_images=not params.has_internal_features())
+                                     skip_images=not params.has_internal_features(),
+                                     verbose=args.verbose)
 
     # Build the models
-    model = EncoderDecoder(params, device, vocab, state, ef_dims)
+    if args.attention is None:
+        _Model = EncoderDecoder
+    else:
+        _Model = SpatialAttentionEncoderDecoder
+
+    model = _Model(params, device, len(vocab), state, ef_dims)
+
     opt_params = model.get_opt_params()
 
     # Loss and optimizer
@@ -271,6 +294,9 @@ def main(args):
 
     print('Start training with num_epochs={:d} num_batches={:d} ...'.
           format(args.num_epochs, args.num_batches))
+    if args.teacher_forcing != 'always':
+        print('\t k: {}'.format(args.teacher_forcing_k))
+        print('\t beta: {}'.format(args.teacher_forcing_beta))
     print('Optimizer:', optimizer)
     for epoch in range(start_epoch, args.num_epochs):
         stats = {}
@@ -283,11 +309,24 @@ def main(args):
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
-            init_features = features[0].to(device) if len(features) > 0 else None
-            persist_features = features[1].to(device) if len(features) > 1 else None
+            init_features = features[0].to(device)if len(features) > 0 and \
+                features[0] is not None else None
+            persist_features = features[1].to(device) if len(features) > 1 and \
+                features[1] is not None else None
 
             # Forward, backward and optimize
-            outputs = model(images, init_features, captions, lengths, persist_features)
+            # Calculate the probability whether to use teacher forcing or not:
+
+            # Iterate over batches:
+            iteration = (epoch - start_epoch) * len(data_loader) + i
+
+            teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
+                                         args.teacher_forcing_beta)
+
+
+            outputs = model(images, init_features, captions, lengths, persist_features,
+                            teacher_p, args.teacher_forcing)
+
             loss = criterion(outputs, targets)
             model.zero_grad()
             loss.backward()
@@ -335,8 +374,10 @@ def main(args):
                 captions = captions.to(device)
                 targets = pack_padded_sequence(captions, lengths,
                                                batch_first=True)[0]
-                init_features = features[0].to(device) if len(features) > 0 else None
-                persist_features = features[1].to(device) if len(features) > 1 else None
+                init_features = features[0].to(device)if len(features) > 0 and \
+                    features[0] is not None else None
+                persist_features = features[1].to(device) if len(features) > 1 and \
+                    features[1] is not None else None
 
                 # Forward, backward and optimize
                 with torch.no_grad():
@@ -345,6 +386,10 @@ def main(args):
 
                 total_loss += loss.item()
                 num_batches += 1
+
+                # Used for testing:
+                if i + 1 == args.num_batches:
+                    break
 
             model.train()
 
@@ -405,6 +450,9 @@ if __name__ == '__main__':
     parser.add_argument('--persist_features', type=str,
                         help='features accessible in all caption generation '
                         'steps, given as comma separated list')
+    parser.add_argument('--attention', type=str,
+                        help='type of attention mechanism to use '
+                        ' currently supported types: None, spatial')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
@@ -433,6 +481,23 @@ if __name__ == '__main__':
     parser.add_argument('--lr_scheduler', action='store_true')
     parser.add_argument('--no_tokenize', action='store_true')
     parser.add_argument('--show_tokens', action='store_true')
+    # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
+    parser.add_argument('--teacher_forcing', type=str, default='always',
+                        help='Type of teacher forcing to use for training the Decoder RNN: \n'
+                             'always: always use groundruth as LSTM input when training'
+                             'sampled: follow a sampling schedule detemined by the value '
+                             'of teacher_forcing_parameter\n'
+                             'additive: use the sampling schedule formula to determine weight '
+                             'ratio between the teacher and model inputs\n'
+                             'additive_sampled: combines two of the above modes')
+    parser.add_argument('--teacher_forcing_k', type=float, default=6500,
+                        help='value of the sampling schedule parameter k. '
+                        'Good values can be found in a range between 400 - 20000'
+                        'small values = start using model output quickly, large values -'
+                        ' wait for a while before start using model output')
+    parser.add_argument('--teacher_forcing_beta', type=float, default=1,
+                        help='sample scheduling parameter that determins the slope of '
+                        'the middle segment of the sigmoid')
 
     args = parser.parse_args()
 

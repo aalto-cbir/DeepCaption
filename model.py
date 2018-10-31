@@ -4,10 +4,17 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
+import numpy as np
+
 from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence
 
+import external_models as ext_models
+
 Features = namedtuple('Features', 'external, internal')
+
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class ModelParams:
@@ -21,6 +28,7 @@ class ModelParams:
         self.features = self._get_features(d, 'features', 'resnet152')
         self.persist_features = self._get_features(d, 'persist_features', '')
         self.encoder_dropout = self._get_param(d, 'encoder_dropout', 0)
+        self.attention = self._get_param(d, 'attention', None)
 
     @classmethod
     def fromargs(cls, args):
@@ -45,6 +53,8 @@ class ModelParams:
         ext_feat = []
         int_feat = []
         for fn in features:
+            # Check if feature has an extension, if yes assume it's
+            # an external feature contained in a file with extension '.$ext':
             (tmp, ext) = os.path.splitext(fn)
             if ext:
                 ext_feat.append(fn)
@@ -85,11 +95,14 @@ class FeatureExtractor(nn.Module):
         More info: https://pytorch.org/docs/stable/torchvision/models.html """
         super(FeatureExtractor, self).__init__()
 
+        # Set flatten to False if we do not want to flatten the output features
+        self.flatten = True
+
         if model_name == 'alexnet':
             if debug:
                 print('Using AlexNet, features shape 256 x 6 x 6')
             model = models.alexnet(pretrained=True)
-            self.output_dim = 256 * 6 * 6
+            self.output_dim = np.array([256 * 6 * 6], dtype=np.int32)
             modules = list(model.children())[:-1]
             self.extractor = nn.Sequential(*modules)
         elif model_name == 'densenet201':
@@ -106,6 +119,39 @@ class FeatureExtractor(nn.Module):
             self.output_dim = 2048
             modules = list(model.children())[:-1]
             self.extractor = nn.Sequential(*modules)
+        elif model_name == 'resnet152-conv':
+            if debug:
+                print('Using resnet 152, '
+                      'last convolutional layer, features shape 2048 x 7 x 7')
+            model = models.resnet152(pretrained=True)
+            self.output_dim = np.array([2048, 7, 7], dtype=np.int32)
+            modules = list(model.children())[:-2]
+            self.extractor = nn.Sequential(*modules)
+            self.flatten = False
+        elif model_name == 'resnet152caffe-torchvision':
+            if debug:
+                print('Using resnet 152 converted from caffe, features shape 2048')
+            model = ext_models.resnet152caffe_torchvision(pretrained=True)
+            self.output_dim = 2048
+            modules = list(model.children())[:-1]
+            self.extractor = nn.Sequential(*modules)
+        elif model_name == 'resnet152caffe-original':
+            if debug:
+                print('Using resnet 152 converted from caffe, requires BGR images with '
+                      ' pixel values in range 0..255 features shape 2048')
+            model = ext_models.resnet152caffe_original(pretrained=True)
+            self.output_dim = 2048
+            modules = list(model.children())[:-1]
+            self.extractor = nn.Sequential(*modules)
+        elif model_name == 'resnet152caffe-conv':
+            if debug:
+                print('Using resnet 152 converted from caffe, '
+                      'last convolutional layer, features shape 2048 x 7 x 7')
+            model = ext_models.resnet152caffe_torchvision(pretrained=True)
+            self.output_dim = np.array([2048, 7, 7], dtype=np.int32)
+            modules = list(model.children())[:-2]
+            self.extractor = nn.Sequential(*modules)
+            self.flatten = False
         elif model_name == 'vgg16':
             if debug:
                 print('Using vgg 16, features shape 4096')
@@ -130,7 +176,10 @@ class FeatureExtractor(nn.Module):
         """Extract feature vectors from input images."""
         with torch.no_grad():
             features = self.extractor(images)
-        return features.reshape(features.size(0), -1)
+
+        if self.flatten:
+            features = features.reshape(features.size(0), -1)
+        return features
 
     @classmethod
     def list(cls, internal_features):
@@ -193,6 +242,7 @@ class DecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
+
         self.embed = nn.Embedding(vocab_size, p.embed_size)
 
         (self.extractors,
@@ -207,6 +257,7 @@ class DecoderRNN(nn.Module):
         self.linear = nn.Linear(p.hidden_size, vocab_size)
 
     def _cat_features(self, images, external_features):
+        """Concatenate internal and external features"""
         feat_outputs = []
         # Extract features with each extractor (internal feature)
         for ext in self.extractors:
@@ -217,7 +268,8 @@ class DecoderRNN(nn.Module):
         # Return concatenated features, empty tensor if none
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
-    def forward(self, features, captions, lengths, images, external_features=None):
+    def forward(self, features, captions, lengths, images, external_features=None,
+                teacher_p=1.0, teacher_forcing='always'):
         """Decode image feature vectors and generates captions."""
 
         # First, construct embeddings input, with initial feature as
@@ -236,11 +288,78 @@ class DecoderRNN(nn.Module):
                 persist_features = (persist_features.unsqueeze(1).
                                     expand(-1, seq_length, -1))
 
-        inputs = torch.cat([embeddings, persist_features], 2)
+        if teacher_forcing == 'always':
+            # Teacher forcing enabled -
+            # Feed ground truth as next input at each time-step when training:
+            inputs = torch.cat([embeddings, persist_features], 2)
+            packed = pack_padded_sequence(inputs, lengths, batch_first=True)
+            hiddens, _ = self.lstm(packed)
+            outputs = self.linear(hiddens[0])
+        else:
+            # Use sampled or additive scheduling mode:
+            batch_size = features.size()[0]
+            vocab_size = self.linear.out_features
+            outputs = torch.zeros(batch_size, seq_length, vocab_size).to(device)
+            states = None
+            inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
-        packed = pack_padded_sequence(inputs, lengths, batch_first=True)
-        hiddens, _ = self.lstm(packed)
-        outputs = self.linear(hiddens[0])
+            for t in range(seq_length - 1):
+                hiddens, states = self.lstm(inputs, states)
+                step_output = self.linear(hiddens.squeeze(1))
+                outputs[:, t, :] = step_output
+
+                if teacher_forcing == 'sampled':
+                    # Sampled mode: sample next token from lstm with probability
+                    # (1 - prob_teacher):
+                    if float(torch.rand(1)) < teacher_p:
+                        embed_t = embeddings[:, t + 1]
+                    else:
+                        _, predicted = step_output.max(1)
+                        embed_t = self.embed(predicted)
+                elif teacher_forcing == 'additive':
+                    # Additive mode: add embeddings using weights determined by
+                    # sampling schedule:
+
+                    teacher_p = torch.tensor([teacher_p]).to(device)
+
+                    # Embedding of the next token from the ground truth:
+                    embed_gt_t = embeddings[:, t + 1]
+
+                    _, predicted = step_output.max(1)
+                    # Embedding of the next token sampled from the model:
+                    embed_sampled_t = self.embed(predicted)
+
+                    # Weighted sum of the above embeddings:
+                    embed_t = teacher_p * embed_gt_t + (1 - teacher_p) * embed_sampled_t
+                elif teacher_forcing == 'additive_sampled':
+                    # If we are in teacher forcing use ground truth as input
+                    if float(torch.rand(1)) < teacher_p:
+                        embed_t = embeddings[:, t + 1]
+                    # Otherwise use additive input
+                    else:
+                        teacher_p = torch.tensor([teacher_p]).to(device)
+
+                        # Embedding of the next token from the ground truth:
+                        embed_gt_t = embeddings[:, t + 1]
+
+                        _, predicted = step_output.max(1)
+                        # Embedding of the next token sampled from the model:
+                        embed_sampled_t = self.embed(predicted)
+
+                        # Weighted sum of the above embeddings:
+                        embed_t = teacher_p * embed_gt_t + (1 - teacher_p) * embed_sampled_t
+                else:
+                    # Invalid teacher forcing mode specified
+                    return None
+
+                inputs = torch.cat([embed_t, persist_features], 1).unsqueeze(1)
+
+            # Generate a packed sequence of outputs with generated captions assuming
+            # exactly the same lengths are ground-truth. If needed, model could be modified
+            # to check for the <end> token (by for-example hardcoding it to same value
+            # for all models):
+            outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
+
         return outputs
 
     def sample(self, features, images, external_features, states=None, max_seq_length=20):
@@ -270,14 +389,153 @@ class DecoderRNN(nn.Module):
         return sampled_ids
 
 
-class EncoderDecoder(nn.Module):
-    def __init__(self, params, device, vocab, state, ef_dims):
+class SpatialAttention(nn.Module):
+    """Spatial attention network implementation based on
+    "Knowing when to look" by Lu et al"""
+
+    def __init__(self, feature_size, num_attention_locs, hidden_size):
+        """Initialize a network that learns the attention weights for each time step
+        feature_size - size C of a single 1x1xC tensor at each image location
+        num_attention_locs - number of feature vectors in one image
+        hidden_size - size of the hidden layer of decoder LSTM"""
+
+        super(SpatialAttention, self).__init__()
+
+        self.image_att = nn.Linear(feature_size, num_attention_locs)
+        self.lstm_att = nn.Linear(hidden_size, num_attention_locs)
+        self.combined_att = nn.Linear(num_attention_locs, 1)
+        self.relu = nn.ReLU()
+        self.softmax = nn.Softmax(dim=1)  # (dim=0 is our current minitbatch)
+
+    def forward(self, features, h):
+        """ Forward step for attention network
+        features - convolutional image features of shape ((W' * H') , C)
+        h - hidden state of the decoder"""
+
+        att_img = self.image_att(features)
+        att_h = self.lstm_att(h)
+
+        att_logits = self.combined_att(self.relu(att_img + att_h.unsqueeze(1))).squeeze(2)
+
+        alpha = self.softmax(att_logits)
+
+        att_context = (features * alpha.unsqueeze(2)).sum(dim=1)
+
+        return att_context, alpha
+
+
+class SpatialAttentionDecoderRNN(nn.Module):
+    def __init__(self, p, vocab_size, ext_features_dim):
+        """Set the hyper-parameters and build the layers."""
+        super(SpatialAttentionDecoderRNN, self).__init__()
+        self.embed = nn.Embedding(vocab_size, p.embed_size)
+
+        print('SpatialAttentionDecoderRNN: total feature dim: {}'.
+              format(ext_features_dim))
+
+        assert len(ext_features_dim) == 3, \
+            "wrong number of input feature dimensions %d" % len(ext_features_dim)
+
+        self.feature_size = ext_features_dim[0]
+        self.num_attention_locs = ext_features_dim[1] * ext_features_dim[2]
+
+        self.hidden_size = p.hidden_size
+        # Next 2 functions transform mean feature vector into c_0 and h_0
+        self.init_h = nn.Linear(self.feature_size, p.hidden_size)
+        self.init_c = nn.Linear(self.feature_size, p.hidden_size)
+
+        self.dropout = nn.Dropout(p=p.dropout)
+
+        self.lstm_step = nn.LSTMCell(p.embed_size, p.hidden_size)
+        self.attention = SpatialAttention(self.feature_size, self.num_attention_locs,
+                                          p.hidden_size)
+        self.linear = nn.Linear(p.hidden_size + self.feature_size, vocab_size)
+
+    def init_hidden_state(self, features):
+        """Initialize the initial hidden and cell state of the LSTM"""
+        mean_features = features.mean(dim=1)
+        h = self.init_h(mean_features)
+        c = self.init_c(mean_features)
+
+        return h, c
+
+    def forward(self, encoder_features, captions, lengths, images, external_features=None,
+                teacher_p=1.0, teacher_forcing='always'):
+        """Decode image feature vectors and generates captions."""
+        embeddings = self.embed(captions)
+        embeddings = torch.cat([encoder_features.unsqueeze(1), embeddings], 1)
+        seq_length = embeddings.size()[1]
+        batch_size = embeddings.size()[0]
+        vocab_size = self.linear.out_features
+
+        features = external_features.view(batch_size, -1, self.feature_size)
+
+        # h, c = self.init_hidden_state(features)
+
+        h = torch.zeros(batch_size, self.hidden_size).to(device)
+        c = torch.zeros(batch_size, self.hidden_size).to(device)
+
+        outputs = torch.zeros(batch_size, seq_length, vocab_size).to(device)
+        # Insert the <start> token into outputs tensors at the first location of each sequence:
+        index = captions[:, 0].unsqueeze(1)
+        # Create one-hot encoding of the <start> token:
+        #outputs[:, 0] = torch.zeros(batch_size, vocab_size).to(device).scatter_(1, index, 1)
+
+        alphas = torch.zeros(batch_size, seq_length, self.num_attention_locs).to(device)
+
+        for t in range(seq_length - 1):
+            batch_size_t = sum([l > t for l in lengths])
+            h, c = self.lstm_step(embeddings[:batch_size_t, t],
+                                  (h[:batch_size_t], c[:batch_size_t]))
+            att_context, alpha = self.attention(features[:batch_size_t], h[:batch_size_t])
+
+            outputs_t = self.linear(torch.cat([self.dropout(h), att_context], dim=1))
+            outputs[:batch_size_t, t + 1] = outputs_t
+
+            alphas[:batch_size_t, t] = alpha
+
+        outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
+
+        return outputs, alphas
+
+    def sample(self, features, images, external_features, states=None, max_seq_length=20):
+        """Generate captions for given image features using greedy search."""
+        sampled_ids = []
+        batch_size = len(images)
+        alphas = torch.zeros(batch_size, max_seq_length, self.num_attention_locs).to(device)
+
+        features = external_features.view(batch_size, -1, self.feature_size)
+
+        h, c = self.init_hidden_state(features)
+
+        # inputs: (batch_size, 1, embed_size + len(external features))
+        inputs = features.unsqueeze(1)
+
+        for t in range(max_seq_length):
+            h, c = self.lstm_step(inputs, (h, c))
+            att_context, alpha = self.attention(features, h)
+            alphas[:, t] = alpha
+            outputs = self.linear(torch.cat([h, att_context], dim=1))
+            _, predicted = outputs.max(1)
+            sampled_ids.append(predicted)
+
+            # inputs: (batch_size, 1, embed_size + len(external_features))
+            embeddings = self.embed(predicted)
+            inputs = embeddings.unsqueeze(1)
+
+        # sampled_ids: (batch_size, max_seq_length)
+        sampled_ids = torch.stack(sampled_ids, 1)
+        return sampled_ids, alphas
+
+
+class SpatialAttentionEncoderDecoder(nn.Module):
+    def __init__(self, params, device, vocab_size, state, ef_dims):
         """Vanilla EncoderDecoder model"""
-        super(EncoderDecoder, self).__init__()
+        super(SpatialAttentionEncoderDecoder, self).__init__()
         print('Using device: {}'.format(device.type))
-        print('Initializing EncoderDecoder model...')
+        print('Initializing SpatialAttentionEncoderDecoder model...')
         self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
-        self.decoder = DecoderRNN(params, len(vocab), ef_dims[1]).to(device)
+        self.decoder = SpatialAttentionDecoderRNN(params, vocab_size, ef_dims[1]).to(device)
 
         self.opt_params = (list(self.decoder.parameters()) +
                            list(self.encoder.linear.parameters()) +
@@ -290,9 +548,48 @@ class EncoderDecoder(nn.Module):
     def get_opt_params(self):
         return self.opt_params
 
-    def forward(self, images, init_features, captions, lengths, persist_features):
+    def forward(self, images, init_features, captions, lengths, persist_features,
+                teacher_p=1.0, teacher_forcing='always'):
         features = self.encoder(images, init_features)
-        outputs = self.decoder(features, captions, lengths, images, persist_features)
+        outputs, alphas = self.decoder(features, captions, lengths, images, persist_features,
+                                       teacher_p, teacher_forcing)
+        return outputs
+
+    def sample(self, image_tensor, init_features, persist_features, states=None,
+               max_seq_length=20):
+        features = self.encoder(image_tensor, init_features)
+        sampled_ids = self.decoder.sample(features, image_tensor, 
+                                          external_features=persist_features,
+                                          states=states, max_seq_length=max_seq_length)
+
+        return sampled_ids
+
+
+class EncoderDecoder(nn.Module):
+    def __init__(self, params, device, vocab_size, state, ef_dims):
+        """Vanilla EncoderDecoder model"""
+        super(EncoderDecoder, self).__init__()
+        print('Using device: {}'.format(device.type))
+        print('Initializing EncoderDecoder model...')
+        self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
+        self.decoder = DecoderRNN(params, vocab_size, ef_dims[1]).to(device)
+
+        self.opt_params = (list(self.decoder.parameters()) +
+                           list(self.encoder.linear.parameters()) +
+                           list(self.encoder.bn.parameters()))
+
+        if state:
+            self.encoder.load_state_dict(state['encoder'])
+            self.decoder.load_state_dict(state['decoder'])
+
+    def get_opt_params(self):
+        return self.opt_params
+
+    def forward(self, images, init_features, captions, lengths, persist_features,
+                teacher_p=1.0, teacher_forcing='always'):
+        features = self.encoder(images, init_features)
+        outputs = self.decoder(features, captions, lengths, images, persist_features,
+                               teacher_p, teacher_forcing)
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,

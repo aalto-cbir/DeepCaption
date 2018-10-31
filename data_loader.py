@@ -184,7 +184,10 @@ class ExternalFeature:
     def __init__(self, filename, base_path):
         full_path = os.path.expanduser(os.path.join(base_path, filename))
         self.lmdb = None
+        self.lmdb_path = None
         self.bin  = None
+        self.disable_cache = False
+
         if not os.path.exists(full_path):
             print('ERROR: external feature file not found:', full_path)
             sys.exit(1)
@@ -194,9 +197,9 @@ class ExternalFeature:
             self.data = self.f['data']
         elif filename.endswith('.lmdb'):
             import lmdb
-            self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
-                               readahead=False, meminit=False)
-            self.lmdb = self.f.begin(write=False)
+            self.lmdb = lmdb
+            self.lmdb_path = full_path
+
         elif filename.endswith('.bin'):
             from picsom.bin_data import picsom_bin_data
             self.bin = [ picsom_bin_data(full_path) ]
@@ -227,10 +230,31 @@ class ExternalFeature:
 
         x1 = None
         if self.lmdb is not None:
-            c = self.lmdb.cursor()
-            assert c.first(), full_path
-            x1 = self._lmdb_to_numpy(c.value())
-            self._vdim = x1.shape[0]
+            # Figure out the dimensions of our features:
+            with self.lmdb.open(self.lmdb_path, max_readers=1, readonly=True, lock=False,
+                                readahead=False, meminit=False) as env:
+                with env.begin(write=False) as txn:
+                    c = txn.cursor()
+                    assert c.first(), full_path
+                    x1 = self._lmdb_to_numpy(c.value())
+
+                    # Get feature dimension metadata if available:
+                    vdim_data = txn.get('@vdim'.encode('ascii'))
+                    if vdim_data is not None:
+                        self._vdim = self._lmdb_to_numpy(vdim_data, dtype=np.int32).tolist()
+                    else:
+                        self._vdim = x1.shape[0]
+
+            # Figure out if our features are too large to cache:
+            if np.prod(self._vdim) > 1e5:
+                # Subsequent feature loading requests will reinitialize LMDB handle to
+                # clear any caches:
+                self.disable_cache = True
+            else:
+                # Caching is on, so we can use the globally defined lmdb handle per featureset:
+                self.f = lmdb.open(full_path, max_readers=1, readonly=True, lock=False,
+                                   readahead=False, meminit=False)
+                self.lmdb = self.f.begin(write=False)
         elif self.bin is not None:
             self._vdim = sum([i.vdim() for i in self.bin])
         else:
@@ -244,12 +268,20 @@ class ExternalFeature:
     def vdim(self):
         return self._vdim
 
-    def _lmdb_to_numpy(self, value):
-        return np.frombuffer(value, dtype=np.float32)
+    def _lmdb_to_numpy(self, value, dtype=np.float32):
+        return np.frombuffer(value, dtype=dtype)
 
     def get_feature(self, idx):
         if self.lmdb is not None:
-            x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+            if self.disable_cache:
+                with self.lmdb.open(self.lmdb_path, max_readers=1, readonly=True, lock=False,
+                                    readahead=False, meminit=False) as env:
+                    with env.begin(write=False) as txn:
+                        x = self._lmdb_to_numpy(txn.get(str(idx).encode('ascii')))
+                        x.reshape(self._vdim)
+            else:
+                x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+                x.reshape(self._vdim)
         elif self.bin is not None:
             from picsom.bin_data import picsom_bin_data
             pid = os.getpid();
@@ -281,7 +313,10 @@ class ExternalFeature:
 
     @classmethod
     def load_set(cls, feature_loaders, idx):
-        return torch.cat([ef.get_feature(idx) for ef in feature_loaders])
+        if len(feature_loaders) == 0:
+            return None
+        else:
+            return torch.cat([ef.get_feature(idx) for ef in feature_loaders])
 
     @classmethod
     def load_sets(cls, feature_loader_sets, idx):
@@ -289,16 +324,24 @@ class ExternalFeature:
         # For each set we prepare a single tensor with all the features concatenated
         if feature_loader_sets is None:
             return None
-        return [cls.load_set(fls, idx) for fls in feature_loader_sets
-                if fls]
+        # NOTE: Removed "if fls" from the list comprehension handling below
+        # so that we if we don't specify the initial external features
+        # we can still use persistant external features:
+        return [cls.load_set(fls, idx) for fls in feature_loader_sets]
 
     @classmethod
     def loaders(cls, features, base_path):
         ef_loaders = []
         feat_dim = 0
+
         for fn in features:
             ef = cls(fn, base_path)
             ef_loaders.append(ef)
+            # When the number of features is 1 sometimes they come in none 1-d form
+            # if statement below takes care of this:
+            if len(features) == 1:
+                feat_dim = ef.vdim()
+                break
             feat_dim += ef.vdim()
         return (ef_loaders, feat_dim)
 
@@ -354,6 +397,7 @@ class CocoDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.config_dict = config_dict
 
         print("COCO info loaded for {} images and {} captions.".format(len(self.coco.imgs),
                                                                        len(self.coco.anns)))
@@ -391,6 +435,10 @@ class CocoDataset(data.Dataset):
         if self.vocab is None and self.feature_loaders is None:
             img_id = path
 
+        # We are in file list generation mode and want to output full paths to images:
+        if self.config_dict.get('return_full_image_path'):
+            img_id = os.path.join(self.root, path)
+
         return image, target, img_id, feature_sets
 
     def __len__(self):
@@ -416,6 +464,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.config_dict = config_dict
 
         self.paragraphs = []
 
@@ -457,9 +506,12 @@ class VisualGenomeIM2PDataset(data.Dataset):
         img_id = self.paragraphs[index]['image_id']
         path = os.path.join(self.root, str(img_id) + '.jpg')
 
-        image = Image.open(path).convert('RGB')
-        if self.transform is not None:
-            image = self.transform(image)
+        if not self.skip_images:
+            image = Image.open(path).convert('RGB')
+            if self.transform is not None:
+                image = self.transform(image)
+        else:
+            image = torch.zeros(1, 1)
 
         # Prepare external features
         # TODO probably wrong index ...
@@ -470,6 +522,9 @@ class VisualGenomeIM2PDataset(data.Dataset):
         # use image filename as image identifier in lmdb:
         if self.vocab is None and self.feature_loaders is None:
             img_id = path
+
+        if self.config_dict.get('return_full_image_path'):
+            img_id = os.path.join(self.root, path)
 
         return image, target, img_id, feature_sets
 
@@ -881,11 +936,20 @@ def collate_fn(data):
 
     # Generate list of (batch_size, concatenated_feature_length) tensors,
     # one for each feature set
+    # feature_sets is a tuple of lists - 
+    # -- one tuple corresponds to an image
+    # -- list elements correspond to different feature types for the same image
     if feature_sets[0] is not None:
         batch_size = len(feature_sets)
         num_feature_sets = len(feature_sets[0])
-        features = [torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0)
-                    for fs_i in range(num_feature_sets)]
+        features = list()
+
+        for fs_i in range(num_feature_sets):
+            if feature_sets[0][fs_i] is not None:
+                features.append(torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0))
+            else:
+                # Allow None features so that the feature type index in train.py stays correct 
+                features.append(None)
     else:
         features = None
 
@@ -969,7 +1033,7 @@ def get_dataset_class(cls_name):
 
 def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
                ext_feature_sets=None, skip_images=False, iter_over_images=False,
-               _collate_fn=collate_fn):
+               _collate_fn=collate_fn, verbose=False):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     datasets = []
@@ -995,13 +1059,13 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         if isinstance(root, str) and zipfile.is_zipfile(root):
             root = unzip_image_dir(root)
 
-        # if verbose:
-        print((' root={!s:s}\n json_file={!s:s}\n vocab={!s:s}\n subset={!s:s}\n'+
-               ' transform={!s:s}\n skip_images={!s:s}\n iter_over_images={!s:s}\n'+
-               ' loaders={!s:s}\n config_dict={!s:s}').format(root, json_file, vocab,
-                                                              subset, transform,
-                                                              skip_images, iter_over_images,
-                                                              loaders, config_dict))
+        if verbose:
+            print((' root={!s:s}\n json_file={!s:s}\n vocab={!s:s}\n subset={!s:s}\n'+
+                   ' transform={!s:s}\n skip_images={!s:s}\n iter_over_images={!s:s}\n'+
+                   ' loaders={!s:s}\n config_dict={!s:s}').format(root, json_file, vocab,
+                                                                  subset, transform,
+                                                                  skip_images, iter_over_images,
+                                                                  loaders, config_dict))
 
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
                               subset=subset, transform=transform, skip_images=skip_images,
