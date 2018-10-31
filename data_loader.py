@@ -798,7 +798,7 @@ class PicSOMDataset(data.Dataset):
             for l in fp:
                 l = l.rstrip()
                 #print(l)
-                a = re.match('([^ ]+) (.*)', l)
+                a = re.match('([^ ]+)( (.*))?', l)
                 assert a, 'reading <'+tt+'> failed'
                 label = a.group(1)
                 if label in restr_set:
@@ -810,7 +810,7 @@ class PicSOMDataset(data.Dataset):
                         for la in laa:
                             idxs.append(self.labels.index_by_label(la))
                             
-                    texts = a.group(2).split(' # ')
+                    texts = a.group(3).split(' # ')
                     #if len(texts)!=1:
                     #    print(label, len(texts))
                     for text in texts:
