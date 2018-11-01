@@ -144,7 +144,7 @@ def find_matching_model(args, params):
 
 
 def get_teacher_prob(k, i, beta=1):
-    """Inverse sigmed sampling scheduler determines the probability
+    """Inverse sigmoid sampling scheduler determines the probability
     with which teacher forcing is turned off, more info here:
     https://arxiv.org/pdf/1506.03099.pdf"""
     if k == 0:
