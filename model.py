@@ -29,6 +29,7 @@ class ModelParams:
         self.persist_features = self._get_features(d, 'persist_features', '')
         self.encoder_dropout = self._get_param(d, 'encoder_dropout', 0)
         self.attention = self._get_param(d, 'attention', None)
+        self.vocab = self._get_param(d, 'vocab', None)
 
     @classmethod
     def fromargs(cls, args):
