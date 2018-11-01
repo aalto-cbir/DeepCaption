@@ -13,7 +13,7 @@ from PIL import Image
 import torch
 from torchvision import transforms
 
-from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
 from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
 
@@ -24,8 +24,8 @@ except ImportError as e:
 
     def tqdm(x, disable=False): return x
 
-# Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+# Device configuration now in infer()
+device = None
 
 
 def basename(fname):
@@ -90,6 +90,10 @@ def remove_incomplete_sentences(caption):
 def infer(ext_args=None):
     args = parse_args(ext_args)
 
+    global device
+    device = torch.device('cuda' if torch.cuda.is_available()
+                          and not args.cpu else 'cpu')
+
     # Create model directory
     if not os.path.exists(args.results_path):
         os.makedirs(args.results_path)
@@ -131,6 +135,9 @@ def infer(ext_args=None):
     elif vocab_path is not None:
         print('Loading vocabulary from {}').format(vocab_path)
         vocab = get_vocab(vocab_path)
+        # vocab_is_txt = re.search('\\.txt$', vocab_path)
+        # vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
+        # print('Size of the vocabulary is {}'.format(len(vocab)))
     else:
         print('ERROR: you must either load a model that contains vocabulary or '
               'specify a vocabulary with the --vocab_path option!')
@@ -270,6 +277,8 @@ def parse_args(ext_args=None):
     parser.add_argument('--no_repeat_sentences', action='store_true',
                         help='allow repeating sentences inside a paragraph')
     parser.add_argument('--only_complete_sentences', action='store_true')
+    parser.add_argument('--cpu', action="store_true",
+                        help="Use CPU even when GPU is available")
 
     return parser.parse_args(ext_args)
 
