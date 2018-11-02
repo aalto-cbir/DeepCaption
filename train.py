@@ -17,7 +17,7 @@ from torchvision import transforms
 # (Needed to handle Vocabulary pickle)
 from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt
 from data_loader import get_loader, DatasetParams
-from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
+from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
 
 # Device configuration now in main()
 device = None
@@ -159,6 +159,20 @@ def get_teacher_prob(k, i, beta=1):
     return p
 
 
+# Simple gradient clipper from tutorial, can be replaced with torch's own
+# using it now to stay close to reference Attention implementation
+def clip_gradients(optimizer, grad_clip):
+    """
+    Clips gradients computed during backpropagation to avoid explosion of gradients.
+    :param optimizer: optimizer with the gradients to be clipped
+    :param grad_clip: clip value
+    """
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if param.grad is not None:
+                param.grad.data.clamp_(-grad_clip, grad_clip)
+
+
 def main(args):
     global device
     device = torch.device('cuda' if torch.cuda.is_available()
@@ -253,8 +267,13 @@ def main(args):
     # Build the models
     if args.attention is None:
         _Model = EncoderDecoder
-    else:
+    elif args.attention == 'spatial':
         _Model = SpatialAttentionEncoderDecoder
+    elif args.attention == 'soft':
+        _Model = SoftAttentionEncoderDecoder
+    else:
+        print("Error: Invalid attention model specified")
+        sys.exit(1)
 
     model = _Model(params, device, len(vocab), state, ef_dims)
 
@@ -312,7 +331,7 @@ def main(args):
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
-            init_features = features[0].to(device)if len(features) > 0 and \
+            init_features = features[0].to(device) if len(features) > 0 and \
                 features[0] is not None else None
             persist_features = features[1].to(device) if len(features) > 1 and \
                 features[1] is not None else None
@@ -326,10 +345,19 @@ def main(args):
             teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                          args.teacher_forcing_beta)
 
-            outputs = model(images, init_features, captions, lengths, persist_features,
-                            teacher_p, args.teacher_forcing)
+            if args.attention is None:
+                outputs = model(images, init_features, captions, lengths, persist_features,
+                                teacher_p, args.teacher_forcing)
+            else:
+                outputs, alphas = model(images, init_features, captions, lengths,
+                                        persist_features, teacher_p, args.teacher_forcing)
 
             loss = criterion(outputs, targets)
+
+            # Attention regularizer
+            if args.attention is not None:
+                loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
+
             model.zero_grad()
             loss.backward()
 
@@ -341,6 +369,11 @@ def main(args):
             # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
             # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)
 
+            # Clip gradients if desired:
+            if args.grad_clip is not None:
+                clip_gradients(optimizer, args.grad_clip)
+
+            # Update weights:
             optimizer.step()
 
             total_loss += loss.item()
@@ -475,6 +508,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--learning_rate', type=float)
+    parser.add_argument('--grad_clip', type=float,
+                        help='Value at which to clip weight gradients. Disabled by default')
     parser.add_argument('--validate', type=str,
                         help='Dataset to validate against after each epoch')
     parser.add_argument('--validation_step', type=int, default=1,
@@ -484,6 +519,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr_scheduler', action='store_true')
     parser.add_argument('--no_tokenize', action='store_true')
     parser.add_argument('--show_tokens', action='store_true')
+
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
     parser.add_argument('--teacher_forcing', type=str, default='always',
                         help='Type of teacher forcing to use for training the Decoder RNN: \n'
