@@ -410,9 +410,9 @@ class SpatialAttention(nn.Module):
 
         super(SpatialAttention, self).__init__()
 
-        self.image_att = nn.Linear(feature_size, num_attention_locs)
-        self.lstm_att = nn.Linear(hidden_size, num_attention_locs)
-        self.combined_att = nn.Linear(num_attention_locs, 1)
+        self.image_att = nn.Linear(feature_size, hidden_size)
+        self.lstm_att = nn.Linear(hidden_size, hidden_size)
+        self.combined_att = nn.Linear(hidden_size, 1)
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim=1)  # (dim=0 is our current minitbatch)
 
@@ -421,7 +421,9 @@ class SpatialAttention(nn.Module):
         features - convolutional image features of shape ((W' * H') , C)
         h - hidden state of the decoder"""
 
+        # torch.Size([128, 49, 49])
         att_img = self.image_att(features)
+        # torch.Size([128, 49])
         att_h = self.lstm_att(h)
 
         att_logits = self.combined_att(self.relu(att_img + att_h.unsqueeze(1))).squeeze(2)
@@ -559,7 +561,6 @@ class SoftAttentionDecoderRNN(nn.Module):
             att_context, alpha = self.attention(features, h)
             h, c = self.lstm_step(torch.cat([
                 inputs], dim=1), (h, c))
-            
             alphas[:, t] = alpha
             outputs = self.linear(torch.cat([h, att_context], dim=1))
             _, predicted = outputs.max(1)
