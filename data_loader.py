@@ -149,7 +149,7 @@ class DatasetParams:
         h = dataset.split(':')
         for i in range(-1, -len(h), -1):
             a = ':'.join(h[0:i])
-            print(a)
+            # print(a)
 
             # Take defaults from parent and override them as needed:
             for key in self.config[a]:
@@ -176,10 +176,13 @@ class DatasetParams:
         for ds in configs:
             print('[Dataset]', ds.name)
             for name, value in ds._asdict().items():
-                if name != 'name' and value is not None:
+                if name!='name' and name!='config_dict' and value is not None:
                     print('    {}: {}'.format(name, value))
-
-
+                elif name=='config_dict':
+                    print('    {}:'.format(name))
+                    for n, v in value.items():
+                        print('        {}: {}'.format(n, v))
+                    
 class ExternalFeature:
     def __init__(self, filename, base_path):
         full_path = os.path.expanduser(os.path.join(base_path, filename))
@@ -761,6 +764,7 @@ class PicSOMDataset(data.Dataset):
                                                                   self.labels.nobjects()))
 
         self.use_lmdb = self.feature_loaders is not None and \
+                        len(self.feature_loaders[0]) and \
                         self.feature_loaders[0][0].lmdb is not None
         print('PicSOM using {} features'.format('LMDB' if self.use_lmdb else 'BIN'))
 

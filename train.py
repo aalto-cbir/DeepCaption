@@ -192,8 +192,14 @@ def main(args):
         i.config_dict['no_tokenize'] = args.no_tokenize
         i.config_dict['show_tokens'] = args.show_tokens
 
-    vocab_is_txt = re.search('\\.txt$', vocab_path)
-    vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
+    if vocab_path is not None:
+        vocab_is_txt = re.search('\\.txt$', vocab_path)
+        vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
+    else:
+        print('ERROR: you must either load a dataset that contains vocabulary or '
+              'specify a vocabulary with the --vocab_path option!')
+        sys.exit(1)
+
     print('Size of the vocabulary is {}'.format(len(vocab)))
 
     if False:

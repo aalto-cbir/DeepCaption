@@ -134,14 +134,15 @@ def infer(ext_args=None):
         vocab = params.vocab
     elif vocab_path is not None:
         print('Loading vocabulary from {}').format(vocab_path)
-        vocab = get_vocab(vocab_path)
-        # vocab_is_txt = re.search('\\.txt$', vocab_path)
-        # vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
-        # print('Size of the vocabulary is {}'.format(len(vocab)))
+        # vocab = get_vocab(vocab_path)
+        vocab_is_txt = re.search('\\.txt$', vocab_path)
+        vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
     else:
         print('ERROR: you must either load a model that contains vocabulary or '
               'specify a vocabulary with the --vocab_path option!')
         sys.exit(1)
+
+    print('Size of the vocabulary is {}'.format(len(vocab)))
 
     if params.has_external_features() and any(dc.name == 'generic' for dc in dataset_params):
         print('WARNING: you cannot use external features without specifying all datasets in '
