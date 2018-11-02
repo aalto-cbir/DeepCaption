@@ -67,6 +67,9 @@ label_map     = label-map.txt
 [picsom:MSR-VTT:train]
 subset        = train
 
+[picsom:MSR-VTT:val]
+subset        = val
+
 [picsom:COCO]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/COCO
 vocab_path    = textdumps/vocab.txt
@@ -74,6 +77,9 @@ caption_path  = textdumps/gt-cooked.txt
 
 [picsom:COCO:train2014]
 subset        = train2014
+
+[picsom:COCO:val2014]
+subset        = val2014
 
 [picsom:trecvid2018]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/trecvid2018
