@@ -416,8 +416,18 @@ def main(args):
 
                 # Forward, backward and optimize
                 with torch.no_grad():
-                    outputs = model(images, init_features, captions, lengths, persist_features)
+                    if args.attention is None:
+                        outputs = model(images, init_features, captions, lengths,
+                                        persist_features, teacher_p, args.teacher_forcing)
+                    else:
+                        outputs, alphas = model(images, init_features, captions,
+                                                lengths, persist_features, teacher_p,
+                                                args.teacher_forcing)
+
                 loss = criterion(outputs, targets)
+
+                if args.attention is not None:
+                    loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
 
                 total_loss += loss.item()
                 num_batches += 1
