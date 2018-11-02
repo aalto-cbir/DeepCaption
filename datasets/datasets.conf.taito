@@ -5,17 +5,18 @@ vocab_path = image_captioning/vocab.pkl
 features_path = features/
 
 [coco:train2014]
-#image_dir = image_captioning/train2014_256x256
-image_dir = download/images/train2014
+image_dir = image_captioning/train2014_256x256
+#image_dir = download/images/train2014
 caption_path = download/annotations/captions_train2014.json
 
 [coco:val2014]
-#image_dir = image_captioning/val2014_256x256
-image_dir = download/images/val2014
+image_dir = image_captioning/val2014_256x256
+#image_dir = download/images/val2014
 caption_path = download/annotations/captions_val2014.json
 
 [coco:train2017]
 caption_path = download/annotations/captions_train2017.json
+image_dir = image_captioning/train2014_256x256
 
 [coco:val2017]
 caption_path = download/annotations/captions_val2017.json
