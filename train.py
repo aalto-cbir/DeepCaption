@@ -355,7 +355,7 @@ def main(args):
             loss = criterion(outputs, targets)
 
             # Attention regularizer
-            if args.attention is not None:
+            if args.attention is not None and args.regularize_attn:
                 loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
 
             model.zero_grad()
@@ -426,7 +426,7 @@ def main(args):
 
                 loss = criterion(outputs, targets)
 
-                if args.attention is not None:
+                if args.attention is not None and args.regularize_attn:
                     loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
 
                 total_loss += loss.item()
@@ -499,6 +499,9 @@ if __name__ == '__main__':
     parser.add_argument('--attention', type=str,
                         help='type of attention mechanism to use '
                         ' currently supported types: None, spatial')
+    parser.add_argument('--regularize_attn', action='store_true',
+                        help='when training attention models, toggle one attention '
+                             'reguralizer for the loss')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
