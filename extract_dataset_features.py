@@ -97,7 +97,7 @@ def main(args):
                                 skip_images=False,
                                 iter_over_images=True)
 
-    extractor = FeatureExtractor(args.extractor, True).to(device)
+    extractor = FeatureExtractor(args.extractor, True).to(device).eval()
 
     # To open an lmdb handle and prepare it for the right size
     # it needs to fit the total number of elements in the dataset

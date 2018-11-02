@@ -111,13 +111,6 @@ def infer(ext_args=None):
                                                             args.image_dir,
                                                             args.image_files,
                                                             vocab_path=args.vocab_path)
-    if not vocab_path:
-        print('ERROR: you must specify a vocabulary with the --vocab_path option!')
-        sys.exit(1)
-    vocab = get_vocab(vocab_path)
-    # vocab_is_txt = re.search('\\.txt$', vocab_path)
-    # vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
-    # print('Size of the vocabulary is {}'.format(len(vocab)))
 
     # Build models
     print('Bulding models.')
@@ -131,7 +124,24 @@ def infer(ext_args=None):
         params.update_ext_features(args.ext_features)
     if args.ext_persist_features:
         params.update_ext_persist_features(args.ext_persist_features)
+
+    print("Loaded model parameters:")
     print(params)
+
+    # Load the vocabulary:
+    if params.vocab is not None:
+        print('Loading vocabulary from model file.')
+        vocab = params.vocab
+    elif vocab_path is not None:
+        print('Loading vocabulary from {}').format(vocab_path)
+        vocab = get_vocab(vocab_path)
+        # vocab_is_txt = re.search('\\.txt$', vocab_path)
+        # vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
+        # print('Size of the vocabulary is {}'.format(len(vocab)))
+    else:
+        print('ERROR: you must either load a model that contains vocabulary or '
+              'specify a vocabulary with the --vocab_path option!')
+        sys.exit(1)
 
     if params.has_external_features() and any(dc.name == 'generic' for dc in dataset_params):
         print('WARNING: you cannot use external features without specifying all datasets in '

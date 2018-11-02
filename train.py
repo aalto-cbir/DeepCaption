@@ -14,12 +14,14 @@ from datetime import datetime
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
-from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt  # (Needed to handle Vocabulary pickle)
+# (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
 
 # Device configuration now in main()
 device = None
+
 
 def feats_to_str(feats):
     return '+'.join(feats.internal + [os.path.splitext(os.path.basename(f))[0]
@@ -52,7 +54,7 @@ def get_model_name(args, params):
     return model_name
 
 
-def save_model(args, params, encoder, decoder, optimizer, epoch):
+def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
     model_name = get_model_name(args, params)
 
     state = {
@@ -70,7 +72,8 @@ def save_model(args, params, encoder, decoder, optimizer, epoch):
         'encoder_dropout': params.encoder_dropout,
         'features': params.features,
         'persist_features': params.persist_features,
-        'attention': params.attention
+        'attention': params.attention,
+        'vocab': vocab
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -144,7 +147,7 @@ def find_matching_model(args, params):
 
 
 def get_teacher_prob(k, i, beta=1):
-    """Inverse sigmed sampling scheduler determines the probability
+    """Inverse sigmoid sampling scheduler determines the probability
     with which teacher forcing is turned off, more info here:
     https://arxiv.org/pdf/1506.03099.pdf"""
     if k == 0:
@@ -197,7 +200,7 @@ def main(args):
         vocl = vocab.get_list()
         with open('vocab-dump.txt', 'w') as vocf:
             print('\n'.join(vocl), file=vocf)
-    
+
     if args.validate is not None:
         validation_dataset_params, _ = dataset_configs.get_params(args.validate)
         for i in validation_dataset_params:
@@ -323,7 +326,6 @@ def main(args):
             teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                          args.teacher_forcing_beta)
 
-
             outputs = model(images, init_features, captions, lengths, persist_features,
                             teacher_p, args.teacher_forcing)
 
@@ -352,15 +354,15 @@ def main(args):
                              np.exp(loss.item())))
                 sys.stdout.flush()
 
-            if i+1==args.num_batches:
+            if i + 1 == args.num_batches:
                 break
-                
+
         end = datetime.now()
 
         stats['training_loss'] = total_loss / num_batches
         print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                     stats['training_loss']))
-        save_model(args, params, model.encoder, model.decoder, optimizer, epoch)
+        save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
 
         if args.validate is not None and (epoch + 1) % args.validation_step == 0:
             begin = datetime.now()
@@ -394,7 +396,7 @@ def main(args):
             model.train()
 
             end = datetime.now()
-            val_loss = total_loss/num_batches
+            val_loss = total_loss / num_batches
             stats['validation_loss'] = val_loss
             print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
                 epoch + 1, end - begin, val_loss))
@@ -402,11 +404,12 @@ def main(args):
             if args.lr_scheduler:
                 scheduler.step(val_loss)
 
-        all_stats[epoch+1] = stats
+        all_stats[epoch + 1] = stats
         save_stats(args, params, all_stats)
 
+
 if __name__ == '__main__':
-    default_dataset  = 'coco:train2014'
+    default_dataset = 'coco:train2014'
     default_features = 'resnet152'
 
     parser = argparse.ArgumentParser()

@@ -31,7 +31,6 @@ def main(args):
               format(file_name))
         sys.exit(1)
 
-    # Get dataset parameters and vocabulary wrapper:
     dataset_configs = DatasetParams(args.dataset_config_file)
     dataset_params, _ = dataset_configs.get_params(args.dataset, vocab_path=None)
 

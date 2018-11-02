@@ -167,7 +167,7 @@ $ python train.py --dataset coco:train2014 --model_name my_model --teacher_forci
 
 This inverse sigmoid scheduling implementation depends on the parameter `k` which is usually in the order of `1000s` and can be interpreted as "how soon do we want to start decreasing the probability of teacher forcing?" and parameter `beta` which between `0` and `1` and can be interpreted as "once we start to use model's own outputs, how fast do we want the rate of model outputs usage to increase?", intuitively this is the slope of the middle segment of the inverse sigmoid curve.
 
-Teacher forcing is controlled by parameter `--teacher_forcing`. By default this is set to `always`, meaning that we don't perform any sampling. Other options are `sampled` - using a sampling procedure outlined above; and `additive` - determnistic summation of teacher token with generated token with weights determined by the inverse sigmoid scheduler.
+Teacher forcing is controlled by parameter `--teacher_forcing`. By default this is set to `always`, meaning that we don't perform any sampling. Other options are `sampled` - using a sampling procedure outlined above; and `additive` - deterministic summation of teacher token with generated token with weights determined by the inverse sigmoid scheduler.
 
 `--teacher_forcing_k` sets the value of `k` and `--teacher_forcing_beta` sets the value for `beta`.
 
