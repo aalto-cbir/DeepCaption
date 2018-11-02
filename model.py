@@ -89,7 +89,7 @@ class ModelParams:
 
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, model_name, debug=False):
+    def __init__(self, model_name, debug=False, finetune=False):
         """Load the pretrained model and replace top fc layer.
         Inception assumes input image size to be 299x299.
         Other models assume input image of size 224x224
@@ -98,6 +98,9 @@ class FeatureExtractor(nn.Module):
 
         # Set flatten to False if we do not want to flatten the output features
         self.flatten = True
+
+        # Toggle finetuning
+        self.finetune = finetune
 
         if model_name == 'alexnet':
             if debug:
@@ -175,8 +178,12 @@ class FeatureExtractor(nn.Module):
 
     def forward(self, images):
         """Extract feature vectors from input images."""
-        with torch.no_grad():
+        if self.finetune:
             features = self.extractor(images)
+        else:
+            with torch.no_grad():
+                self.extractor.eval()
+                features = self.extractor(images)
 
         if self.flatten:
             features = features.reshape(features.size(0), -1)
