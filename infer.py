@@ -207,14 +207,22 @@ def infer(ext_args=None):
         output_file = args.output_file
 
     if output_file:
-        if args.output_format == 'json':
-            json.dump(output_data, open(os.path.join(args.results_path, output_file), 'w'))
+        if args.output_format is not None:
+            output_format = args.output_format
+        elif output_file.endswith('.json'):
+            output_format = 'json'
         else:
-            with open(output_file, 'w') as fp:
+            output_format = 'txt'
+
+        output_path = os.path.join(args.results_path, output_file)
+        if output_format == 'json':
+            json.dump(output_data, open(output_path, 'w'))
+        else:
+            with open(output_path, 'w') as fp:
                 for data in output_data:
                     print(data['image_id'], data['caption'], file=fp)
 
-        print('Wrote generated captions to {} as {}'.format(output_file, args.output_format))
+        print('Wrote generated captions to {} as {}'.format(output_path, args.output_format))
 
     if args.print_results:
         for d in output_data:
@@ -248,8 +256,7 @@ def parse_args(ext_args=None):
                         help='paths for external persist features')
     parser.add_argument('--output_file', type=str,
                         help='path for output file, default: model_name.txt')
-    parser.add_argument('--output_format', type=str, default='txt',
-                        help='format of the output file')
+    parser.add_argument('--output_format', type=str, help='format of the output file')
     parser.add_argument('--verbose', help='verbose output',
                         action='store_true')
     parser.add_argument('--results_path', type=str, default='results/',
