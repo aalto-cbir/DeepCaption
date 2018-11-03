@@ -537,9 +537,9 @@ class SoftAttentionDecoderRNN(nn.Module):
                 (h[:batch_size_t], c[:batch_size_t]))
 
             outputs_t = self.linear(self.dropout(h))
-            outputs[:batch_size_t, t] = outputs_t
+            outputs[:batch_size_t, t + 1] = outputs_t
 
-            alphas[:batch_size_t, t] = alpha
+            alphas[:batch_size_t, t + 1] = alpha
 
         outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
 
@@ -672,7 +672,7 @@ class SpatialAttentionDecoderRNN(nn.Module):
             att_context, alpha = self.attention(features[:batch_size_t], h[:batch_size_t])
 
             outputs_t = self.linear(torch.cat([self.dropout(h), att_context], dim=1))
-            outputs[:batch_size_t, t + 1] = outputs_t
+            outputs[:batch_size_t, t] = outputs_t
 
             alphas[:batch_size_t, t] = alpha
 
