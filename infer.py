@@ -13,7 +13,7 @@ from PIL import Image
 import torch
 from torchvision import transforms
 
-from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
 from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
 
@@ -105,12 +105,11 @@ def infer(ext_args=None):
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
 
-    # Get dataset parameters and vocabulary wrapper:
+    # Get dataset parameters:
     dataset_configs = DatasetParams(args.dataset_config_file)
-    dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
-                                                            args.image_dir,
-                                                            args.image_files,
-                                                            vocab_path=args.vocab_path)
+    dataset_params = dataset_configs.get_params(args.dataset,
+                                                args.image_dir,
+                                                args.image_files)
 
     # Build models
     print('Bulding models.')
@@ -132,16 +131,15 @@ def infer(ext_args=None):
     if params.vocab is not None:
         print('Loading vocabulary from model file.')
         vocab = params.vocab
-    elif vocab_path is not None:
-        print('Loading vocabulary from {}').format(vocab_path)
-        vocab = get_vocab(vocab_path)
-        # vocab_is_txt = re.search('\\.txt$', vocab_path)
-        # vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
-        # print('Size of the vocabulary is {}'.format(len(vocab)))
+    elif args.vocab_path is not None:
+        print('Loading vocabulary from {}').format(args.vocab_path)
+        vocab = get_vocab(args.vocab_path)
     else:
         print('ERROR: you must either load a model that contains vocabulary or '
               'specify a vocabulary with the --vocab_path option!')
         sys.exit(1)
+
+    print('Size of the vocabulary is {}'.format(len(vocab)))
 
     if params.has_external_features() and any(dc.name == 'generic' for dc in dataset_params):
         print('WARNING: you cannot use external features without specifying all datasets in '
