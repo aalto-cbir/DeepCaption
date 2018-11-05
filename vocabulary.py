@@ -18,10 +18,21 @@ except ImportError as e:
 class Vocabulary(object):
     """Simple vocabulary wrapper."""
 
-    def __init__(self):
+    special_tokens = ['<pad>', '<start>', '<end>', '<unk>']
+
+    def __init__(self, start_token=True):
+        """Initialize vocabulary object
+        :param start_token - determine whether the vocabulary should contain <start> token
+        """
         self.word2idx = {}
         self.idx2word = {}
         self.idx = 0
+
+        self.metadata = {'includes_start_token': start_token}
+
+        # Do not add <start> token:
+        if not start_token:
+            self.special_tokens.remove('<start>')
 
     def add_word(self, word):
         if word not in self.word2idx:
@@ -43,10 +54,8 @@ class Vocabulary(object):
         return len(self.word2idx)
 
     def add_special_tokens(self):
-        self.add_word('<pad>')
-        self.add_word('<start>')
-        self.add_word('<end>')
-        self.add_word('<unk>')
+        for t in self.special_tokens:
+            self.add_word(t)
 
     def save(self, vocab_path):
         is_txt = re.search('\\.txt$', vocab_path)
@@ -61,6 +70,13 @@ class Vocabulary(object):
 
     def get_list(self):
         return [self.idx2word[i] for i in range(self.__len__())]
+
+    def update_metadata(self, updated_metadata):
+        """Store vocabulary metadata
+        :param metadata dict vocabulary metadata info"""
+
+        # Merge existing metadata with supplied:
+        self.metatata = {**self.metadata, **updated_metadata}
 
 
 def get_vocab(ext_args, dataset_params=None):
@@ -185,6 +201,16 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     # Add the words to the vocabulary
     for word in words:
         vocab.add_word(word)
+
+    # Store vocabulary metadata:
+    metadata = {
+        'file_path': os.path.abspath(vocab_output_path),
+        'dataset': ext_args.dataset,
+        'vocab_threshold': ext_args.vocab_threshold,
+        'no_tokenize': ext_args.no_tokenize
+    }
+
+    vocab.update_metadata(metadata)
 
     # Save it
     vocab.save(vocab_output_path)
