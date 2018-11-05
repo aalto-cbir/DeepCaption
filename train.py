@@ -15,7 +15,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 # (Needed to handle Vocabulary pickle)
-from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt
+from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
 
@@ -198,16 +198,15 @@ def main(args):
 
     state = None
 
-    # Get dataset parameters and vocabulary wrapper:
+    # Get dataset parameters:
     dataset_configs = DatasetParams(args.dataset_config_file)
-    dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
-                                                            vocab_path=args.vocab_path)
+    dataset_params = dataset_configs.get_params(args.dataset)
+
     for i in dataset_params:
         i.config_dict['no_tokenize'] = args.no_tokenize
         i.config_dict['show_tokens'] = args.show_tokens
 
-    vocab_is_txt = re.search('\\.txt$', vocab_path)
-    vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
+    vocab = get_vocab(args, dataset_params)
     print('Size of the vocabulary is {}'.format(len(vocab)))
 
     if False:
@@ -361,16 +360,15 @@ def main(args):
             model.zero_grad()
             loss.backward()
 
-            # grad_norms = [x.grad.data.norm(2) for x in opt_params]
-            # batch_max_grad = np.max(grad_norms)
-            # if batch_max_grad > 10.0:
-            #     print('WARNING: gradient norms larger than 10.0')
-
-            # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
-            # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)
-
             # Clip gradients if desired:
             if args.grad_clip is not None:
+                # grad_norms = [x.grad.data.norm(2) for x in opt_params]
+                # batch_max_grad = np.max(grad_norms)
+                # if batch_max_grad > 10.0:
+                #     print('WARNING: gradient norms larger than 10.0')
+
+                # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
+                # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)
                 clip_gradients(optimizer, args.grad_clip)
 
             # Update weights:
@@ -470,8 +468,6 @@ if __name__ == '__main__':
                         help='path for saving trained models')
     parser.add_argument('--crop_size', type=int, default=224,
                         help='size for randomly cropping images')
-    parser.add_argument('--vocab_path', type=str, default=None,
-                        help='path for vocabulary wrapper')
     parser.add_argument('--tmp_dir_prefix', type=str,
                         default='image_captioning',
                         help='where in /tmp folder to store project data')
@@ -485,7 +481,28 @@ if __name__ == '__main__':
     parser.add_argument('--cpu', action="store_true",
                         help="Use CPU even when GPU is available")
 
-    # Model parameters
+    # Vocabulary configuration:
+    parser.add_argument('--vocab', type=str, default=None,
+                        help='Vocabulary directive or path. '
+                        'Directives are all-caps, no special characters. '
+                        'Vocabulary file formats supported - *.{pkl,txt}.\n'
+                        'AUTO: If vocabulary corresponding to current training set '
+                        'combination exits in the vocab/ folder load it. '
+                        'If not, generate a new vocabulary file\n'
+                        'REGEN: Regenerate a new vocabulary file and place it in '
+                        'vocab/ folder\n'
+                        'path/to/vocab.\{pkl,txt\}: path to Pickled or plain-text '
+                        'vocabulary file\n')
+    parser.add_argument('--vocab_root', type=str, default='vocab',
+                        help='Cached vocabulary files folder')
+    parser.add_argument('--no_tokenize', action='store_true')
+    parser.add_argument('--show_tokens', action='store_true')
+    parser.add_argument('--vocab_threshold', type=int, default=4,
+                        help='minimum word count threshold')
+    parser.add_argument('--show_vocab_stats', action="store_true",
+                        help='show generated vocabulary word counts')
+
+    # Model parameters:
     parser.add_argument('--features', type=str, default=default_features,
                         help='features to use as the initial input for the '
                         'caption generator, given as comma separated list, '
@@ -530,8 +547,6 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
-    parser.add_argument('--no_tokenize', action='store_true')
-    parser.add_argument('--show_tokens', action='store_true')
 
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
     parser.add_argument('--teacher_forcing', type=str, default='always',
