@@ -23,7 +23,7 @@ def basename(fname):
 
 DatasetConfig = namedtuple('DatasetConfig',
                            'name, child_split, dataset_class, image_dir, caption_path, '
-                           'vocab_path, features_path, subset, config_dict')
+                           'features_path, subset, config_dict')
 
 
 class DatasetParams:
@@ -72,12 +72,12 @@ class DatasetParams:
 
         return config_path
 
-    def get_params(self, args_dataset, image_dir=None, image_files=None, vocab_path=None):
+    def get_params(self, args_dataset, image_dir=None, image_files=None):
 
         datasets = args_dataset.split('+')
         configs = []
         for dataset in datasets:
-            dataset_name_orig = dataset # needed if lower-casing is used
+            dataset_name_orig = dataset  # needed if lower-casing is used
             # dataset = dataset.lower() # disabled temporarily
 
             if dataset not in self.config:
@@ -106,11 +106,10 @@ class DatasetParams:
                     root = self._cfg_path(cfg, 'image_dir')
 
                 caption_path = self._cfg_path(cfg, 'caption_path')
-                cfg_vocab_path = vocab_path if vocab_path else self._cfg_path(cfg, 'vocab_path')
                 features_path = self._cfg_path(cfg, 'features_path')
                 subset = cfg.get('subset')
 
-                config_dict = { i: cfg[i] for i in cfg.keys() }
+                config_dict = {i: cfg[i] for i in cfg.keys()}
                 config_dict['dataset_name'] = dataset_name_orig
 
                 dataset_config = DatasetConfig(dataset_name,
@@ -118,7 +117,6 @@ class DatasetParams:
                                                dataset_class,
                                                root,
                                                caption_path,
-                                               cfg_vocab_path,
                                                features_path,
                                                subset,
                                                config_dict)
@@ -128,16 +126,9 @@ class DatasetParams:
                 print('Invalid dataset {:s} specified'.format(dataset))
                 sys.exit(1)
 
-        # Vocab path can be overriden from arguments even for multiple datasets:
-        main_vocab_path = vocab_path if vocab_path else self._cfg_path(
-            self.config[datasets[0]], 'vocab_path')
-
-        if main_vocab_path is None:
-            print("WARNING: Vocabulary path not specified!")
-
         self.print_info(configs)
 
-        return configs, main_vocab_path
+        return configs
 
     def _combine_cfg(self, dataset):
         """If dataset name is separated by 'parent_dataset:child_split' (i.e. 'coco:train2014')
@@ -156,7 +147,6 @@ class DatasetParams:
                 if self.config[dataset].get(key) is None:
                     self.config[dataset][key] = self.config[a][key]
         return self.config[dataset], h[-1]
-        
 
     def _cfg_path(self, cfg, s):
         path = cfg.get(s)
@@ -346,7 +336,8 @@ class ExternalFeature:
         return (ef_loaders, feat_dim)
 
 
-def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False):
+def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False,
+                     start_token=True):
     """Tokenize a single sentence / caption, convert tokens to vocabulary indices,
     and store the vocabulary index array into a torch tensor"""
 
@@ -359,7 +350,8 @@ def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False):
         tokens = nltk.tokenize.word_tokenize(str(text).lower())
 
     caption = []
-    caption.append(vocab('<start>'))
+    if start_token:
+        caption.append(vocab('<start>'))
     caption.extend([vocab(token) for token in tokens])
     caption.append(vocab('<end>'))
     target = torch.Tensor(caption)
@@ -367,7 +359,7 @@ def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False):
     if show_tokens:
         joined = ' '.join([vocab(i) for i in caption])
         print('TOKENS', joined)
-        
+
     return target
 
 
