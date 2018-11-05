@@ -756,6 +756,7 @@ class PicSOMDataset(data.Dataset):
                                                                   self.labels.nobjects()))
 
         self.use_lmdb = self.feature_loaders is not None and \
+                        len(self.feature_loaders[0]) and \
                         self.feature_loaders[0][0].lmdb is not None
         print('PicSOM using {} features'.format('LMDB' if self.use_lmdb else 'BIN'))
 
