@@ -501,7 +501,7 @@ if __name__ == '__main__':
                         'vocab/ folder\n'
                         'path/to/vocab.\{pkl,txt\}: path to Pickled or plain-text '
                         'vocabulary file\n')
-    parser.add_argument('--vocab_root', type=str, default='vocab',
+    parser.add_argument('--vocab_root', type=str, default='vocab_cache',
                         help='Cached vocabulary files folder')
     parser.add_argument('--no_tokenize', action='store_true')
     parser.add_argument('--show_tokens', action='store_true')
