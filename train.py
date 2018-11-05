@@ -206,14 +206,6 @@ def main(args):
         i.config_dict['no_tokenize'] = args.no_tokenize
         i.config_dict['show_tokens'] = args.show_tokens
 
-    vocab = get_vocab(args, dataset_params)
-    print('Size of the vocabulary is {}'.format(len(vocab)))
-
-    if False:
-        vocl = vocab.get_list()
-        with open('vocab-dump.txt', 'w') as vocf:
-            print('\n'.join(vocl), file=vocf)
-
     if args.validate is not None:
         validation_dataset_params, _ = dataset_configs.get_params(args.validate)
         for i in validation_dataset_params:
@@ -242,6 +234,22 @@ def main(args):
         print('Loading model {} at epoch {}.'.format(args.load_model,
                                                      start_epoch))
         print(params)
+
+    # Load the vocabulary. For pre-trained models attempt to obtain
+    # saved vocabulary from the model itself:
+    if args.load_model and params.vocab is not None:
+        print("Loading vocabulary from the model file:")
+        vocab = params.vocab
+    else:
+        print("Loading / generating vocabulary:")
+        vocab = get_vocab(args, dataset_params)
+
+    print('Size of the vocabulary is {}'.format(len(vocab)))
+
+    if False:
+        vocl = vocab.get_list()
+        with open('vocab-dump.txt', 'w') as vocf:
+            print('\n'.join(vocl), file=vocf)
 
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
