@@ -32,7 +32,7 @@ def main(args):
         sys.exit(1)
 
     dataset_configs = DatasetParams(args.dataset_config_file)
-    dataset_params, _ = dataset_configs.get_params(args.dataset, vocab_path=None)
+    dataset_params = dataset_configs.get_params(args.dataset)
 
     for d in dataset_params:
         # Tell dataset to output full image paths instead of image id:
