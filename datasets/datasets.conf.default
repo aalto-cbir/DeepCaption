@@ -12,8 +12,6 @@
 #
 # caption_path:         Path to a file containing image annotation, in JSON format
 #
-# vocab_path:           Location of a Pickled vocabulary object (mapping words to integers)
-#
 # features_path:        Directory of external feature files, if not specified should be given with 
 #                       absolute paths, or expected to be found in the working directory
 #
@@ -23,7 +21,6 @@
 [coco]
 dataset_class = CocoDataset
 image_dir = defined_in_children
-vocab_path = datasets/processed/COCO/vocab.pkl
 features_path = features
 subset = 
 
@@ -40,7 +37,6 @@ caption_path = datasets/data/COCO/annotations/captions_val2014.json
 dataset_class = VisualGenomeIM2PDataset
 image_dir = datasets/processed/VisualGenome/resized_vg_all
 caption_path = datasets/data/VisualGenome/im2p/paragraphs_v1.json
-vocab_path = datasets/processed/COCO/vocab.pkl
 features_path = features
 
 [vgim2p:train]
@@ -54,7 +50,6 @@ subset = datasets/data/VisualGenome/im2p/val_split.json
 dataset_class = VistDataset
 image_dir = 
 caption_path = 
-vocab_path =
 features_path =
 subset = 
 
@@ -63,7 +58,6 @@ dataset_class = MSRVTTDataset
 root_dir = /proj/mediaind/picsom/databases/MSR-VTT
 image_dir = middleframes/resized/
 caption_path = download/train_val_videodatainfo.json
-vocab_path = image_captioning/vocab.pkl
 features_path = features/
 
 [msrvtt:train]
@@ -77,7 +71,6 @@ subset = validate
 dataset_class = TRECVID2018Dataset
 image_dir =
 caption_path =
-vocab_path = 
 features_path =
 subset = 
 
@@ -85,6 +78,5 @@ subset =
 dataset_class = GenericDataset
 image_dir =
 caption_path =
-vocab_path = datasets/processed/COCO/vocab.pkl
 features_path = features
 subset = 

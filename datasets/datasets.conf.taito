@@ -1,7 +1,6 @@
 [coco]
 dataset_class = CocoDataset
 root_dir = /proj/mediaind/picsom/databases/COCO
-vocab_path = image_captioning/vocab.pkl
 features_path = features/
 
 [coco:train2014]
@@ -29,7 +28,6 @@ root_dir = /proj/mediaind/picsom/databases/visualgenome
 image_dir = image_captioning/images_256x256
 caption_path = download/im2p/paragraphs_v1.json
 # We use COCO vocab for pre-training compatibility:
-vocab_path = /proj/mediaind/picsom/databases/COCO/image_captioning/vocab.pkl
 features_path = features
 
 [vgim2p:train]
@@ -46,7 +44,6 @@ dataset_class = MSRVTTDataset
 root_dir = /proj/mediaind/picsom/databases/MSR-VTT
 image_dir = middleframes/resized/
 caption_path = download/train_val_videodatainfo.json
-vocab_path = image_captioning/vocab.pkl
 features_path = features/
 
 [msrvtt:train]
