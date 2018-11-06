@@ -21,6 +21,7 @@ def parse_args():
                         help='show key counts')
     parser.add_argument('--show_tokens', action="store_true")
     parser.add_argument('--no_tokenize', action="store_true")
+    parser.add_argument('--verbose', action="store_true")
 
     return parser.parse_args()
 
