@@ -288,7 +288,7 @@ def parse_args(ext_args=None):
     return parser.parse_args(ext_args)
 
 
-if __name__ == '__main__':    
+if __name__ == '__main__':
     begin = datetime.now()
     print('Started inference at {}.'.format(begin))
 
