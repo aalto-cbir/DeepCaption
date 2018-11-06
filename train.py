@@ -207,7 +207,7 @@ def main(args):
         i.config_dict['show_tokens'] = args.show_tokens
 
     if args.validate is not None:
-        validation_dataset_params, _ = dataset_configs.get_params(args.validate)
+        validation_dataset_params = dataset_configs.get_params(args.validate)
         for i in validation_dataset_params:
             i.config_dict['no_tokenize'] = args.no_tokenize
             i.config_dict['show_tokens'] = args.show_tokens
@@ -241,6 +241,11 @@ def main(args):
         print("Loading vocabulary from the model file:")
         vocab = params.vocab
     else:
+        if args.vocab is None:
+            print("Error: You must specify the vocabulary to be used for training using "
+                  "--vocab flag.\nTry --vocab AUTO if you want the vocabulary to be "
+                  "either generated from the training dataset or loaded from cache.")
+            sys.exit(1)
         print("Loading / generating vocabulary:")
         vocab = get_vocab(args, dataset_params)
 
