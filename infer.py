@@ -128,15 +128,15 @@ def infer(ext_args=None):
     print(params)
 
     # Load the vocabulary:
-    if params.vocab is not None:
-        print('Loading vocabulary from model file.')
+    if args.vocab is not None:
+        # Loading vocabulary from file path supplied by the user:
+        vocab = get_vocab(args)
+    elif params.vocab is not None:
+        print('Loading vocabulary stored in the model file.')
         vocab = params.vocab
-    elif args.vocab_path is not None:
-        print('Loading vocabulary from {}').format(args.vocab_path)
-        vocab = get_vocab(args.vocab_path)
     else:
         print('ERROR: you must either load a model that contains vocabulary or '
-              'specify a vocabulary with the --vocab_path option!')
+              'specify a vocabulary with the --vocab option!')
         sys.exit(1)
 
     print('Size of the vocabulary is {}'.format(len(vocab)))
@@ -262,7 +262,7 @@ def parse_args(ext_args=None):
                         help='input image dir for generating captions')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
-    parser.add_argument('--vocab_path', type=str, help='path for vocabulary wrapper')
+    parser.add_argument('--vocab', type=str, help='path for vocabulary wrapper')
     parser.add_argument('--ext_features', type=str,
                         help='paths for the external features, overrides the '
                         'paths in the model ckpt file (which are the ones '
