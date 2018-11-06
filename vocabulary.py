@@ -58,8 +58,11 @@ class Vocabulary(object):
             self.add_word(t)
 
     def save(self, vocab_path):
-        is_txt = re.search('\\.txt$', vocab_path)
-        if is_txt:
+        vocab_dir = os.path.dirname(vocab_path)
+        if not os.path.exists(vocab_dir):
+            os.makedirs(vocab_dir)
+
+        if vocab_path.endswith('.txt'):
             ll = self.get_list()
             with open(vocab_path, 'w') as f:
                 for l in ll:
@@ -97,7 +100,7 @@ def get_vocab(ext_args, dataset_params=None):
     # Check if we are dealing with a directive:
     if ext_args.vocab.isalpha() and ext_args.vocab.isupper():
         if ext_args.vocab == 'AUTO' or ext_args.vocab == 'REGEN':
-            vocab_path = '{}/{}.pkl'.format(ext_args.vocab_root, ext_args.datasets)
+            vocab_path = '{}/vocab-{}.pkl'.format(ext_args.vocab_root, ext_args.dataset)
             if ext_args.vocab == 'AUTO' and os.path.isfile(vocab_path):
                 return get_vocab_from_pickle(vocab_path)
             else:
@@ -106,7 +109,7 @@ def get_vocab(ext_args, dataset_params=None):
                           " building a vocabulary")
                     sys.exit(1)
 
-                build_vocab(vocab_path, dataset_params, ext_args)
+                return build_vocab(vocab_path, dataset_params, ext_args)
         else:
             print("Invalid vocabulary directive")
             sys.exit(1)
@@ -119,7 +122,7 @@ def get_vocab(ext_args, dataset_params=None):
 def get_vocab_from_pickle(vocab_path):
     # Load vocabulary wrapper
     with open(vocab_path, 'rb') as f:
-        print("Extracting vocabulary from {}".format(vocab_path))
+        print("Loading existing vocabulary pickle: {}".format(vocab_path))
         vocab = pickle.load(f)
 
     return vocab
@@ -167,11 +170,12 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
         print('ERROR: No captions found, please specify a dataset that has captions defined.')
     if ext_args.dataset == 'coco':
         print('HINT: instead of "coco" use "coco:train2014"')
-    sys.exit(1)
+        sys.exit(1)
 
     # Start counting words...
     counter = Counter()
     show_progress = sys.stderr.isatty()
+    print("Building vocabulary...")
     for _, captions, _, _, _ in tqdm(data_loader, disable=not show_progress):
         for caption in captions:
             if ext_args.no_tokenize:
@@ -217,3 +221,5 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
 
     print("Total vocabulary size: {}".format(len(vocab)))
     print("Saved the vocabulary to '{}'".format(vocab_output_path))
+
+    return vocab
