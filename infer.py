@@ -13,7 +13,7 @@ from PIL import Image
 import torch
 from torchvision import transforms
 
-from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt  # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
 from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
 
@@ -105,12 +105,11 @@ def infer(ext_args=None):
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
 
-    # Get dataset parameters and vocabulary wrapper:
+    # Get dataset parameters:
     dataset_configs = DatasetParams(args.dataset_config_file)
-    dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
-                                                            args.image_dir,
-                                                            args.image_files,
-                                                            vocab_path=args.vocab_path)
+    dataset_params = dataset_configs.get_params(args.dataset,
+                                                args.image_dir,
+                                                args.image_files)
 
     # Build models
     print('Bulding models.')
@@ -129,17 +128,15 @@ def infer(ext_args=None):
     print(params)
 
     # Load the vocabulary:
-    if params.vocab is not None:
-        print('Loading vocabulary from model file.')
+    if args.vocab is not None:
+        # Loading vocabulary from file path supplied by the user:
+        vocab = get_vocab(args)
+    elif params.vocab is not None:
+        print('Loading vocabulary stored in the model file.')
         vocab = params.vocab
-    elif vocab_path is not None:
-        print('Loading vocabulary from {}').format(vocab_path)
-        # vocab = get_vocab(vocab_path)
-        vocab_is_txt = re.search('\\.txt$', vocab_path)
-        vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
     else:
         print('ERROR: you must either load a model that contains vocabulary or '
-              'specify a vocabulary with the --vocab_path option!')
+              'specify a vocabulary with the --vocab option!')
         sys.exit(1)
 
     print('Size of the vocabulary is {}'.format(len(vocab)))
@@ -265,7 +262,7 @@ def parse_args(ext_args=None):
                         help='input image dir for generating captions')
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
-    parser.add_argument('--vocab_path', type=str, help='path for vocabulary wrapper')
+    parser.add_argument('--vocab', type=str, help='path for vocabulary wrapper')
     parser.add_argument('--ext_features', type=str,
                         help='paths for the external features, overrides the '
                         'paths in the model ckpt file (which are the ones '
@@ -291,7 +288,7 @@ def parse_args(ext_args=None):
     return parser.parse_args(ext_args)
 
 
-if __name__ == '__main__':    
+if __name__ == '__main__':
     begin = datetime.now()
     print('Started inference at {}.'.format(begin))
 

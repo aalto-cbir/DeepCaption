@@ -87,7 +87,7 @@ def main(args):
 
     # Get dataset parameters and vocabulary wrapper:
     dataset_configs = DatasetParams(args.dataset_config_file)
-    dataset_params, _ = dataset_configs.get_params(args.dataset, vocab_path=None)
+    dataset_params = dataset_configs.get_params(args.dataset)
 
     # We ask it to iterate over images instead of all (image, caption) pairs
     data_loader, _ = get_loader(dataset_params, vocab=None, transform=transform,

@@ -1,7 +1,6 @@
 [coco]
 dataset_class = CocoDataset
 root_dir = /m/cs/scratch/imagedb/picsom/databases/COCO
-vocab_path = image_captioning/vocab.pkl
 features_path = features/
 
 [coco:train2014]
@@ -25,7 +24,6 @@ dataset_class = MSRVTTDataset
 root_dir = /m/cs/scratch/imagedb/picsom/databases/MSR-VTT
 image_dir = middleframes/resized/
 caption_path = download/train_val_videodatainfo.json
-vocab_path = analysis/mvsjober/image_captioning/vocab.pkl
 features_path = features/
 
 [msrvtt:train]
@@ -52,7 +50,6 @@ image_dir     =
 
 [picsom:conceptualcaptions]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/conceptualcaptions
-vocab_path    = textdumps/vocab.txt
 caption_path  = textdumps/gt-cooked.txt
 
 [picsom:conceptualcaptions:train]
@@ -60,7 +57,6 @@ subset        = trainx
 
 [picsom:MSR-VTT]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/MSR-VTT
-vocab_path    = textdumps/vocab.txt
 caption_path  = textdumps/gt-cooked.txt
 label_map     = label-map.txt
 
@@ -72,7 +68,6 @@ subset        = val
 
 [picsom:COCO]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/COCO
-vocab_path    = textdumps/vocab.txt
 caption_path  = textdumps/gt-cooked.txt
 
 [picsom:COCO:train2014]
@@ -84,7 +79,6 @@ subset        = val2014
 [picsom:trecvid2018]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/trecvid2018
 features_path = features
-vocab_path    = textdumps/vocab.txt
 caption_path  = textdumps/gt-cooked.txt
 label_map     = label-map.txt
 image_dir     =
@@ -104,7 +98,6 @@ subset        = testall
 [picsom:tgif]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/tgif
 features_path = features
-vocab_path    = textdumps/vocab.txt
 caption_path  = textdumps/gt-cooked.txt
 label_map     = label-map.txt
 image_dir     =
@@ -116,7 +109,6 @@ subset        = imageset
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/msvd
 #root_dir      = /l/jormal/picsom/databases/msvd
 features_path = features
-vocab_path    = textdumps/vocab.txt
 caption_path  = textdumps/gt-cooked.txt
 label_map     = label-map.txt
 image_dir     =

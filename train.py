@@ -15,9 +15,9 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 # (Needed to handle Vocabulary pickle)
-from vocabulary import Vocabulary, get_vocab, get_vocab_from_txt
+from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
-from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
+from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
 
 # Device configuration now in main()
 device = None
@@ -159,6 +159,20 @@ def get_teacher_prob(k, i, beta=1):
     return p
 
 
+# Simple gradient clipper from tutorial, can be replaced with torch's own
+# using it now to stay close to reference Attention implementation
+def clip_gradients(optimizer, grad_clip):
+    """
+    Clips gradients computed during backpropagation to avoid explosion of gradients.
+    :param optimizer: optimizer with the gradients to be clipped
+    :param grad_clip: clip value
+    """
+    for group in optimizer.param_groups:
+        for param in group['params']:
+            if param.grad is not None:
+                param.grad.data.clamp_(-grad_clip, grad_clip)
+
+
 def main(args):
     global device
     device = torch.device('cuda' if torch.cuda.is_available()
@@ -184,31 +198,16 @@ def main(args):
 
     state = None
 
-    # Get dataset parameters and vocabulary wrapper:
+    # Get dataset parameters:
     dataset_configs = DatasetParams(args.dataset_config_file)
-    dataset_params, vocab_path = dataset_configs.get_params(args.dataset,
-                                                            vocab_path=args.vocab_path)
+    dataset_params = dataset_configs.get_params(args.dataset)
+
     for i in dataset_params:
         i.config_dict['no_tokenize'] = args.no_tokenize
         i.config_dict['show_tokens'] = args.show_tokens
 
-    if vocab_path is not None:
-        vocab_is_txt = re.search('\\.txt$', vocab_path)
-        vocab = get_vocab_from_txt(vocab_path) if vocab_is_txt else get_vocab(vocab_path)
-    else:
-        print('ERROR: you must either load a dataset that contains vocabulary or '
-              'specify a vocabulary with the --vocab_path option!')
-        sys.exit(1)
-
-    print('Size of the vocabulary is {}'.format(len(vocab)))
-
-    if False:
-        vocl = vocab.get_list()
-        with open('vocab-dump.txt', 'w') as vocf:
-            print('\n'.join(vocl), file=vocf)
-
     if args.validate is not None:
-        validation_dataset_params, _ = dataset_configs.get_params(args.validate)
+        validation_dataset_params = dataset_configs.get_params(args.validate)
         for i in validation_dataset_params:
             i.config_dict['no_tokenize'] = args.no_tokenize
             i.config_dict['show_tokens'] = args.show_tokens
@@ -236,6 +235,27 @@ def main(args):
                                                      start_epoch))
         print(params)
 
+    # Load the vocabulary. For pre-trained models attempt to obtain
+    # saved vocabulary from the model itself:
+    if args.load_model and params.vocab is not None:
+        print("Loading vocabulary from the model file:")
+        vocab = params.vocab
+    else:
+        if args.vocab is None:
+            print("Error: You must specify the vocabulary to be used for training using "
+                  "--vocab flag.\nTry --vocab AUTO if you want the vocabulary to be "
+                  "either generated from the training dataset or loaded from cache.")
+            sys.exit(1)
+        print("Loading / generating vocabulary:")
+        vocab = get_vocab(args, dataset_params)
+
+    print('Size of the vocabulary is {}'.format(len(vocab)))
+
+    if False:
+        vocl = vocab.get_list()
+        with open('vocab-dump.txt', 'w') as vocf:
+            print('\n'.join(vocl), file=vocf)
+
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
 
@@ -259,8 +279,13 @@ def main(args):
     # Build the models
     if args.attention is None:
         _Model = EncoderDecoder
-    else:
+    elif args.attention == 'spatial':
         _Model = SpatialAttentionEncoderDecoder
+    elif args.attention == 'soft':
+        _Model = SoftAttentionEncoderDecoder
+    else:
+        print("Error: Invalid attention model specified")
+        sys.exit(1)
 
     model = _Model(params, device, len(vocab), state, ef_dims)
 
@@ -318,7 +343,7 @@ def main(args):
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
-            init_features = features[0].to(device)if len(features) > 0 and \
+            init_features = features[0].to(device) if len(features) > 0 and \
                 features[0] is not None else None
             persist_features = features[1].to(device) if len(features) > 1 and \
                 features[1] is not None else None
@@ -332,21 +357,34 @@ def main(args):
             teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                          args.teacher_forcing_beta)
 
-            outputs = model(images, init_features, captions, lengths, persist_features,
-                            teacher_p, args.teacher_forcing)
+            if args.attention is None:
+                outputs = model(images, init_features, captions, lengths, persist_features,
+                                teacher_p, args.teacher_forcing)
+            else:
+                outputs, alphas = model(images, init_features, captions, lengths,
+                                        persist_features, teacher_p, args.teacher_forcing)
 
             loss = criterion(outputs, targets)
+
+            # Attention regularizer
+            if args.attention is not None and args.regularize_attn:
+                loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
+
             model.zero_grad()
             loss.backward()
 
-            # grad_norms = [x.grad.data.norm(2) for x in opt_params]
-            # batch_max_grad = np.max(grad_norms)
-            # if batch_max_grad > 10.0:
-            #     print('WARNING: gradient norms larger than 10.0')
+            # Clip gradients if desired:
+            if args.grad_clip is not None:
+                # grad_norms = [x.grad.data.norm(2) for x in opt_params]
+                # batch_max_grad = np.max(grad_norms)
+                # if batch_max_grad > 10.0:
+                #     print('WARNING: gradient norms larger than 10.0')
 
-            # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
-            # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)
+                # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
+                # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)
+                clip_gradients(optimizer, args.grad_clip)
 
+            # Update weights:
             optimizer.step()
 
             total_loss += loss.item()
@@ -389,8 +427,18 @@ def main(args):
 
                 # Forward, backward and optimize
                 with torch.no_grad():
-                    outputs = model(images, init_features, captions, lengths, persist_features)
+                    if args.attention is None:
+                        outputs = model(images, init_features, captions, lengths,
+                                        persist_features, teacher_p, args.teacher_forcing)
+                    else:
+                        outputs, alphas = model(images, init_features, captions,
+                                                lengths, persist_features, teacher_p,
+                                                args.teacher_forcing)
+
                 loss = criterion(outputs, targets)
+
+                if args.attention is not None and args.regularize_attn:
+                    loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
 
                 total_loss += loss.item()
                 num_batches += 1
@@ -433,8 +481,6 @@ if __name__ == '__main__':
                         help='path for saving trained models')
     parser.add_argument('--crop_size', type=int, default=224,
                         help='size for randomly cropping images')
-    parser.add_argument('--vocab_path', type=str, default=None,
-                        help='path for vocabulary wrapper')
     parser.add_argument('--tmp_dir_prefix', type=str,
                         default='image_captioning',
                         help='where in /tmp folder to store project data')
@@ -448,7 +494,28 @@ if __name__ == '__main__':
     parser.add_argument('--cpu', action="store_true",
                         help="Use CPU even when GPU is available")
 
-    # Model parameters
+    # Vocabulary configuration:
+    parser.add_argument('--vocab', type=str, default=None,
+                        help='Vocabulary directive or path. '
+                        'Directives are all-caps, no special characters. '
+                        'Vocabulary file formats supported - *.{pkl,txt}.\n'
+                        'AUTO: If vocabulary corresponding to current training set '
+                        'combination exits in the vocab/ folder load it. '
+                        'If not, generate a new vocabulary file\n'
+                        'REGEN: Regenerate a new vocabulary file and place it in '
+                        'vocab/ folder\n'
+                        'path/to/vocab.\{pkl,txt\}: path to Pickled or plain-text '
+                        'vocabulary file\n')
+    parser.add_argument('--vocab_root', type=str, default='vocab_cache',
+                        help='Cached vocabulary files folder')
+    parser.add_argument('--no_tokenize', action='store_true')
+    parser.add_argument('--show_tokens', action='store_true')
+    parser.add_argument('--vocab_threshold', type=int, default=4,
+                        help='minimum word count threshold')
+    parser.add_argument('--show_vocab_stats', action="store_true",
+                        help='show generated vocabulary word counts')
+
+    # Model parameters:
     parser.add_argument('--features', type=str, default=default_features,
                         help='features to use as the initial input for the '
                         'caption generator, given as comma separated list, '
@@ -462,6 +529,9 @@ if __name__ == '__main__':
     parser.add_argument('--attention', type=str,
                         help='type of attention mechanism to use '
                         ' currently supported types: None, spatial')
+    parser.add_argument('--regularize_attn', action='store_true',
+                        help='when training attention models, toggle one attention '
+                             'reguralizer for the loss')
     parser.add_argument('--embed_size', type=int, default=256,
                         help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int, default=512,
@@ -481,6 +551,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--learning_rate', type=float)
+    parser.add_argument('--grad_clip', type=float,
+                        help='Value at which to clip weight gradients. Disabled by default')
     parser.add_argument('--validate', type=str,
                         help='Dataset to validate against after each epoch')
     parser.add_argument('--validation_step', type=int, default=1,
@@ -488,8 +560,7 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
-    parser.add_argument('--no_tokenize', action='store_true')
-    parser.add_argument('--show_tokens', action='store_true')
+
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
     parser.add_argument('--teacher_forcing', type=str, default='always',
                         help='Type of teacher forcing to use for training the Decoder RNN: \n'
