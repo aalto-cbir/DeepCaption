@@ -54,7 +54,9 @@ def get_model_name(args, params):
     return model_name
 
 
-def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
+# TODO: convert parameters to **kwargs
+def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
+              skip_start_token, rnn_hidden_init):
     model_name = get_model_name(args, params)
 
     state = {
@@ -73,7 +75,9 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         'features': params.features,
         'persist_features': params.persist_features,
         'attention': params.attention,
-        'vocab': vocab
+        'vocab': vocab,
+        'skip_start_token': skip_start_token,
+        'rnn_hidden_init': rnn_hidden_init
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -196,25 +200,22 @@ def main(args):
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
 
-    state = None
-
-    # Get dataset parameters:
-    dataset_configs = DatasetParams(args.dataset_config_file)
-    dataset_params = dataset_configs.get_params(args.dataset)
-
-    for i in dataset_params:
-        i.config_dict['no_tokenize'] = args.no_tokenize
-        i.config_dict['show_tokens'] = args.show_tokens
-
-    if args.validate is not None:
-        validation_dataset_params = dataset_configs.get_params(args.validate)
-        for i in validation_dataset_params:
-            i.config_dict['no_tokenize'] = args.no_tokenize
-            i.config_dict['show_tokens'] = args.show_tokens
+    ########################
+    # Set Model parameters #
+    ########################
 
     params = ModelParams.fromargs(args)
+
+    print("Model parameters infered from command arguments: ")
     print(params)
     start_epoch = 0
+
+    ###############################
+    # Load existing model state   #
+    # and update Model parameters #
+    ###############################
+
+    state = None
 
     # Intelligently resume from the newest trained epoch matching
     # supplied configuration:
@@ -223,19 +224,44 @@ def main(args):
 
     if args.load_model:
         state = torch.load(args.load_model)
-        external_features = params.features.external
+        new_external_features = params.features.external
         params = ModelParams(state)
-        if params.features.external != external_features:
+        if len(new_external_features) and params.features.external != new_external_features:
             print('WARNING: external features changed: ',
-                  params.features.external, external_features)
+                  params.features.external, new_external_features)
             print('Updating feature paths...')
-            params.update_ext_features(args.features)
+            params.update_ext_features(new_external_features)
         start_epoch = state['epoch']
-        print('Loading model {} at epoch {}.'.format(args.load_model,
+        print('Loaded model {} at epoch {}.'.format(args.load_model,
                                                      start_epoch))
+        
+        print("Final model parameters (loaded model + command arguments): ")
         print(params)
 
-    # Load the vocabulary. For pre-trained models attempt to obtain
+    ##############################
+    # Load dataset configuration #
+    ##############################
+
+    dataset_configs = DatasetParams(args.dataset_config_file)
+    dataset_params = dataset_configs.get_params(args.dataset)
+
+    for i in dataset_params:
+        i.config_dict['no_tokenize'] = args.no_tokenize
+        i.config_dict['show_tokens'] = args.show_tokens
+        i.config_dict['skip_start_token'] = params.skip_start_token
+
+    if args.validate is not None:
+        validation_dataset_params = dataset_configs.get_params(args.validate)
+        for i in validation_dataset_params:
+            i.config_dict['no_tokenize'] = args.no_tokenize
+            i.config_dict['show_tokens'] = args.show_tokens
+            i.config_dict['skip_start_token'] = params.skip_start_token
+
+    #######################
+    # Load the vocabulary #
+    #######################
+
+    # For pre-trained models attempt to obtain
     # saved vocabulary from the model itself:
     if args.load_model and params.vocab is not None:
         print("Loading vocabulary from the model file:")
@@ -259,8 +285,14 @@ def main(args):
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
 
-    # Build data loader
+    ##########################
+    # Initialize data loader #
+    ##########################
+
     print('Loading dataset: {} with {} workers'.format(args.dataset, args.num_workers))
+    if params.skip_start_token:
+        print("Skipping the use of <start> token...")
+
     ext_feature_sets = [params.features.external, params.persist_features.external]
     data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
                                       shuffle=True, num_workers=args.num_workers,
@@ -276,7 +308,10 @@ def main(args):
                                      skip_images=not params.has_internal_features(),
                                      verbose=args.verbose)
 
-    # Build the models
+    ####################
+    # Build the models #
+    ####################
+
     if args.attention is None:
         _Model = EncoderDecoder
     elif args.attention == 'spatial':
@@ -288,6 +323,10 @@ def main(args):
         sys.exit(1)
 
     model = _Model(params, device, len(vocab), state, ef_dims)
+
+    ######################
+    # Optimizer and loss #
+    ######################
 
     opt_params = model.get_opt_params()
 
@@ -318,8 +357,9 @@ def main(args):
     if args.validate is not None and args.lr_scheduler:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
-
-    # Train the models
+    ###################
+    # Train the model #
+    ###################
     total_step = len(data_loader)
     if args.load_model:
         all_stats = init_stats(args, params)
@@ -343,6 +383,12 @@ def main(args):
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
+
+            if params.rnn_hidden_init == 'from_features' and not skip_start_token:
+                # First input token for training will be <start>, 
+                # so the target output will not have it
+                targets = targets[:, 1:]
+
             init_features = features[0].to(device) if len(features) > 0 and \
                 features[0] is not None else None
             persist_features = features[1].to(device) if len(features) > 1 and \
@@ -406,8 +452,12 @@ def main(args):
         stats['training_loss'] = total_loss / num_batches
         print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                     stats['training_loss']))
-        save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
+        save_model(args, params, model.encoder, model.decoder, optimizer, epoch,
+                   vocab, params.skip_start_token, params.rnn_hidden_init)
 
+        ###################
+        # Validation loss #
+        ###################
         if args.validate is not None and (epoch + 1) % args.validation_step == 0:
             begin = datetime.now()
             model.eval()
@@ -514,6 +564,8 @@ if __name__ == '__main__':
                         help='minimum word count threshold')
     parser.add_argument('--show_vocab_stats', action="store_true",
                         help='show generated vocabulary word counts')
+    parser.add_argument('--skip_start_token', action="store_true",
+                        help='Do not prepend <start> token to caption')
 
     # Model parameters:
     parser.add_argument('--features', type=str, default=default_features,
@@ -542,6 +594,10 @@ if __name__ == '__main__':
                         help='dropout for the LSTM')
     parser.add_argument('--encoder_dropout', type=float, default=0.0,
                         help='dropout for the encoder FC layer')
+    parser.add_argument('--rnn_hidden_init', type=str,
+                        help='initization strategy for RNN hidden and cell states. '
+                        'Supported values: None (set to zeros), from_features '
+                        '(using a linear transform on (mean/average pooled) image feature vector')
 
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
