@@ -28,8 +28,14 @@ class ModelParams:
         self.features = self._get_features(d, 'features', 'resnet152')
         self.persist_features = self._get_features(d, 'persist_features', '')
         self.encoder_dropout = self._get_param(d, 'encoder_dropout', 0)
+        # Type of attention mechanism in use:
         self.attention = self._get_param(d, 'attention', None)
+        # Vocab object stored in the model:
         self.vocab = self._get_param(d, 'vocab', None)
+        # Boolean toggle of whether the model is trained to generate <start> token
+        self.start_token = self._get_param(d, 'start_token', True)
+        # Setting for initializing the hidden unit and cell state of the RNN:
+        self.rnn_hidden_init = self._get_param(d, 'rnn_hidden_init', None)
 
     @classmethod
     def fromargs(cls, args):
