@@ -45,6 +45,9 @@ python3 $TRAIN_PY --vocab REGEN --model_name "test/vocab_pkl_${DATASET_1}_REGEN"
 python3 $TRAIN_PY --vocab REGEN --model_name "test/vocab_pkl_${DATASET_1}_REGEN" --num_epochs 1 --num_batches 1
 python3 $TRAIN_PY --vocab AUTO --model_name "test/vocab_pkl_${DATASET_1}_AUTO" --num_epochs 1 --num_batches 1
 
+# Resume training a model:
+python3 $TRAIN_PY --load_model "models/test/vocab_pkl_${DATASET_1}" --num_epochs 1 --num_batches 1
+
 # Train COCO + MSRVTT with generated vocab file / pkl
 python3 $TRAIN_PY --vocab ${OUTPUT_PKL_2} --model_name "test/vocab_pkl_${DATASET_2}" --num_epochs 1 --num_batches 1
 python3 $TRAIN_PY --vocab ${OUTPUT_TXT_2} --model_name "test/vocab_txt_${DATASET_2}" --num_epochs 1 --num_batches 1
