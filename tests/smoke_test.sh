@@ -103,6 +103,7 @@ append_command_to_log
 
 RESULTS=results/__test/coco_full-ep11.json
 GROUND_TRUTH=/m/cs/scratch/imagedb/picsom/databases/COCO/download/annotations/captions_val2014.json
+#GROUND_TRUTH=/proj/mediaind/picsom/databases/COCO/download/annotations/captions_val2014.json
 python2 $EVAL_COCO_PY $RESULTS --ground_truth $GROUND_TRUTH
 append_command_to_log
 # Expected results: Meteor close to 0.240, CIDEr close to: 0.853
