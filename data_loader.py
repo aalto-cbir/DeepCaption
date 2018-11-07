@@ -340,7 +340,7 @@ class ExternalFeature:
 
 
 def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False,
-                     start_token=True):
+                     skip_start_token=False):
     """Tokenize a single sentence / caption, convert tokens to vocabulary indices,
     and store the vocabulary index array into a torch tensor"""
 
@@ -353,7 +353,7 @@ def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False,
         tokens = nltk.tokenize.word_tokenize(str(text).lower())
 
     caption = []
-    if start_token:
+    if not skip_start_token:
         caption.append(vocab('<start>'))
     caption.extend([vocab(token) for token in tokens])
     caption.append(vocab('<end>'))
@@ -423,7 +423,12 @@ class CocoDataset(data.Dataset):
         # Prepare external features, we use paths to access features
         # NOTE: this only works with lmdb
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
-        target = tokenize_caption(caption, self.vocab)
+
+        # See whether we need to prepend start token to the sequence or not:
+        skip_start_token = self.config_dict['skip_start_token']
+
+        target = tokenize_caption(caption, self.vocab, 
+                                  skip_start_token=skip_start_token)
 
         # We are in feature extraction-only mode,
         # use image filename as image identifier in lmdb:
