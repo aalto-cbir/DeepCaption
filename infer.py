@@ -32,8 +32,11 @@ def basename(fname):
     return os.path.splitext(os.path.basename(fname))[0]
 
 
-def fix_caption(caption):
-    m = re.match(r'^<start> (.*?)( <end>)?$', caption)
+def fix_caption(caption, skip_start_token=False):
+    if skip_start_token:
+        m = re.match(r'^(.*?)( <end>)?$', caption)
+    else:
+        m = re.match(r'^<start> (.*?)( <end>)?$', caption)
     if m is None:
         print('ERROR: unexpected caption format: "{}"'.format(caption))
         return caption.capitalize()
@@ -149,6 +152,10 @@ def infer(ext_args=None):
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
 
+    # Update dataset params with needed model params:
+    for i in dataset_params:
+        i.config_dict['skip_start_token'] = params.skip_start_token
+
     ext_feature_sets = [params.features.external, params.persist_features.external]
 
     # We ask it to iterate over images instead of all (image, caption) pairs
@@ -198,7 +205,7 @@ def infer(ext_args=None):
                 sampled_caption.append(word)
                 if word == '<end>':
                     break
-            caption = fix_caption(' '.join(sampled_caption))
+            caption = fix_caption(' '.join(sampled_caption), params.skip_start_token)
 
             if args.no_repeat_sentences:
                 caption = remove_duplicate_sentences(caption)
@@ -271,7 +278,8 @@ def parse_args(ext_args=None):
                         help='paths for external persist features')
     parser.add_argument('--output_file', type=str,
                         help='path for output file, default: model_name.txt')
-    parser.add_argument('--output_format', type=str, help='format of the output file')
+    parser.add_argument('--output_format', type=str,
+                        help='format of the output file')
     parser.add_argument('--verbose', help='verbose output',
                         action='store_true')
     parser.add_argument('--results_path', type=str, default='results/',
