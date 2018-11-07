@@ -33,7 +33,7 @@ class ModelParams:
         # Vocab object stored in the model:
         self.vocab = self._get_param(d, 'vocab', None)
         # Boolean toggle of whether the model is trained to generate <start> token
-        self.start_token = self._get_param(d, 'start_token', True)
+        self.skip_start_token = self._get_param(d, 'skip_start_token', False)
         # Setting for initializing the hidden unit and cell state of the RNN:
         self.rnn_hidden_init = self._get_param(d, 'rnn_hidden_init', None)
 
@@ -219,10 +219,15 @@ class EncoderCNN(nn.Module):
 
         print('EncoderCNN: total feature dim={}'.format(total_feat_dim))
 
-        # Add FC layer on top of features to get the desired output dimension
-        self.linear = nn.Linear(total_feat_dim, p.embed_size)
-        self.dropout = nn.Dropout(p=p.encoder_dropout)
-        self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
+        # If features are used to initialize the RNN hidden and cell states
+        # then we output different feature dimension, handled by RNN decoder
+        self.rnn_hidden_init = p.rnn_hidden_init
+        
+        if self.rnn_hidden_init is None:
+            # Add FC layer on top of features to get the desired output dimension
+            self.linear = nn.Linear(total_feat_dim, p.embed_size)
+            self.dropout = nn.Dropout(p=p.encoder_dropout)
+            self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
 
     def forward(self, images, external_features=None):
         """Extract feature vectors from input images."""
@@ -236,8 +241,11 @@ class EncoderCNN(nn.Module):
                 feat_outputs.append(external_features)
             # Concatenate features
             features = torch.cat(feat_outputs, 1)
-        # Apply FC layer, dropout and batch normalization
-        features = self.bn(self.dropout(self.linear(features)))
+
+        if self.rnn_hidden_init is None:
+            # Apply FC layer, dropout and batch normalization
+            features = self.bn(self.dropout(self.linear(features)))
+
         return features
 
     # hack to be able to load old state files which used the "resnet." prefix
@@ -252,8 +260,23 @@ class EncoderCNN(nn.Module):
         super(EncoderCNN, self).load_state_dict(fixed_state_dict, strict)
 
 
+def init_hidden_state(features, init_h, init_c):
+    """Initialize the initial hidden and cell state of the LSTM
+    :param features input features that should initialize RNN hidden state h
+                    and cell state c
+    :param init_h, init_c linear tranforms from features to h and c"""
+    if features.dims() > 2:
+        _features = features.mean(dim=1)
+    else:
+        _features = features
+    h = init_h(_features)
+    c = init_c(_features)
+
+    return h, c
+
+
 class DecoderRNN(nn.Module):
-    def __init__(self, p, vocab_size, ext_features_dim=0):
+    def __init__(self, p, vocab_size, ext_features_dim=0, enc_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(DecoderRNN, self).__init__()
 
@@ -265,6 +288,12 @@ class DecoderRNN(nn.Module):
         total_feat_dim = ext_features_dim + int_features_dim
 
         print('DecoderCNN: total feature dim={}'.format(total_feat_dim))
+
+        self.skip_start_token =  p.skip_start_token
+        self.rnn_hidden_init = p.rnn_hidden_init
+        if self.rnn_hidden_init == 'from_features':
+            self.init_h = nn.Linear(enc_features_dim, p.hidden_size)
+            self.init_c = nn.Linear(enc_features_dim, p.hidden_size)   
 
         self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
                             p.num_layers, dropout=p.dropout, batch_first=True)
@@ -293,6 +322,11 @@ class DecoderRNN(nn.Module):
 
         seq_length = embeddings.size()[1]
 
+        if self.rnn_hidden_init == 'from_features':
+            states = init_hidden_state(features, self.init_h, self.init_c)
+        else:
+            states = None
+
         with torch.no_grad():
             persist_features = self._cat_features(images, external_features)
             if persist_features is None:
@@ -307,14 +341,13 @@ class DecoderRNN(nn.Module):
             # Feed ground truth as next input at each time-step when training:
             inputs = torch.cat([embeddings, persist_features], 2)
             packed = pack_padded_sequence(inputs, lengths, batch_first=True)
-            hiddens, _ = self.lstm(packed)
+            hiddens, _ = self.lstm(packed, states)
             outputs = self.linear(hiddens[0])
         else:
             # Use sampled or additive scheduling mode:
             batch_size = features.size()[0]
             vocab_size = self.linear.out_features
             outputs = torch.zeros(batch_size, seq_length, vocab_size).to(device)
-            states = None
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
             for t in range(seq_length - 1):
@@ -464,10 +497,10 @@ class SoftAttentionDecoderRNN(nn.Module):
         # for a 7 x 7 x 2048 convolutional layer this would be 7*7=49
         self.num_attention_locs = ext_features_dim[1] * ext_features_dim[2]
 
-        # We use the same size for LSTM hidden unit as well as Attention network:
+        # We use the same size for LSTM hidden unit and Attention network:
         self.hidden_size = p.hidden_size
 
-        # Attention network, implements function f_att() or phi depending on paper:
+        # Attention network, implements function f_att() or phi() depending on paper:
         self.attention = SpatialAttention(self.feature_size, self.num_attention_locs,
                                           p.hidden_size)
 
@@ -498,14 +531,6 @@ class SoftAttentionDecoderRNN(nn.Module):
         self.linear.bias.data.fill_(0)
         self.linear.weight.data.uniform_(-0.1, 0.1)
 
-    def init_hidden_state(self, features):
-        """Initialize the initial hidden and cell state of the LSTM"""
-        mean_features = features.mean(dim=1)
-        h = self.init_h(mean_features)
-        c = self.init_c(mean_features)
-
-        return h, c
-
     def forward(self, encoder_features, captions, lengths, images, external_features=None,
                 teacher_p=1.0, teacher_forcing='always'):
 
@@ -519,7 +544,7 @@ class SoftAttentionDecoderRNN(nn.Module):
 
         embeddings = self.embed(captions)
 
-        h, c = self.init_hidden_state(features)
+        h, c = init_hidden_state(features, self.init_h, self.init_c)
 
         # Store predictions and alphas here:
         outputs = torch.zeros(batch_size, seq_length, self.vocab_size).to(device)
@@ -640,13 +665,6 @@ class SpatialAttentionDecoderRNN(nn.Module):
                                           p.hidden_size)
         self.linear = nn.Linear(p.hidden_size + self.feature_size, vocab_size)
 
-    def init_hidden_state(self, features):
-        """Initialize the initial hidden and cell state of the LSTM"""
-        mean_features = features.mean(dim=1)
-        h = self.init_h(mean_features)
-        c = self.init_c(mean_features)
-
-        return h, c
 
     def forward(self, encoder_features, captions, lengths, images, external_features=None,
                 teacher_p=1.0, teacher_forcing='always'):
