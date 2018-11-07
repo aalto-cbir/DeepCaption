@@ -575,7 +575,7 @@ if __name__ == '__main__':
                         'Good values can be found in a range between 400 - 20000'
                         'small values = start using model output quickly, large values -'
                         ' wait for a while before start using model output')
-    parser.add_argument('--teacher_forcing_beta', type=float, default=1,
+    parser.add_argument('--teacher_forcing_beta', type=float, default=0.3,
                         help='sample scheduling parameter that determins the slope of '
                         'the middle segment of the sigmoid')
 
