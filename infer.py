@@ -188,12 +188,16 @@ def infer(ext_args=None):
             features[1] is not None else None
 
         # Generate a caption from the image
+        sampled_batch = model.sample(images, init_features, persist_features,
+                                     max_seq_length=args.max_seq_length,
+                                     start_token_idx=vocab('<start>'))
+
         if params.attention is None:
-            sampled_ids_batch = model.sample(images, init_features, persist_features,
-                                             max_seq_length=args.max_seq_length)
+            sampled_ids_batch = sampled_batch
         else:
-            sampled_ids_batch, alphas = model.sample(images, init_features, persist_features,
-                                                     max_seq_length=args.max_seq_length)
+            # When sampling from attention models we also get an attention
+            # distribution stored in alphas (can be used for visualization):
+            sampled_ids_batch, alphas = sampled_batch
 
         for i in range(sampled_ids_batch.shape[0]):
             sampled_ids = sampled_ids_batch[i].cpu().numpy()
