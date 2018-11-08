@@ -145,7 +145,7 @@ def find_matching_model(args, params):
         model_file_path = os.path.join(full_path_prefix, model_file_name)
         print('Found matching model: {}'.format(args.load_model))
     else:
-        print("Warning: Failed to intelligently resume...")
+        print("WARNING: Failed to intelligently resume...")
 
     return model_file_path
 
@@ -206,7 +206,7 @@ def main(args):
 
     params = ModelParams.fromargs(args)
 
-    print("Model parameters infered from command arguments: ")
+    print("Model parameters inferred from command arguments: ")
     print(params)
     start_epoch = 0
 
@@ -238,6 +238,13 @@ def main(args):
         print("Final model parameters (loaded model + command arguments): ")
         print(params)
 
+    if params.rnn_hidden_init == 'from_features' and params.skip_start_token:
+        print("ERROR: Please remove --skip_start_token if you want to use image features "
+              " to initialize hidden and cell states. <start> token is needed to trigger "
+              " the process of sequence generation, since we don't have image features "
+              " embedding as the first input token.")
+        sys.exit(1)
+
     ##############################
     # Load dataset configuration #
     ##############################
@@ -268,7 +275,7 @@ def main(args):
         vocab = params.vocab
     else:
         if args.vocab is None:
-            print("Error: You must specify the vocabulary to be used for training using "
+            print("ERROR: You must specify the vocabulary to be used for training using "
                   "--vocab flag.\nTry --vocab AUTO if you want the vocabulary to be "
                   "either generated from the training dataset or loaded from cache.")
             sys.exit(1)
@@ -281,9 +288,6 @@ def main(args):
         vocl = vocab.get_list()
         with open('vocab-dump.txt', 'w') as vocf:
             print('\n'.join(vocl), file=vocf)
-
-    if args.force_epoch:
-        start_epoch = args.force_epoch - 1
 
     ##########################
     # Initialize data loader #
@@ -319,7 +323,7 @@ def main(args):
     elif args.attention == 'soft':
         _Model = SoftAttentionEncoderDecoder
     else:
-        print("Error: Invalid attention model specified")
+        print("ERROR: Invalid attention model specified")
         sys.exit(1)
 
     model = _Model(params, device, len(vocab), state, ef_dims)
@@ -360,11 +364,15 @@ def main(args):
     ###################
     # Train the model #
     ###################
+
     total_step = len(data_loader)
     if args.load_model:
         all_stats = init_stats(args, params)
     else:
         all_stats = {}
+
+    if args.force_epoch:
+        start_epoch = args.force_epoch - 1
 
     print('Start training with num_epochs={:d} num_batches={:d} ...'.
           format(args.num_epochs, args.num_batches))
@@ -383,11 +391,6 @@ def main(args):
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
-
-            if params.rnn_hidden_init == 'from_features' and not skip_start_token:
-                # First input token for training will be <start>, 
-                # so the target output will not have it
-                targets = targets[:, 1:]
 
             init_features = features[0].to(device) if len(features) > 0 and \
                 features[0] is not None else None
@@ -458,6 +461,7 @@ def main(args):
         ###################
         # Validation loss #
         ###################
+
         if args.validate is not None and (epoch + 1) % args.validation_step == 0:
             begin = datetime.now()
             model.eval()
