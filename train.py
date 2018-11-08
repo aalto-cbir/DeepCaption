@@ -389,8 +389,17 @@ def main(args):
             # Set mini-batch dataset
             images = images.to(device)
             captions = captions.to(device)
-            targets = pack_padded_sequence(captions, lengths,
-                                           batch_first=True)[0]
+
+            # Remove <start> token from targets if we are initializing the RNN
+            # hidden state from image features:
+            if params.rnn_hidden_init == 'from_features':
+                # Subtract one from all lengths to match new target lengths:
+                _lengths = [x - 1 if x > 0 else x for x in lengths]
+                targets = pack_padded_sequence(captions[:, 1:], _lengths,
+                                               batch_first=True)[0]
+            else:
+                targets = pack_padded_sequence(captions, lengths,
+                                               batch_first=True)[0]
 
             init_features = features[0].to(device) if len(features) > 0 and \
                 features[0] is not None else None
