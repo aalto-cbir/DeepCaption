@@ -394,8 +394,8 @@ def main(args):
             # hidden state from image features:
             if params.rnn_hidden_init == 'from_features':
                 # Subtract one from all lengths to match new target lengths:
-                _lengths = [x - 1 if x > 0 else x for x in lengths]
-                targets = pack_padded_sequence(captions[:, 1:], _lengths,
+                lengths = [x - 1 if x > 0 else x for x in lengths]
+                targets = pack_padded_sequence(captions[:, 1:], lengths,
                                                batch_first=True)[0]
             else:
                 targets = pack_padded_sequence(captions, lengths,
@@ -414,13 +414,14 @@ def main(args):
 
             teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                          args.teacher_forcing_beta)
+            
+            outputs = model(images, init_features, captions, lengths, persist_features,
+                            teacher_p, args.teacher_forcing)
 
-            if args.attention is None:
-                outputs = model(images, init_features, captions, lengths, persist_features,
-                                teacher_p, args.teacher_forcing)
-            else:
-                outputs, alphas = model(images, init_features, captions, lengths,
-                                        persist_features, teacher_p, args.teacher_forcing)
+            # Attention models output additional tensor containing attention distribution
+            # over image:
+            if args.attention is not None:
+                outputs, alphas = outputs
 
             loss = criterion(outputs, targets)
 
@@ -481,8 +482,16 @@ def main(args):
                 # Set mini-batch dataset
                 images = images.to(device)
                 captions = captions.to(device)
-                targets = pack_padded_sequence(captions, lengths,
-                                               batch_first=True)[0]
+
+                if params.rnn_hidden_init == 'from_features':
+                    # Subtract one from all lengths to match new target lengths:
+                    lengths = [x - 1 if x > 0 else x for x in lengths]
+                    targets = pack_padded_sequence(captions[:, 1:], lengths,
+                                                   batch_first=True)[0]
+                else:
+                    targets = pack_padded_sequence(captions, lengths,
+                                                   batch_first=True)[0]
+
                 init_features = features[0].to(device)if len(features) > 0 and \
                     features[0] is not None else None
                 persist_features = features[1].to(device) if len(features) > 1 and \
@@ -490,13 +499,12 @@ def main(args):
 
                 # Forward, backward and optimize
                 with torch.no_grad():
-                    if args.attention is None:
-                        outputs = model(images, init_features, captions, lengths,
-                                        persist_features, teacher_p, args.teacher_forcing)
-                    else:
-                        outputs, alphas = model(images, init_features, captions,
-                                                lengths, persist_features, teacher_p,
-                                                args.teacher_forcing)
+                    outputs = model(images, init_features, captions, lengths,
+                                    persist_features, teacher_p, args.teacher_forcing)
+
+                    if args.attention is not None:
+                        outputs, alphas = outputs
+
 
                 loss = criterion(outputs, targets)
 
