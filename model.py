@@ -219,17 +219,19 @@ class EncoderCNN(nn.Module):
 
         print('EncoderCNN: total feature dim={}'.format(total_feat_dim))
 
+        self.total_feat_dim = total_feat_dim
+
         # If features are used to initialize the RNN hidden and cell states
         # then we output different feature dimension, handled by RNN decoder
         self.rnn_hidden_init = p.rnn_hidden_init
         
-        # If we are not initializing the rnn hidden unit from features,
-        # embed the image features into the vector the size of word-embedding:
-        if self.rnn_hidden_init is None:
-            # Add FC layer on top of features to get the desired output dimension
-            self.linear = nn.Linear(total_feat_dim, p.embed_size)
-            self.dropout = nn.Dropout(p=p.encoder_dropout)
-            self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
+        # The following lines are needed only if the image features are not
+        # used to initialized the Decoder hidden state:
+
+        # Add FC layer on top of features to get the desired output dimension
+        self.linear = nn.Linear(total_feat_dim, p.embed_size)
+        self.dropout = nn.Dropout(p=p.encoder_dropout)
+        self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
 
     def forward(self, images, external_features=None):
         """Extract feature vectors from input images."""
@@ -268,22 +270,35 @@ def init_hidden_state(features, init_h, init_c):
     """Initialize the initial hidden and cell state of the LSTM
     :param features input features that should initialize RNN hidden state h
                     and cell state c
-    :param init_h, init_c linear tranforms from features to h and c
-
-    This helper function is used by several of the decoder models"""
-    if features.dims() > 2:
+    :param init_h, init_c linear tranforms from features to h and c"""
+    if features.dim() > 2:
         _features = features.mean(dim=1)
     else:
         _features = features
-    h = init_h(_features)
-    c = init_c(_features)
+    
+    h = None
+    c = None
+
+    # Stack hidden and cell states for all RNN layers
+    for _init_h, _init_c in zip(init_h, init_c):
+        if h is None and c is None:
+            h = _init_h(_features)
+            c = _init_c(_features)
+        else:
+            h = torch.stack([h, _init_h(_features)], dim=0)
+            c = torch.stack([h, _init_h(_features)], dim=0)
 
     return h, c
 
 
 class DecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0, enc_features_dim=0):
-        """Set the hyper-parameters and build the layers."""
+        """Set the hyper-parameters and build the layers.
+        :param p model parameters class
+        :param vocab_size size of training vocabulary
+        :param ext_features_dim size of external features used as persistant
+                                features at each time-step
+        :param enc_features_dim complete size of initial (non-persistant) features"""
         super(DecoderRNN, self).__init__()
 
         self.embed = nn.Embedding(vocab_size, p.embed_size)
@@ -298,12 +313,38 @@ class DecoderRNN(nn.Module):
         self.skip_start_token = p.skip_start_token
         self.rnn_hidden_init = p.rnn_hidden_init
         if self.rnn_hidden_init == 'from_features':
-            self.init_h = nn.Linear(enc_features_dim, p.hidden_size)
-            self.init_c = nn.Linear(enc_features_dim, p.hidden_size)   
+            assert enc_features_dim is not 0
+            self.init_h = []
+            self.init_c = []
+            for _layer in range(p.num_layers):
+                self.init_h.append(nn.Linear(enc_features_dim, p.hidden_size))
+                self.init_c.append(nn.Linear(enc_features_dim, p.hidden_size)) 
 
         self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
                             p.num_layers, dropout=p.dropout, batch_first=True)
         self.linear = nn.Linear(p.hidden_size, vocab_size)
+
+    def init_hidden_state(self, features):
+        """Initialize the initial hidden and cell state of the LSTM
+        :param features input features that should initialize RNN hidden state h
+                        and cell state c
+        :param init_h, init_c linear tranforms from features to h and c"""
+        if features.dim() > 2:
+            _features = features.mean(dim=1)
+        else:
+            _features = features
+        
+        h = None
+        c = None
+
+        # Stack hidden and cell states for all RNN layers
+        for _init_h, _init_c in zip(self.init_h, self.init_c):
+            if h is None and c is None:
+                h = _init_h(_features)
+                c = _init_c(_features)
+            else:
+                h = torch.stack([h, _init_h(_features)], dim=0)
+                c = torch.stack([h, _init_h(_features)], dim=0)
 
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
@@ -327,7 +368,7 @@ class DecoderRNN(nn.Module):
         seq_length = embeddings.size()[1]
 
         if self.rnn_hidden_init == 'from_features':
-            states = init_hidden_state(features, self.init_h, self.init_c)
+            states = self.init_hidden_state(features)
         else:
             states = None
             embeddings = torch.cat([features.unsqueeze(1), embeddings], 1)
@@ -429,7 +470,7 @@ class DecoderRNN(nn.Module):
 
         if self.rnn_hidden_init == 'from_features':
             states = init_hidden_state(features, self.init_h, self.init_c)
-            assert start_token_idx not None
+            assert start_token_idx is not None
             # Start generating the sentence by first feeding in the start token:
             start_token_embedding = self.embed(start_token_idx)
             inputs = torch.cat([start_token_embedding, persist_features], 1).unsqueeze(1)
@@ -448,6 +489,43 @@ class DecoderRNN(nn.Module):
 
         # sampled_ids: (batch_size, max_seq_length)
         sampled_ids = torch.stack(sampled_ids, 1)
+        return sampled_ids
+
+
+class EncoderDecoder(nn.Module):
+    def __init__(self, params, device, vocab_size, state, ef_dims):
+        """Vanilla EncoderDecoder model"""
+        super(EncoderDecoder, self).__init__()
+        print('Using device: {}'.format(device.type))
+        print('Initializing EncoderDecoder model...')
+        self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
+        self.decoder = DecoderRNN(params, vocab_size, ef_dims[1], 
+                                  self.encoder.total_feat_dim).to(device)
+
+        self.opt_params = (list(self.decoder.parameters()) +
+                           list(self.encoder.linear.parameters()) +
+                           list(self.encoder.bn.parameters()))
+
+        if state:
+            self.encoder.load_state_dict(state['encoder'])
+            self.decoder.load_state_dict(state['decoder'])
+
+    def get_opt_params(self):
+        return self.opt_params
+
+    def forward(self, images, init_features, captions, lengths, persist_features,
+                teacher_p=1.0, teacher_forcing='always'):
+        features = self.encoder(images, init_features)
+        outputs = self.decoder(features, captions, lengths, images, persist_features,
+                               teacher_p, teacher_forcing)
+        return outputs
+
+    def sample(self, image_tensor, init_features, persist_features, states=None,
+               max_seq_length=20):
+        feature = self.encoder(image_tensor, init_features)
+        sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
+                                          max_seq_length=max_seq_length)
+
         return sampled_ids
 
 
@@ -785,37 +863,4 @@ class SpatialAttentionEncoderDecoder(nn.Module):
         return sampled_ids
 
 
-class EncoderDecoder(nn.Module):
-    def __init__(self, params, device, vocab_size, state, ef_dims):
-        """Vanilla EncoderDecoder model"""
-        super(EncoderDecoder, self).__init__()
-        print('Using device: {}'.format(device.type))
-        print('Initializing EncoderDecoder model...')
-        self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
-        self.decoder = DecoderRNN(params, vocab_size, ef_dims[1]).to(device)
 
-        self.opt_params = (list(self.decoder.parameters()) +
-                           list(self.encoder.linear.parameters()) +
-                           list(self.encoder.bn.parameters()))
-
-        if state:
-            self.encoder.load_state_dict(state['encoder'])
-            self.decoder.load_state_dict(state['decoder'])
-
-    def get_opt_params(self):
-        return self.opt_params
-
-    def forward(self, images, init_features, captions, lengths, persist_features,
-                teacher_p=1.0, teacher_forcing='always'):
-        features = self.encoder(images, init_features)
-        outputs = self.decoder(features, captions, lengths, images, persist_features,
-                               teacher_p, teacher_forcing)
-        return outputs
-
-    def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20):
-        feature = self.encoder(image_tensor, init_features)
-        sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
-                                          max_seq_length=max_seq_length)
-
-        return sampled_ids
