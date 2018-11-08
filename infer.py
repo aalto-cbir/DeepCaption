@@ -289,6 +289,7 @@ def parse_args(ext_args=None):
 
 
 if __name__ == '__main__':
+    from vocabulary import Vocabulary  # fix for old Vocab pickles
     begin = datetime.now()
     print('Started inference at {}.'.format(begin))
 

@@ -463,6 +463,7 @@ def main(args):
 
 
 if __name__ == '__main__':
+    from vocabulary import Vocabulary  # fix for old Vocab pickles
     default_dataset = 'coco:train2014'
     default_features = 'resnet152'
 
