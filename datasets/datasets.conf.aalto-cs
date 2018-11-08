@@ -102,7 +102,7 @@ caption_path  = textdumps/gt-cooked.txt
 label_map     = label-map.txt
 image_dir     =
 
-[picsom:tgif:imageset]
+[picsom:tgif:train]
 subset        = imageset
 
 [picsom:msvd]
@@ -113,6 +113,16 @@ caption_path  = textdumps/gt-cooked.txt
 label_map     = label-map.txt
 image_dir     =
 
-[picsom:msvd:all]
+[picsom:msvd:train]
 subset        = allx
 
+[picsom:lsmdc2015]
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/lsmdc2015
+#root_dir      = /l/jormal/picsom/databases/trecvid2018
+features_path = features
+caption_path  = textdumps/gt-cooked.txt
+label_map     = label-map.txt
+image_dir     =
+
+[picsom:lsmdc2015:train]
+subset        = all
