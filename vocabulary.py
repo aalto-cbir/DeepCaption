@@ -59,8 +59,8 @@ class Vocabulary(object):
 
     def save(self, vocab_path):
         vocab_dir = os.path.dirname(vocab_path)
-        if not os.path.exists(vocab_dir):
-            os.makedirs(vocab_dir)
+        if vocab_dir is not None and vocab_dir is not '':
+            os.makedirs(vocab_dir, exist_ok=True)
 
         if vocab_path.endswith('.txt'):
             ll = self.get_list()
