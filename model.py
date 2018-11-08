@@ -314,8 +314,8 @@ class DecoderRNN(nn.Module):
         self.rnn_hidden_init = p.rnn_hidden_init
         if self.rnn_hidden_init == 'from_features':
             assert enc_features_dim is not 0
-            self.init_h = []
-            self.init_c = []
+            self.init_h = nn.ModuleList()
+            self.init_c = nn.ModuleList()
             for _layer in range(p.num_layers):
                 self.init_h.append(nn.Linear(enc_features_dim, p.hidden_size))
                 self.init_c.append(nn.Linear(enc_features_dim, p.hidden_size)) 
@@ -343,8 +343,16 @@ class DecoderRNN(nn.Module):
                 h = _init_h(_features)
                 c = _init_c(_features)
             else:
-                h = torch.stack([h, _init_h(_features)], dim=0)
-                c = torch.stack([h, _init_h(_features)], dim=0)
+                # Make sure all sha
+                if h.dim() == 2 and c.dim() == 2:
+                    h = h.unsqueeze(0)
+                    c = c.unsqueeze(0)
+
+                h_new = _init_h(_features).unsqueeze(0)
+                c_new = _init_c(_features).unsqueeze(0)
+
+                h = torch.stack([h, h_new], dim=0)
+                c = torch.stack([c, c_new], dim=0)
 
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
