@@ -223,6 +223,8 @@ class EncoderCNN(nn.Module):
         # then we output different feature dimension, handled by RNN decoder
         self.rnn_hidden_init = p.rnn_hidden_init
         
+        # If we are not initializing the rnn hidden unit from features,
+        # embed the image features into the vector the size of word-embedding:
         if self.rnn_hidden_init is None:
             # Add FC layer on top of features to get the desired output dimension
             self.linear = nn.Linear(total_feat_dim, p.embed_size)
@@ -242,6 +244,8 @@ class EncoderCNN(nn.Module):
             # Concatenate features
             features = torch.cat(feat_outputs, 1)
 
+        # Apply transformations to the raw image features in case we are not
+        # initializing the RNN hidden and state vectors from features.
         if self.rnn_hidden_init is None:
             # Apply FC layer, dropout and batch normalization
             features = self.bn(self.dropout(self.linear(features)))
@@ -264,7 +268,9 @@ def init_hidden_state(features, init_h, init_c):
     """Initialize the initial hidden and cell state of the LSTM
     :param features input features that should initialize RNN hidden state h
                     and cell state c
-    :param init_h, init_c linear tranforms from features to h and c"""
+    :param init_h, init_c linear tranforms from features to h and c
+
+    This helper function is used by several of the decoder models"""
     if features.dims() > 2:
         _features = features.mean(dim=1)
     else:
@@ -289,7 +295,7 @@ class DecoderRNN(nn.Module):
 
         print('DecoderCNN: total feature dim={}'.format(total_feat_dim))
 
-        self.skip_start_token =  p.skip_start_token
+        self.skip_start_token = p.skip_start_token
         self.rnn_hidden_init = p.rnn_hidden_init
         if self.rnn_hidden_init == 'from_features':
             self.init_h = nn.Linear(enc_features_dim, p.hidden_size)
@@ -318,14 +324,13 @@ class DecoderRNN(nn.Module):
         # First, construct embeddings input, with initial feature as
         # the first: (batch_size, 1 + longest caption length, embed_size)
         embeddings = self.embed(captions)
-        embeddings = torch.cat([features.unsqueeze(1), embeddings], 1)
-
         seq_length = embeddings.size()[1]
 
         if self.rnn_hidden_init == 'from_features':
             states = init_hidden_state(features, self.init_h, self.init_c)
         else:
             states = None
+            embeddings = torch.cat([features.unsqueeze(1), embeddings], 1)
 
         with torch.no_grad():
             persist_features = self._cat_features(images, external_features)
@@ -409,7 +414,8 @@ class DecoderRNN(nn.Module):
 
         return outputs
 
-    def sample(self, features, images, external_features, states=None, max_seq_length=20):
+    def sample(self, features, images, external_features, states=None, 
+               max_seq_length=20, start_token_idx=None):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
 
@@ -420,6 +426,15 @@ class DecoderRNN(nn.Module):
 
         # inputs: (batch_size, 1, embed_size + len(external features))
         inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
+
+        if self.rnn_hidden_init == 'from_features':
+            states = init_hidden_state(features, self.init_h, self.init_c)
+            assert start_token_idx not None
+            # Start generating the sentence by first feeding in the start token:
+            start_token_embedding = self.embed(start_token_idx)
+            inputs = torch.cat([start_token_embedding, persist_features], 1).unsqueeze(1)
+        else:
+            inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
         for i in range(max_seq_length):
             hiddens, states = self.lstm(inputs, states)
