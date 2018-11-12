@@ -15,7 +15,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 # (Needed to handle Vocabulary pickle)
-from vocabulary import get_vocab
+from vocabulary import Vocabulary, get_vocab
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
 
