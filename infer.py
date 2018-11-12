@@ -13,9 +13,10 @@ from PIL import Image
 import torch
 from torchvision import transforms
 
-from vocabulary import Vocabulary, get_vocab # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
-from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
+from model import ModelParams, EncoderDecoder
+from model import SoftAttentionEncoderDecoder, SpatialAttentionEncoderDecoder
 
 try:
     from tqdm import tqdm
@@ -169,8 +170,13 @@ def infer(ext_args=None):
     # Build the models
     if params.attention is None:
         _Model = EncoderDecoder
-    else:
+    elif params.attention == 'spatial':
         _Model = SpatialAttentionEncoderDecoder
+    elif params.attention == 'soft':
+        _Model = SoftAttentionEncoderDecoder
+    else:
+        print("ERROR: Invalid attention model specified")
+        sys.exit(1)
 
     model = _Model(params, device, len(vocab), state, ef_dims).eval()
 
