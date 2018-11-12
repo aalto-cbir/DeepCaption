@@ -266,7 +266,7 @@ class EncoderCNN(nn.Module):
         super(EncoderCNN, self).load_state_dict(fixed_state_dict, strict)
 
 
-def init_hidden_state(features, init_h, init_c):
+def init_hidden_state(model, features):
     """Initialize the initial hidden and cell state of the LSTM
     :param features input features that should initialize RNN hidden state h
                     and cell state c
@@ -280,16 +280,18 @@ def init_hidden_state(features, init_h, init_c):
     c = None
 
     # Stack hidden and cell states for all RNN layers
-    for _init_h, _init_c in zip(init_h, init_c):
+    for _init_h, _init_c in zip(model.init_h, model.init_c):
         if h is None and c is None:
-            h = _init_h(_features)
-            c = _init_c(_features)
+            h = _init_h(_features).unsqueeze(0)
+            c = _init_c(_features).unsqueeze(0)
         else:
-            h = torch.stack([h, _init_h(_features)], dim=0)
-            c = torch.stack([h, _init_h(_features)], dim=0)
+            h_new = _init_h(_features).unsqueeze(0)
+            c_new = _init_c(_features).unsqueeze(0)
+
+            h = torch.stack([h, h_new], dim=0).squeeze(1)
+            c = torch.stack([c, c_new], dim=0).squeeze(1)
 
     return h, c
-
 
 class DecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0, enc_features_dim=0):
@@ -324,36 +326,6 @@ class DecoderRNN(nn.Module):
                             p.num_layers, dropout=p.dropout, batch_first=True)
         self.linear = nn.Linear(p.hidden_size, vocab_size)
 
-    def init_hidden_state(self, features):
-        """Initialize the initial hidden and cell state of the LSTM
-        :param features input features that should initialize RNN hidden state h
-                        and cell state c
-        :param init_h, init_c linear tranforms from features to h and c"""
-        if features.dim() > 2:
-            _features = features.mean(dim=1)
-        else:
-            _features = features
-        
-        h = None
-        c = None
-
-        # Stack hidden and cell states for all RNN layers
-        for _init_h, _init_c in zip(self.init_h, self.init_c):
-            if h is None and c is None:
-                h = _init_h(_features)
-                c = _init_c(_features)
-            else:
-                # Make sure all sha
-                if h.dim() == 2 and c.dim() == 2:
-                    h = h.unsqueeze(0)
-                    c = c.unsqueeze(0)
-
-                h_new = _init_h(_features).unsqueeze(0)
-                c_new = _init_c(_features).unsqueeze(0)
-
-                h = torch.stack([h, h_new], dim=0)
-                c = torch.stack([c, c_new], dim=0)
-
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
         feat_outputs = []
@@ -376,7 +348,7 @@ class DecoderRNN(nn.Module):
         seq_length = embeddings.size()[1]
 
         if self.rnn_hidden_init == 'from_features':
-            states = self.init_hidden_state(features)
+            states = init_hidden_state(self, features)
         else:
             states = None
             embeddings = torch.cat([features.unsqueeze(1), embeddings], 1)
@@ -473,16 +445,20 @@ class DecoderRNN(nn.Module):
         if persist_features is None:
             persist_features = features.new_empty(0)
 
-        # inputs: (batch_size, 1, embed_size + len(external features))
-        inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
-
         if self.rnn_hidden_init == 'from_features':
-            states = init_hidden_state(features, self.init_h, self.init_c)
+            states = init_hidden_state(self, features)
+            
             assert start_token_idx is not None
+
             # Start generating the sentence by first feeding in the start token:
-            start_token_embedding = self.embed(start_token_idx)
+            start_token_embedding = self.embed(torch.tensor(start_token_idx).to(device))
+            batch_size = len(images)
+            embed_size = len(start_token_embedding)
+            start_token_embedding = start_token_embedding.unsqueeze(0).expand(batch_size,
+                                                                              embed_size)
             inputs = torch.cat([start_token_embedding, persist_features], 1).unsqueeze(1)
         else:
+            # inputs: (batch_size, 1, embed_size + len(external features))
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
         for i in range(max_seq_length):
@@ -529,10 +505,11 @@ class EncoderDecoder(nn.Module):
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20):
+               max_seq_length=20, start_token_idx=None):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
-                                          max_seq_length=max_seq_length)
+                                          max_seq_length=max_seq_length,
+                                          start_token_idx=start_token_idx)
 
         return sampled_ids
 
@@ -561,7 +538,7 @@ class SpatialAttention(nn.Module):
         features - convolutional image features of shape ((W' * H') , C)
         h - hidden state of the decoder"""
 
-        # torch.Size([128, 49, 49])
+        # torch.Size([128, 49, hidden_size])
         att_img = self.image_att(features)
         # torch.Size([128, 49])
         att_h = self.lstm_att(h)
@@ -645,7 +622,7 @@ class SoftAttentionDecoderRNN(nn.Module):
 
         embeddings = self.embed(captions)
 
-        h, c = init_hidden_state(features, self.init_h, self.init_c)
+        h, c = init_hidden_state(self, features)
 
         # Store predictions and alphas here:
         outputs = torch.zeros(batch_size, seq_length, self.vocab_size).to(device)
@@ -684,7 +661,7 @@ class SoftAttentionDecoderRNN(nn.Module):
 
         features = external_features.view(batch_size, -1, self.feature_size)
 
-        h, c = self.init_hidden_state(features)
+        h, c = init_hidden_state(self, features)
 
         # inputs: (batch_size, 1, embed_size + len(external features))
         inputs = features.unsqueeze(1)
@@ -813,7 +790,7 @@ class SpatialAttentionDecoderRNN(nn.Module):
 
         features = external_features.view(batch_size, -1, self.feature_size)
 
-        h, c = self.init_hidden_state(features)
+        h, c = init_hidden_state(self, features)
 
         # inputs: (batch_size, 1, embed_size + len(external features))
         inputs = features.unsqueeze(1)
