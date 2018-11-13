@@ -567,8 +567,9 @@ class SoftAttentionDecoderRNN(nn.Module):
 
         (self.extractors,
          int_features_dim) = FeatureExtractor.list(p.persist_features.internal)
-        # Sum of the dimensionalities of the concatenated features
-        total_feat_dim = ext_features_dim + int_features_dim
+
+        # Attention needs 3d tensors inputs, so we just use the one available tensor:
+        total_feat_dim = ext_features_dim if ext_features_dim else int_features_dim
 
         print('SoftAttentionDecoderCNN: total feature dim={}'.format(total_feat_dim))
 
@@ -678,6 +679,8 @@ class SoftAttentionDecoderRNN(nn.Module):
                 torch.cat([embeddings[:batch_size_t, t], att_context], dim=1),
                 (h[:batch_size_t], c[:batch_size_t]))
 
+            # TODO: Show attend and tell fed both the h_t and z_t here:
+            # (z_t is the attention context at given time-step)
             outputs_t = self.linear(self.dropout(h))
             outputs[:batch_size_t, t + 1] = outputs_t
 
@@ -704,6 +707,11 @@ class SoftAttentionDecoderRNN(nn.Module):
         h, c = init_hidden_state(self, features)
 
         assert start_token_idx is not None
+
+        # Append start token to the output:
+        predicted_initial = torch.ones([batch_size],
+                                       dtype=torch.int64).to(device) * start_token_idx
+        sampled_ids.append(predicted_initial)
 
         start_token_embedding = self.embed(torch.tensor(start_token_idx).to(device))
         embed_size = len(start_token_embedding)
