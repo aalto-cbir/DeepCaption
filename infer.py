@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import numpy as np
 
 from datetime import datetime
 from PIL import Image
@@ -156,6 +157,9 @@ def infer(ext_args=None):
     # Update dataset params with needed model params:
     for i in dataset_params:
         i.config_dict['skip_start_token'] = params.skip_start_token
+        # For visualizing attention we need file names instead of IDs in our output:
+        if args.store_image_paths:
+            i.config_dict['return_image_file_name'] = True
 
     ext_feature_sets = [params.features.external, params.persist_features.external]
 
@@ -180,7 +184,15 @@ def infer(ext_args=None):
 
     model = _Model(params, device, len(vocab), state, ef_dims).eval()
 
+    # Store captions here:
     output_data = []
+
+    if params.attention is not None:
+        # Store attention weights here:
+        # DIM: ( #images, words/sentence, flattened convolutional image grid)
+        output_alphas = np.zeros((len(data_loader.dataset),
+                                  args.max_seq_length,
+                                  model.decoder.num_attention_locs))
 
     print('Starting inference...')
     show_progress = sys.stderr.isatty() and not args.verbose
@@ -204,6 +216,11 @@ def infer(ext_args=None):
             # When sampling from attention models we also get an attention
             # distribution stored in alphas (can be used for visualization):
             sampled_ids_batch, alphas = sampled_batch
+            if params.attention is not None:
+                alphas_numpy = alphas.detach().cpu().numpy()
+                offset_begin = i * args.batch_size
+                offset_end = offset_begin + alphas_numpy.shape[0]
+                output_alphas[offset_begin: offset_end, :] = alphas_numpy
 
         for i in range(sampled_ids_batch.shape[0]):
             sampled_ids = sampled_ids_batch[i].cpu().numpy()
@@ -256,6 +273,12 @@ def infer(ext_args=None):
 
         print('Wrote generated captions to {} as {}'.format(output_path, args.output_format))
 
+        if params.attention is not None:
+            # Store attention weights:
+            output_path_alphas = os.path.splitext(output_path)[0] + '_alphas.npy'
+            np.save(output_path_alphas, output_alphas)
+            print("Wrote attention weights to {}".format(output_path_alphas))
+
     if args.print_results:
         for d in output_data:
             print('{}: {}'.format(d['image_id'], d['caption']))
@@ -286,6 +309,8 @@ def parse_args(ext_args=None):
                         'used for training), comma separated')
     parser.add_argument('--ext_persist_features', type=str,
                         help='paths for external persist features')
+    parser.add_argument('--store_image_paths', action='store_true',
+                        help='Save paths to images in the output file')
     parser.add_argument('--output_file', type=str,
                         help='path for output file, default: model_name.txt')
     parser.add_argument('--output_format', type=str,
