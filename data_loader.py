@@ -172,7 +172,8 @@ class DatasetParams:
                     print('    {}:'.format(name))
                     for n, v in value.items():
                         print('        {}: {}'.format(n, v))
-                    
+
+
 class ExternalFeature:
     def __init__(self, filename, base_path):
         full_path = os.path.expanduser(os.path.join(base_path, filename))
@@ -438,6 +439,9 @@ class CocoDataset(data.Dataset):
         # We are in file list generation mode and want to output full paths to images:
         if self.config_dict.get('return_full_image_path'):
             img_id = os.path.join(self.root, path)
+        # Sometimes we may want just the image file name without full path:
+        elif self.config_dict.get('return_image_file_name'):
+            img_id = path
 
         return image, target, img_id, feature_sets
 
