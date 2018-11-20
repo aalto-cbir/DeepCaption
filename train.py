@@ -337,12 +337,34 @@ def main(args):
         begin = datetime.now()
         total_loss = 0
         num_batches = 0
+        vocab_counts = { 'cnt':0, 'max':0, 'min':9999,
+                         'sum':0, 'unk_cnt':0, 'unk_sum':0 }
         for i, (images, captions, lengths, _, features) in enumerate(data_loader):
+            #print(captions.shape)
+            #print(captions)
+            if epoch==0:
+                unk = vocab('<unk>')
+                for j in range(captions.shape[0]):
+                    xl = captions[j,:]
+                    xw = xl>unk
+                    xu = xl==unk
+                    xwi = sum(xw).item()
+                    xui = sum(xu).item()
+                    vocab_counts['cnt']     += 1;
+                    vocab_counts['sum']     += xwi;
+                    vocab_counts['max']      = max(vocab_counts['max'], xwi)
+                    vocab_counts['min']      = min(vocab_counts['min'], xwi)
+                    vocab_counts['unk_cnt'] += xui>0
+                    vocab_counts['unk_sum'] += xui
+
             # Set mini-batch dataset
             images = images.to(device)
             captions = captions.to(device)
             targets = pack_padded_sequence(captions, lengths,
                                            batch_first=True)[0]
+            #print(features[0].shape)
+            #print(features[0])
+            #exit(1)
             init_features = features[0].to(device) if len(features) > 0 and \
                 features[0] is not None else None
             persist_features = features[1].to(device) if len(features) > 1 and \
@@ -408,6 +430,15 @@ def main(args):
                                                                     stats['training_loss']))
         save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
 
+        if epoch==0:
+            vocab_counts['avg'] = vocab_counts['sum']/vocab_counts['cnt']
+            vocab_counts['unk_cnt_per'] = 100*vocab_counts['unk_cnt']/vocab_counts['cnt']
+            vocab_counts['unk_sum_per'] = 100*vocab_counts['unk_sum']/vocab_counts['sum']
+            # print(vocab_counts)
+            print(('Training data contains {sum} words in {cnt} captions (avg. {avg:.1f} w/c)'+
+                   ' with {unk_sum} <unk>s ({unk_sum_per:.1f}%)'+
+                   ' in {unk_cnt} ({unk_cnt_per:.1f}%) captions').format(**vocab_counts))
+        
         if args.validate is not None and (epoch + 1) % args.validation_step == 0:
             begin = datetime.now()
             model.eval()
