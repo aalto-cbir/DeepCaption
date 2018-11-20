@@ -211,24 +211,24 @@ def infer(ext_args=None):
 
             output_data.append({'caption': caption, 'image_id': image_ids[i]})
 
-    output_file = None
+    # Decide output format, fall back to txt
+    if args.output_format is not None:
+        output_format = args.output_format
+    elif args.output_file and args.output_file.endswith('.json'):
+        output_format = 'json'
+    else:
+        output_format = 'txt'
 
     # Create a sensible default output path for results:
+    output_file = None
     if not args.output_file and not args.print_results:
         model_name = args.model.split(os.sep)[-2]
         model_epoch = basename(args.model)
-        output_file = '{}-{}.{}'.format(model_name, model_epoch, args.output_format)
+        output_file = '{}-{}.{}'.format(model_name, model_epoch, output_format)
     else:
         output_file = args.output_file
 
     if output_file:
-        if args.output_format is not None:
-            output_format = args.output_format
-        elif output_file.endswith('.json'):
-            output_format = 'json'
-        else:
-            output_format = 'txt'
-
         output_path = os.path.join(args.results_path, output_file)
         if output_format == 'json':
             json.dump(output_data, open(output_path, 'w'))
@@ -237,7 +237,7 @@ def infer(ext_args=None):
                 for data in output_data:
                     print(data['image_id'], data['caption'], file=fp)
 
-        print('Wrote generated captions to {} as {}'.format(output_path, args.output_format))
+        print('Wrote generated captions to {} as {}'.format(output_path, output_format))
 
     if args.print_results:
         for d in output_data:
