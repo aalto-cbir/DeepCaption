@@ -14,6 +14,8 @@ def plot_stats(label, stats, color):
         vals = [stats[str(e)][measure] for e in epochs]
         if measure == 'validation_loss':
             linestyle = '--'
+        elif measure == 'validation_cider':
+            linestyle = ':'
         else:
             linestyle = '-'
         plt.plot(epochs, vals, label='{}: {}'.format(label, measure), color=color,

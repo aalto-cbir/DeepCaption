@@ -43,6 +43,16 @@ def fix_caption(caption):
     return ret.capitalize()
 
 
+def caption_ids_to_words(sampled_ids, vocab):
+    sampled_caption = []
+    for word_id in sampled_ids.cpu().numpy():
+        word = vocab.idx2word[word_id]
+        sampled_caption.append(word)
+        if word == '<end>':
+            break
+    return fix_caption(' '.join(sampled_caption))
+
+
 def path_from_id(image_dir, image_id):
     """Return image path based on image directory, image id and
     glob matching for extension"""
@@ -91,12 +101,14 @@ def infer(ext_args=None):
     args = parse_args(ext_args)
 
     global device
-    device = torch.device('cuda' if torch.cuda.is_available()
-                          and not args.cpu else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
 
     # Create model directory
     if not os.path.exists(args.results_path):
         os.makedirs(args.results_path)
+
+    from eval.cider import Cider
+    cider_scorer = Cider(df='corpus')
 
     # Image preprocessing
     transform = transforms.Compose([
@@ -169,10 +181,20 @@ def infer(ext_args=None):
 
     output_data = []
 
+    gts = {}
+    res = {}
+
     print('Starting inference...')
     show_progress = sys.stderr.isatty() and not args.verbose
     for i, (images, ref_captions, lengths, image_ids,
             features) in enumerate(tqdm(data_loader, disable=not show_progress)):
+
+        for j in range(len(ref_captions)):
+            jid = image_ids[j]
+            if jid not in gts:
+                gts[jid] = []
+            gts[jid].append(ref_captions[j].lower())
+
         images = images.to(device)
 
         init_features = features[0].to(device)if len(features) > 0 and \
@@ -189,16 +211,10 @@ def infer(ext_args=None):
                                                      max_seq_length=args.max_seq_length)
 
         for i in range(sampled_ids_batch.shape[0]):
-            sampled_ids = sampled_ids_batch[i].cpu().numpy()
+            sampled_ids = sampled_ids_batch[i]
 
             # Convert word_ids to words
-            sampled_caption = []
-            for word_id in sampled_ids:
-                word = vocab.idx2word[word_id]
-                sampled_caption.append(word)
-                if word == '<end>':
-                    break
-            caption = fix_caption(' '.join(sampled_caption))
+            caption = caption_ids_to_words(sampled_ids, vocab)
 
             if args.no_repeat_sentences:
                 caption = remove_duplicate_sentences(caption)
@@ -210,6 +226,12 @@ def infer(ext_args=None):
                 print('=>', caption)
 
             output_data.append({'caption': caption, 'image_id': image_ids[i]})
+            res[image_ids[i]] = [caption.lower()]
+
+    if cider_scorer:
+        score, scores = cider_scorer.compute_score(gts, res)
+        cider = sum(scores)/len(scores)
+        print('Test CIDEr', cider)
 
     # Decide output format, fall back to txt
     if args.output_format is not None:

@@ -18,6 +18,7 @@ from torchvision import transforms
 from vocabulary import Vocabulary, get_vocab
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
+from infer import caption_ids_to_words
 
 # Device configuration now in main()
 device = None
@@ -195,6 +196,14 @@ def main(args):
         transforms.ToTensor(),
         transforms.Normalize((0.485, 0.456, 0.406),
                              (0.229, 0.224, 0.225))])
+
+    scorers = {}
+    if args.validation_scoring is not None:
+        for s in args.validation_scoring.split(','):
+            s = s.lower().strip()
+            if s == 'cider':
+                from eval.cider import Cider
+                scorers['CIDEr'] = Cider()
 
     state = None
 
@@ -408,13 +417,22 @@ def main(args):
                                                                     stats['training_loss']))
         save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
 
+        gts = {}
+        res = {}
         if args.validate is not None and (epoch + 1) % args.validation_step == 0:
             begin = datetime.now()
             model.eval()
 
             total_loss = 0
             num_batches = 0
-            for i, (images, captions, lengths, _, features) in enumerate(valid_loader):
+            for i, (images, captions, lengths, image_ids, features) in enumerate(valid_loader):
+                if len(scorers) > 0:
+                    for j in range(captions.shape[0]):
+                        jid = image_ids[j]
+                        if jid not in gts:
+                            gts[jid] = []
+                        gts[jid].append(caption_ids_to_words(captions[j, :], vocab))
+
                 # Set mini-batch dataset
                 images = images.to(device)
                 captions = captions.to(device)
@@ -425,7 +443,6 @@ def main(args):
                 persist_features = features[1].to(device) if len(features) > 1 and \
                     features[1] is not None else None
 
-                # Forward, backward and optimize
                 with torch.no_grad():
                     if args.attention is None:
                         outputs = model(images, init_features, captions, lengths,
@@ -435,6 +452,16 @@ def main(args):
                                                 lengths, persist_features, teacher_p,
                                                 args.teacher_forcing)
 
+                    # Generate a caption from the image
+                    if params.attention is None:
+                        sampled_ids_batch = model.sample(images, init_features,
+                                                         persist_features,
+                                                         max_seq_length=20)
+                    else:
+                        sampled_ids_batch, _ = model.sample(images, init_features,
+                                                            persist_features,
+                                                            max_seq_length=20)
+
                 loss = criterion(outputs, targets)
 
                 if args.attention is not None and args.regularize_attn:
@@ -443,6 +470,11 @@ def main(args):
                 total_loss += loss.item()
                 num_batches += 1
 
+                if len(scorers) > 0:
+                    for j in range(sampled_ids_batch.shape[0]):
+                        jid = image_ids[j]
+                        res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab)]
+
                 # Used for testing:
                 if i + 1 == args.num_batches:
                     break
@@ -450,6 +482,12 @@ def main(args):
             model.train()
 
             end = datetime.now()
+
+            for score_name, scorer in scorers.items():
+                score = scorer.compute_score(gts, res)[0]
+                print('Validation', score_name, score)
+                stats['validation_' + score_name.lower()] = score
+
             val_loss = total_loss / num_batches
             stats['validation_loss'] = val_loss
             print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
@@ -557,6 +595,7 @@ if __name__ == '__main__':
                         help='Dataset to validate against after each epoch')
     parser.add_argument('--validation_step', type=int, default=1,
                         help='After how many epochs to perform validation, default=1')
+    parser.add_argument('--validation_scoring', type=str)
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
