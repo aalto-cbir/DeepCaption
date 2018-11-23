@@ -273,7 +273,11 @@ class ExternalFeature:
                         x = self._lmdb_to_numpy(txn.get(str(idx).encode('ascii')))
                         x.reshape(self._vdim)
             else:
-                x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+                try:
+                    x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+                except:
+                    print('No feature data was found with key <{}>'.format(str(idx)))
+                    exit(1)
                 x.reshape(self._vdim)
         elif self.bin is not None:
             from picsom.bin_data import picsom_bin_data
@@ -793,7 +797,7 @@ class PicSOMDataset(data.Dataset):
         with open(tt) as fp:
             for l in fp:
                 l = l.rstrip()
-                #print(l)
+                #print('<{}>'.format(l))
                 a = re.match('([^ ]+)( (.*))?', l)
                 assert a, 'reading <'+tt+'> failed'
                 label = a.group(1)
