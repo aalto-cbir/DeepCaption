@@ -50,21 +50,34 @@ def main(args):
     ax1.set_xlabel('epochs')
     ax1.set_ylabel('loss')
 
-    for i, filename in enumerate(args.files):
-        with open(filename, 'r') as fp:
-            if i < len(labels):
-                label = labels[i]
-            else:
-                label = str(i+1)
-                print('{}: {}'.format(label, filename))
-            plot_stats(label, json.load(fp), colors[i % len(colors)], ax1, ax2, args)
+    first = True
 
-    box = ax1.get_position()
-    ax1.set_position([box.x0, box.y0, box.width * 0.6, box.height])
+    while True:
+        for i, filename in enumerate(args.files):
+            with open(filename, 'r') as fp:
+                if i < len(labels):
+                    label = labels[i]
+                else:
+                    label = str(i+1)
+                    print('{}: {}'.format(label, filename))
+                plot_stats(label, json.load(fp), colors[i % len(colors)], ax1, ax2, args)
 
-    ax1.legend(loc='center left', bbox_to_anchor=(1.2, 0.8))
-    ax2.legend(loc='center left', bbox_to_anchor=(1.2, 0.6))
-    plt.show()
+        if first:
+            box = ax1.get_position()
+            ax1.set_position([box.x0, box.y0, box.width * 0.6, box.height])
+            first = False
+
+        ax1.legend(loc='center left', bbox_to_anchor=(1.2, 0.8))
+        ax2.legend(loc='center left', bbox_to_anchor=(1.2, 0.6))
+
+        if not args.watch:
+            plt.show()
+        else:
+            plt.draw()
+            plt.pause(3)
+            # print('x')
+            ax1.clear()
+            ax2.clear()
 
 
 if __name__ == '__main__':
@@ -74,7 +87,8 @@ if __name__ == '__main__':
     parser.add_argument('files', type=str, nargs='+',
                         help='JSON file(s) with training stats')
     parser.add_argument('--labels', type=str, help='Labels for plot')
-    parser.add_argument('--smooth_cider', type=int)
+    parser.add_argument('--smooth_cider', type=int, help='Moving average smoothing')
+    parser.add_argument('--watch', action='store_true', help='Watches input files')
     args = parser.parse_args()
 
     main(args)
