@@ -20,6 +20,10 @@ from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
 from infer import caption_ids_to_words
 
+torch.manual_seed(42)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+
 # Device configuration now in main()
 device = None
 
