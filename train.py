@@ -488,15 +488,16 @@ def main(args):
                                                 lengths, persist_features, teacher_p,
                                                 args.teacher_forcing)
 
-                    # Generate a caption from the image
-                    if params.attention is None:
-                        sampled_ids_batch = model.sample(images, init_features,
-                                                         persist_features,
-                                                         max_seq_length=20)
-                    else:
-                        sampled_ids_batch, _ = model.sample(images, init_features,
-                                                            persist_features,
-                                                            max_seq_length=20)
+                    if len(scorers) > 0:
+                        # Generate a caption from the image
+                        if params.attention is None:
+                            sampled_ids_batch = model.sample(images, init_features,
+                                                             persist_features,
+                                                             max_seq_length=20)
+                        else:
+                            sampled_ids_batch, _ = model.sample(images, init_features,
+                                                                persist_features,
+                                                                max_seq_length=20)
 
                 loss = criterion(outputs, targets)
 
