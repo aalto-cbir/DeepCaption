@@ -213,6 +213,16 @@ def main(args):
 
     # Get dataset parameters:
     dataset_configs = DatasetParams(args.dataset_config_file)
+
+    if args.dataset is None:
+        print('ERROR: No dataset selected!')
+        print('Please supply a training dataset with the argument --dataset DATASET')
+        print('The following datasets are configured in {}:'.format(args.dataset_config_file))
+        for ds, _ in dataset_configs.config.items():
+            if ds not in ('DEFAULT', 'generic'):
+                print(' ', ds)
+        sys.exit(1)
+
     dataset_params = dataset_configs.get_params(args.dataset)
 
     for i in dataset_params:
@@ -538,12 +548,11 @@ def main(args):
 
 
 if __name__ == '__main__':
-    default_dataset = 'coco:train2014'
+    # default_dataset = 'coco:train2014'
     default_features = 'resnet152'
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default=default_dataset,
-                        help='which dataset to use')
+    parser.add_argument('--dataset', type=str, help='which dataset to use')
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
                         help='location of dataset configuration file')
