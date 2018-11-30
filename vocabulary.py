@@ -79,7 +79,10 @@ class Vocabulary(object):
         :param metadata dict vocabulary metadata info"""
 
         # Merge existing metadata with supplied:
-        self.metatata = {**self.metadata, **updated_metadata}
+        self.metadata = {**self.metadata, **updated_metadata}
+
+    def __str__(self):
+        return 'Vocabulary with {} words.'.format(len(self))
 
 
 def get_vocab(ext_args, dataset_params=None):
