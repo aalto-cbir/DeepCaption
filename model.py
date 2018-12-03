@@ -325,7 +325,7 @@ class DecoderRNN(nn.Module):
             self.init_c = nn.ModuleList()
             for _layer in range(p.num_layers):
                 self.init_h.append(nn.Linear(enc_features_dim, p.hidden_size))
-                self.init_c.append(nn.Linear(enc_features_dim, p.hidden_size)) 
+                self.init_c.append(nn.Linear(enc_features_dim, p.hidden_size))
 
         self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
                             p.num_layers, dropout=p.dropout, batch_first=True)
@@ -488,7 +488,7 @@ class EncoderDecoder(nn.Module):
         print('Using device: {}'.format(device.type))
         print('Initializing EncoderDecoder model...')
         self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
-        self.decoder = DecoderRNN(params, vocab_size, ef_dims[1], 
+        self.decoder = DecoderRNN(params, vocab_size, ef_dims[1],
                                   self.encoder.total_feat_dim).to(device)
 
         self.opt_params = (list(self.decoder.parameters()) +
@@ -652,11 +652,12 @@ class SoftAttentionDecoderRNN(nn.Module):
         # Flatten (BS x C x W x H) image to (BS x C x (W*H)),
         # where self.feature_size is for example 2048 in case of ResNet152
         # 224x224 input images:
-        features = persist_features.view(batch_size, -1, self.feature_size)
+        # features = persist_features.view(batch_size, -1, self.feature_size)
+        features = external_features.view(batch_size, -1, self.feature_size)
 
         embeddings = self.embed(captions)
 
-        h, c = init_hidden_state(self, encoder_features)
+        h, c = init_hidden_state(self, features)
 
         # Store predictions and alphas here:
         outputs = torch.zeros(batch_size, seq_length, self.vocab_size).to(device)
