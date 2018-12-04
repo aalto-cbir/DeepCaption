@@ -178,12 +178,11 @@ class ExternalFeature:
         full_path = os.path.expanduser(os.path.join(base_path, filename))
         self.lmdb = None
         self.lmdb_path = None
-        self.bin  = None
+        self.bin = None
         self.disable_cache = False
 
         if not os.path.exists(full_path):
-            print('ERROR: external feature file not found:', full_path)
-            sys.exit(1)
+            raise FileNotFoundError('ERROR: external feature file not found: ' + full_path)
         if filename.endswith('.h5'):
             import h5py
             self.f = h5py.File(full_path, 'r')

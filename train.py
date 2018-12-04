@@ -44,6 +44,9 @@ def get_model_name(args, params):
 
     if args.model_name is not None:
         model_name = args.model_name
+    elif args.load_model:
+        model_name = os.path.split(os.path.dirname(args.load_model))[-1]
+
     else:
         bn = args.model_basename
 
@@ -92,14 +95,20 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         print(params)
 
 
-def stats_filename(args, params):
+def stats_filename(args, params, postfix):
     model_name = get_model_name(args, params)
     model_dir = os.path.join(args.model_path, model_name)
-    return os.path.join(model_dir, 'train_stats.json')
+
+    if postfix is None:
+        json_name = 'train_stats.json'
+    else:
+        json_name = 'train_stats-{}.json'.format(postfix)
+
+    return os.path.join(model_dir, json_name)
 
 
-def init_stats(args, params):
-    filename = stats_filename(args, params)
+def init_stats(args, params, postfix=None):
+    filename = stats_filename(args, params, postfix)
     if os.path.exists(filename):
         with open(filename, 'r') as fp:
             return json.load(fp)
@@ -107,12 +116,13 @@ def init_stats(args, params):
         return dict()
 
 
-def save_stats(args, params, all_stats):
-    filename = stats_filename(args, params)
+def save_stats(args, params, all_stats, postfix=None):
+    filename = stats_filename(args, params, postfix)
     os.makedirs(os.path.dirname(filename), exist_ok=True)
 
     with open(filename, 'w') as outfile:
         json.dump(all_stats, outfile, indent=2)
+    print('Wrote stats to {}.'.format(filename))
 
 
 def find_matching_model(args, params):
@@ -178,10 +188,91 @@ def clip_gradients(optimizer, grad_clip):
                 param.grad.data.clamp_(-grad_clip, grad_clip)
 
 
+def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params,
+                stats, epoch):
+    begin = datetime.now()
+    model.eval()
+
+    gts = {}
+    res = {}
+
+    total_loss = 0
+    num_batches = 0
+    for i, (images, captions, lengths, image_ids, features) in enumerate(valid_loader):
+        if len(scorers) > 0:
+            for j in range(captions.shape[0]):
+                jid = image_ids[j]
+                if jid not in gts:
+                    gts[jid] = []
+                gts[jid].append(caption_ids_to_words(captions[j, :], vocab))
+
+        # Set mini-batch dataset
+        images = images.to(device)
+        captions = captions.to(device)
+        targets = pack_padded_sequence(captions, lengths,
+                                       batch_first=True)[0]
+        init_features = features[0].to(device)if len(features) > 0 and \
+            features[0] is not None else None
+        persist_features = features[1].to(device) if len(features) > 1 and \
+            features[1] is not None else None
+
+        with torch.no_grad():
+            if args.attention is None:
+                outputs = model(images, init_features, captions, lengths,
+                                persist_features, teacher_p, args.teacher_forcing)
+            else:
+                outputs, alphas = model(images, init_features, captions,
+                                        lengths, persist_features, teacher_p,
+                                        args.teacher_forcing)
+
+            if len(scorers) > 0:
+                # Generate a caption from the image
+                if params.attention is None:
+                    sampled_ids_batch = model.sample(images, init_features,
+                                                     persist_features,
+                                                     max_seq_length=20)
+                else:
+                    sampled_ids_batch, _ = model.sample(images, init_features,
+                                                        persist_features,
+                                                        max_seq_length=20)
+
+        loss = criterion(outputs, targets)
+
+        if args.attention is not None and args.regularize_attn:
+            loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
+
+        total_loss += loss.item()
+        num_batches += 1
+
+        if len(scorers) > 0:
+            for j in range(sampled_ids_batch.shape[0]):
+                jid = image_ids[j]
+                res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab)]
+
+        # Used for testing:
+        if i + 1 == args.num_batches:
+            break
+
+    model.train()
+
+    end = datetime.now()
+
+    for score_name, scorer in scorers.items():
+        score = scorer.compute_score(gts, res)[0]
+        print('Validation', score_name, score)
+        stats['validation_' + score_name.lower()] = score
+
+    val_loss = total_loss / num_batches
+    stats['validation_loss'] = val_loss
+    print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
+        epoch + 1, end - begin, val_loss))
+    return val_loss
+
+
 def main(args):
     global device
-    device = torch.device('cuda' if torch.cuda.is_available()
-                          and not args.cpu else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() and
+                          not args.cpu else 'cpu')
 
     if args.validate is None and args.lr_scheduler:
         print('ERROR: you need to enable validation in order to use the lr_scheduler')
@@ -214,7 +305,7 @@ def main(args):
     # Get dataset parameters:
     dataset_configs = DatasetParams(args.dataset_config_file)
 
-    if args.dataset is None:
+    if args.dataset is None and not args.validate_only:
         print('ERROR: No dataset selected!')
         print('Please supply a training dataset with the argument --dataset DATASET')
         print('The following datasets are configured in {}:'.format(args.dataset_config_file))
@@ -223,11 +314,17 @@ def main(args):
                 print(' ', ds)
         sys.exit(1)
 
-    dataset_params = dataset_configs.get_params(args.dataset)
+    if args.validate_only:
+        if args.load_model is None:
+            print('ERROR: for --validate_only you need to specify a model to evaluate using '
+                  '--load_model MODEL')
+            sys.exit(1)
+    else:
+        dataset_params = dataset_configs.get_params(args.dataset)
 
-    for i in dataset_params:
-        i.config_dict['no_tokenize'] = args.no_tokenize
-        i.config_dict['show_tokens'] = args.show_tokens
+        for i in dataset_params:
+            i.config_dict['no_tokenize'] = args.no_tokenize
+            i.config_dict['show_tokens'] = args.show_tokens
 
     if args.validate is not None:
         validation_dataset_params = dataset_configs.get_params(args.validate)
@@ -236,7 +333,6 @@ def main(args):
             i.config_dict['show_tokens'] = args.show_tokens
 
     params = ModelParams.fromargs(args)
-    print(params)
     start_epoch = 0
 
     # Intelligently resume from the newest trained epoch matching
@@ -248,15 +344,15 @@ def main(args):
         state = torch.load(args.load_model)
         external_features = params.features.external
         params = ModelParams(state)
-        if params.features.external != external_features:
+        if len(external_features) > 0 and params.features.external != external_features:
             print('WARNING: external features changed: ',
                   params.features.external, external_features)
             print('Updating feature paths...')
-            params.update_ext_features(args.features)
+            params.update_ext_features(external_features)
         start_epoch = state['epoch']
         print('Loading model {} at epoch {}.'.format(args.load_model,
                                                      start_epoch))
-        print(params)
+    print(params)
 
     # Load the vocabulary. For pre-trained models attempt to obtain
     # saved vocabulary from the model itself:
@@ -282,22 +378,24 @@ def main(args):
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
 
-    # Build data loader
-    print('Loading dataset: {} with {} workers'.format(args.dataset, args.num_workers))
     ext_feature_sets = [params.features.external, params.persist_features.external]
-    data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
-                                      shuffle=True, num_workers=args.num_workers,
-                                      ext_feature_sets=ext_feature_sets,
-                                      skip_images=not params.has_internal_features(),
-                                      verbose=args.verbose)
+
+    # Build data loader
+    if not args.validate_only:
+        print('Loading dataset: {} with {} workers'.format(args.dataset, args.num_workers))
+        data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
+                                          shuffle=True, num_workers=args.num_workers,
+                                          ext_feature_sets=ext_feature_sets,
+                                          skip_images=not params.has_internal_features(),
+                                          verbose=args.verbose)
 
     if args.validate is not None:
-        valid_loader, _ = get_loader(validation_dataset_params, vocab, transform,
-                                     args.batch_size, shuffle=True,
-                                     num_workers=args.num_workers,
-                                     ext_feature_sets=ext_feature_sets,
-                                     skip_images=not params.has_internal_features(),
-                                     verbose=args.verbose)
+        valid_loader, ef_dims = get_loader(validation_dataset_params, vocab, transform,
+                                           args.batch_size, shuffle=True,
+                                           num_workers=args.num_workers,
+                                           ext_feature_sets=ext_feature_sets,
+                                           skip_images=not params.has_internal_features(),
+                                           verbose=args.verbose)
 
     # Build the models
     if args.attention is None:
@@ -343,208 +441,146 @@ def main(args):
                                                                patience=2)
 
     # Train the models
-    total_step = len(data_loader)
-    if args.load_model:
+    if args.load_model and not args.validate_only:
         all_stats = init_stats(args, params)
     else:
         all_stats = {}
 
-    print('Start training with num_epochs={:d} num_batches={:d} ...'.
-          format(args.num_epochs, args.num_batches))
+    if not args.validate_only:
+        total_step = len(data_loader)
+        print('Start training with num_epochs={:d} num_batches={:d} ...'.
+              format(args.num_epochs, args.num_batches))
+
     if args.teacher_forcing != 'always':
         print('\t k: {}'.format(args.teacher_forcing_k))
         print('\t beta: {}'.format(args.teacher_forcing_beta))
     print('Optimizer:', optimizer)
-    for epoch in range(start_epoch, args.num_epochs):
+
+    if args.validate_only:
         stats = {}
-        begin = datetime.now()
-        total_loss = 0
-        num_batches = 0
-        vocab_counts = { 'cnt':0, 'max':0, 'min':9999,
-                         'sum':0, 'unk_cnt':0, 'unk_sum':0 }
-        for i, (images, captions, lengths, _, features) in enumerate(data_loader):
-            #print(captions.shape)
-            #print(captions)
-            if epoch==0:
-                unk = vocab('<unk>')
-                for j in range(captions.shape[0]):
-                    xl = captions[j,:]
-                    xw = xl>unk
-                    xu = xl==unk
-                    xwi = sum(xw).item()
-                    xui = sum(xu).item()
-                    vocab_counts['cnt']     += 1;
-                    vocab_counts['sum']     += xwi;
-                    vocab_counts['max']      = max(vocab_counts['max'], xwi)
-                    vocab_counts['min']      = min(vocab_counts['min'], xwi)
-                    vocab_counts['unk_cnt'] += xui>0
-                    vocab_counts['unk_sum'] += xui
-
-            # Set mini-batch dataset
-            images = images.to(device)
-            captions = captions.to(device)
-            targets = pack_padded_sequence(captions, lengths,
-                                           batch_first=True)[0]
-            #print(features[0].shape)
-            #print(features[0])
-            #exit(1)
-            init_features = features[0].to(device) if len(features) > 0 and \
-                features[0] is not None else None
-            persist_features = features[1].to(device) if len(features) > 1 and \
-                features[1] is not None else None
-
-            # Forward, backward and optimize
-            # Calculate the probability whether to use teacher forcing or not:
-
-            # Iterate over batches:
-            iteration = (epoch - start_epoch) * len(data_loader) + i
-
-            teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
-                                         args.teacher_forcing_beta)
-
-            if args.attention is None:
-                outputs = model(images, init_features, captions, lengths, persist_features,
-                                teacher_p, args.teacher_forcing)
-            else:
-                outputs, alphas = model(images, init_features, captions, lengths,
-                                        persist_features, teacher_p, args.teacher_forcing)
-
-            loss = criterion(outputs, targets)
-
-            # Attention regularizer
-            if args.attention is not None and args.regularize_attn:
-                loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
-
-            model.zero_grad()
-            loss.backward()
-
-            # Clip gradients if desired:
-            if args.grad_clip is not None:
-                # grad_norms = [x.grad.data.norm(2) for x in opt_params]
-                # batch_max_grad = np.max(grad_norms)
-                # if batch_max_grad > 10.0:
-                #     print('WARNING: gradient norms larger than 10.0')
-
-                # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
-                # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)
-                clip_gradients(optimizer, args.grad_clip)
-
-            # Update weights:
-            optimizer.step()
-
-            total_loss += loss.item()
-            num_batches += 1
-
-            # Print log info
-            if (i + 1) % args.log_step == 0:
-                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, '
-                      'Perplexity: {:5.4f}'.
-                      format(epoch + 1, args.num_epochs, i + 1, total_step, loss.item(),
-                             np.exp(loss.item())))
-                sys.stdout.flush()
-
-            if i + 1 == args.num_batches:
-                break
-
-        end = datetime.now()
-
-        stats['training_loss'] = total_loss / num_batches
-        print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
-                                                                    stats['training_loss']))
-        save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
-
-        gts = {}
-        res = {}
-
-        if epoch==0:
-            vocab_counts['avg'] = vocab_counts['sum']/vocab_counts['cnt']
-            vocab_counts['unk_cnt_per'] = 100*vocab_counts['unk_cnt']/vocab_counts['cnt']
-            vocab_counts['unk_sum_per'] = 100*vocab_counts['unk_sum']/vocab_counts['sum']
-            # print(vocab_counts)
-            print(('Training data contains {sum} words in {cnt} captions (avg. {avg:.1f} w/c)'+
-                   ' with {unk_sum} <unk>s ({unk_sum_per:.1f}%)'+
-                   ' in {unk_cnt} ({unk_cnt_per:.1f}%) captions').format(**vocab_counts))
-
-        if args.validate is not None and (epoch + 1) % args.validation_step == 0:
+        teacher_p = 1.0
+        epoch = start_epoch-1
+        val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
+                               params, stats, epoch)
+        all_stats[epoch+1] = stats
+        save_stats(args, params, all_stats, postfix=args.validate)
+    else:
+        for epoch in range(start_epoch, args.num_epochs):
+            stats = {}
             begin = datetime.now()
-            model.eval()
-
             total_loss = 0
             num_batches = 0
-            for i, (images, captions, lengths, image_ids, features) in enumerate(valid_loader):
-                if len(scorers) > 0:
+            vocab_counts = { 'cnt':0, 'max':0, 'min':9999,
+                             'sum':0, 'unk_cnt':0, 'unk_sum':0 }
+            for i, (images, captions, lengths, _, features) in enumerate(data_loader):
+                #print(captions.shape)
+                #print(captions)
+                if epoch==0:
+                    unk = vocab('<unk>')
                     for j in range(captions.shape[0]):
-                        jid = image_ids[j]
-                        if jid not in gts:
-                            gts[jid] = []
-                        gts[jid].append(caption_ids_to_words(captions[j, :], vocab))
+                        xl = captions[j,:]
+                        xw = xl>unk
+                        xu = xl==unk
+                        xwi = sum(xw).item()
+                        xui = sum(xu).item()
+                        vocab_counts['cnt']     += 1;
+                        vocab_counts['sum']     += xwi;
+                        vocab_counts['max']      = max(vocab_counts['max'], xwi)
+                        vocab_counts['min']      = min(vocab_counts['min'], xwi)
+                        vocab_counts['unk_cnt'] += xui>0
+                        vocab_counts['unk_sum'] += xui
 
                 # Set mini-batch dataset
                 images = images.to(device)
                 captions = captions.to(device)
                 targets = pack_padded_sequence(captions, lengths,
                                                batch_first=True)[0]
-                init_features = features[0].to(device)if len(features) > 0 and \
+                #print(features[0].shape)
+                #print(features[0])
+                #exit(1)
+                init_features = features[0].to(device) if len(features) > 0 and \
                     features[0] is not None else None
                 persist_features = features[1].to(device) if len(features) > 1 and \
                     features[1] is not None else None
 
-                with torch.no_grad():
-                    if args.attention is None:
-                        outputs = model(images, init_features, captions, lengths,
-                                        persist_features, teacher_p, args.teacher_forcing)
-                    else:
-                        outputs, alphas = model(images, init_features, captions,
-                                                lengths, persist_features, teacher_p,
-                                                args.teacher_forcing)
+                # Forward, backward and optimize
+                # Calculate the probability whether to use teacher forcing or not:
 
-                    if len(scorers) > 0:
-                        # Generate a caption from the image
-                        if params.attention is None:
-                            sampled_ids_batch = model.sample(images, init_features,
-                                                             persist_features,
-                                                             max_seq_length=20)
-                        else:
-                            sampled_ids_batch, _ = model.sample(images, init_features,
-                                                                persist_features,
-                                                                max_seq_length=20)
+                # Iterate over batches:
+                iteration = (epoch - start_epoch) * len(data_loader) + i
+
+                teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
+                                             args.teacher_forcing_beta)
+
+                if args.attention is None:
+                    outputs = model(images, init_features, captions, lengths, persist_features,
+                                    teacher_p, args.teacher_forcing)
+                else:
+                    outputs, alphas = model(images, init_features, captions, lengths,
+                                            persist_features, teacher_p, args.teacher_forcing)
 
                 loss = criterion(outputs, targets)
 
+                # Attention regularizer
                 if args.attention is not None and args.regularize_attn:
                     loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
+
+                model.zero_grad()
+                loss.backward()
+
+                # Clip gradients if desired:
+                if args.grad_clip is not None:
+                    # grad_norms = [x.grad.data.norm(2) for x in opt_params]
+                    # batch_max_grad = np.max(grad_norms)
+                    # if batch_max_grad > 10.0:
+                    #     print('WARNING: gradient norms larger than 10.0')
+
+                    # torch.nn.utils.clip_grad_norm_(decoder.parameters(), 0.1)
+                    # torch.nn.utils.clip_grad_norm_(encoder.parameters(), 0.1)
+                    clip_gradients(optimizer, args.grad_clip)
+
+                # Update weights:
+                optimizer.step()
 
                 total_loss += loss.item()
                 num_batches += 1
 
-                if len(scorers) > 0:
-                    for j in range(sampled_ids_batch.shape[0]):
-                        jid = image_ids[j]
-                        res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab)]
+                # Print log info
+                if (i + 1) % args.log_step == 0:
+                    print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, '
+                          'Perplexity: {:5.4f}'.
+                          format(epoch + 1, args.num_epochs, i + 1, total_step, loss.item(),
+                                 np.exp(loss.item())))
+                    sys.stdout.flush()
 
-                # Used for testing:
                 if i + 1 == args.num_batches:
                     break
 
-            model.train()
-
             end = datetime.now()
 
-            for score_name, scorer in scorers.items():
-                score = scorer.compute_score(gts, res)[0]
-                print('Validation', score_name, score)
-                stats['validation_' + score_name.lower()] = score
+            stats['training_loss'] = total_loss / num_batches
+            print('Epoch {} duration: {}, average loss: {:.4f}.'.format(
+                epoch + 1, end - begin, stats['training_loss']))
+            save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
 
-            val_loss = total_loss / num_batches
-            stats['validation_loss'] = val_loss
-            print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
-                epoch + 1, end - begin, val_loss))
+            if epoch == 0:
+                vocab_counts['avg'] = vocab_counts['sum']/vocab_counts['cnt']
+                vocab_counts['unk_cnt_per'] = 100*vocab_counts['unk_cnt']/vocab_counts['cnt']
+                vocab_counts['unk_sum_per'] = 100*vocab_counts['unk_sum']/vocab_counts['sum']
+                # print(vocab_counts)
+                print(('Training data contains {sum} words in {cnt} captions (avg. {avg:.1f} w/c)'+
+                       ' with {unk_sum} <unk>s ({unk_sum_per:.1f}%)'+
+                       ' in {unk_cnt} ({unk_cnt_per:.1f}%) captions').format(**vocab_counts))
 
-            if args.lr_scheduler:
-                scheduler.step(val_loss)
+            if args.validate is not None and (epoch + 1) % args.validation_step == 0:
+                val_loss = do_validate(model, valid_loader, criterion, scorers, vocab,
+                                       teacher_p, args, params, stats, epoch)
 
-        all_stats[epoch + 1] = stats
-        save_stats(args, params, all_stats)
+                if args.lr_scheduler:
+                    scheduler.step(val_loss)
+
+            all_stats[epoch + 1] = stats
+            save_stats(args, params, all_stats)
 
 
 if __name__ == '__main__':
@@ -642,6 +678,8 @@ if __name__ == '__main__':
     parser.add_argument('--validation_step', type=int, default=1,
                         help='After how many epochs to perform validation, default=1')
     parser.add_argument('--validation_scoring', type=str)
+    parser.add_argument('--validate_only', action='store_true',
+                        help='Just perform validation with given model, no training')
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
