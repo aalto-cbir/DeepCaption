@@ -195,3 +195,122 @@ Three different pixel value normalization strategies are currently supported for
 
 Feature extractor supports the same dataset configuration format as the `train.py` and `infer.py` scripts.
 
+## DenseCap features
+
+Dense Captioning features are extracted from DenseCap repository using LuA Torch.
+
+### Installing LuA Torch
+
+The following instructions are for CSC Taito cluster. Make sure that you run these commands in the GPU environment (interative shell) with `K80` GPU selected! (Running this on `P100` fails)
+
+First, purge the environment load the needed modules:
+
+`cd $USERAPPL  
+module purge   
+module load gcc/4.9.3 mkl/11.3.0 intelmpi/5.1.1 fftw/3.3.4 hdf5-serial/1.8.15 cuda/7.5`
+
+Clone the LuA torch:
+
+`git clone https://github.com/torch/distro.git ./torch --recursiv`
+
+Compile and install:
+
+`cd torch 
+./clean.sh 
+export CMAKE_LIBRARY_PATH=/appl/opt/mkl/11.3.0/compilers_and_libraries_2016.0.109/linux/mkl/lib/intel64_lin:/appl/opt/fftw/gcc-4.9.3/intelmpi-5.1.1/fftw-3.3.4/lib:/appl/vis/sox/14.4.2-n/lib 
+export CMAKE_INCLUDE_PATH=/appl/opt/mkl/11.3.0/compilers_and_libraries_2016.0.109/linux/mkl/include:/appl/opt/fftw/gcc-4.9.3/intelmpi-5.1.1/fftw-3.3.4/include:/appl/vis/sox/14.4.2-n/include  
+export CXX=g++  
+export CC=gcc  
+./install.sh`
+
+Answer "NO" to the following question:
+
+`Do you want to automatically prepend the Torch install location  
+to PATH and LD_LIBRARY_PATH in your /homeappl/home/jppirhon/.bashrc? (yes/no)  
+[yes] >>>  
+no`
+
+If all went well installation is now done.
+
+You can now *test* the installation by first initializing the Torch environment:
+
+`source $USERAPPL/torch/install/bin/torch-activate`
+
+And starting Torch shell:
+
+`th`
+
+### Installing DenseCap model
+
+Clone the DenseCap repository:
+
+`cd $USERAPPL   
+git clone https://github.com/jcjohnson/densecap`
+
+Install the dependencies listed in the `README.md`
+
+Fetch the pretrained model
+`cd densecap   
+ sh scripts/download_pretrained_model.sh`
+
+Run a test command inside the `densecap` folder:
+
+`th run_model.lua -input_image imgs/elephant.jpg`
+
+If things were well, the `vis/data/` directory should have new `json` file with dense captioning output for the `elephant.jpg` image.
+
+### Extracting DenseCap features
+
+Before we are ready to extract the features we need to prepare a list of files containing the paths to the images that we need the features for. To do this, go to `image_captioning` directory and run the following script. Below is the example for MS COCO:
+
+`python3 list_dataset_files.py --dataset coco:train2014:no_resize+coco:val2014:no_resize --num_workers 4`
+
+In practice `--num_files 10` parameter can be used with the above command splits the file list into 10 files, to make it possible to parallelize DenseCap feature extraction
+
+If your run the above command on Taito environment, it should have created a file:
+`image_file_list-coco:train2014+coco:val2014-taito-gpu.csc.fi.txt` (the last part of file name will vary based on environment)
+
+If all of this worked you are now ready to extract the features. Features are extracted using the handy `extract_features.lua` script provided in the repo. 
+
+Now, to run feature extractor on a single file do the following:
+`cd ../densecap   
+th extract_features.lua -boxes_per_image 50 -input_txt ../image_captioning_dev/image_file_list-coco:train2014+coco:val2014-taito-gpu.csc.fi.txt -output_h5 densecap_features-coco:train2014+coco:val2014.h5`
+
+The `extract_features.lua` script takes the following mandatory parameters:
+
+* `-input_txt`  New line separated text file listing image paths to images for which we need to extract features
+* `-output_h5` Path to HDF5 output file
+
+The following parameters have default values, so they may not always be specified, however for our purposes some of them need to be changed:
+
+* `-boxes_per_image` defaults to 100 - we can set this to *50* to match the papers we are replicating.
+* `-gpu` defaults to 0, which GPU device to use
+
+Other default parameters are:
+
+* `-image_size` defaults to 720 - the dimension to which the image is resized before densecaptions are extracted keep it as it is, setting this to lower value may result in not enough regions being detected (LuA Torch model fails to handle these cases correctly)
+* `-checkpoint` defaults to data/models/densecap/densecap-pretrained-vgg16.t7 which is a pretrained model we fetched earlier.  
+* `-rpn_nms_thresh` defaults to 0.7 
+* `-final_nms_thresh` defaults to 0.4
+* `-num_proposals` defaults to 1000
+* `-max_images` defaults to 0
+
+#### Taito / CSC only
+
+Doing this as SLURM batch/array job on 10 files on Taito would look like this:
+
+Extract file list -
+
+`python3 list_dataset_files.py --dataset coco:train2014:no_resize+coco:val2014:no_resize --num_workers 4 --num_files 10`
+
+Run feature extraction as SLURM array job (please take note that the range of array job needs to be set to `0 to num_files - 1`):
+
+`sbatch --time=0-24 --mem=128GB --job-name='COCO_TO_DENSECAP' --array=0-9 -o slurm-%x-%A_%a.out scripts/extract_densecap_features.sh
+'../image_captioning_dev/file_lists/image_file_list-coco:train2014:no_resize+coco:val2014:no_resize-taito-gpu.csc.fi_${n}_of_${N}.txt' 
+'../image_captioning_dev/features/densecap_features-coco:train2014:no_resize+coco:val2014:no_resize_${n}_of_${N}.h5`
+
+Please look at `scripts/extract_densecap_features.sh` to see what the above command really does.
+
+### Troubleshooting
+
+If you get errors when running `th` commands, make sure you have first loaded the needed modules for LuA Torch (see above).
