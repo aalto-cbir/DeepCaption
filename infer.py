@@ -107,8 +107,13 @@ def infer(ext_args=None):
     if not os.path.exists(args.results_path):
         os.makedirs(args.results_path)
 
-    from eval.cider import Cider
-    cider_scorer = Cider(df='corpus')
+    scorers = {}
+    if args.scoring is not None:
+        for s in args.scoring.split(','):
+            s = s.lower().strip()
+            if s == 'cider':
+                from eval.cider import Cider
+                scorers['CIDEr'] = Cider(df='corpus')
 
     # Image preprocessing
     transform = transforms.Compose([
@@ -189,11 +194,16 @@ def infer(ext_args=None):
     for i, (images, ref_captions, lengths, image_ids,
             features) in enumerate(tqdm(data_loader, disable=not show_progress)):
 
-        for j in range(len(ref_captions)):
-            jid = image_ids[j]
-            if jid not in gts:
-                gts[jid] = []
-            gts[jid].append(ref_captions[j].lower())
+        if len(scorers) > 0:
+            for j in range(len(ref_captions)):
+                jid = image_ids[j]
+                if jid not in gts:
+                    gts[jid] = []
+                rcs = ref_captions[j]
+                if type(rcs) is str:
+                    rcs = [rcs]
+                for rc in rcs:
+                    gts[jid].append(rc.lower())
 
         images = images.to(device)
 
@@ -228,10 +238,9 @@ def infer(ext_args=None):
             output_data.append({'caption': caption, 'image_id': image_ids[i]})
             res[image_ids[i]] = [caption.lower()]
 
-    if cider_scorer:
-        score, scores = cider_scorer.compute_score(gts, res)
-        cider = sum(scores)/len(scores)
-        print('Test CIDEr', cider)
+    for score_name, scorer in scorers.items():
+        score = scorer.compute_score(gts, res)[0]
+        print('Test', score_name, score)
 
     # Decide output format, fall back to txt
     if args.output_format is not None:
@@ -299,6 +308,7 @@ def parse_args(ext_args=None):
     parser.add_argument('--results_path', type=str, default='results/',
                         help='path for saving results')
     parser.add_argument('--print_results', action='store_true')
+    parser.add_argument('--scoring', type=str)
     parser.add_argument('--max_seq_length', type=int, default=20,
                         help='maximum allowed length of the decoded sequence')
     parser.add_argument('--no_repeat_sentences', action='store_true',

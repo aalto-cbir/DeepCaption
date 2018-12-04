@@ -172,9 +172,12 @@ class DatasetParams:
                     print('    {}:'.format(name))
                     for n, v in value.items():
                         print('        {}: {}'.format(n, v))
-                    
+
+
 class ExternalFeature:
     def __init__(self, filename, base_path):
+        if base_path is None:
+            base_path = ''
         full_path = os.path.expanduser(os.path.join(base_path, filename))
         self.lmdb = None
         self.lmdb_path = None
