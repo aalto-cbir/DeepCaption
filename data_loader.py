@@ -426,9 +426,9 @@ class CocoDataset(data.Dataset):
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
 
         # See whether we need to prepend start token to the sequence or not:
-        skip_start_token = self.config_dict['skip_start_token']
+        skip_start_token = self.config_dict.get('skip_start_token')
 
-        target = tokenize_caption(caption, self.vocab, 
+        target = tokenize_caption(caption, self.vocab,
                                   skip_start_token=skip_start_token)
 
         # We are in feature extraction-only mode,
@@ -502,7 +502,8 @@ class VisualGenomeIM2PDataset(data.Dataset):
                     'caption': d['paragraph']
                 })
 
-        print("VisualGenome paragraph data loaded for {} images...".format(len(self.paragraphs)))
+        print("VisualGenome paragraph data loaded for {} images...".format(
+            len(self.paragraphs)))
 
     def __getitem__(self, index):
         """Returns one data pair (image and paragraph)."""
@@ -527,6 +528,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
         if self.vocab is None and self.feature_loaders is None:
             img_id = path
 
+        # We are in file list creation mode, extract full path:
         if self.config_dict.get('return_full_image_path'):
             img_id = os.path.join(self.root, path)
 
