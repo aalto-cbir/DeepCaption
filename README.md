@@ -101,4 +101,4 @@ You can add e.g., `--scoring cider` to automatically calculate scoring metrics i
 
 ## Features
 
-DeepCaption supports many more features than what has been covered here. Some of them are documented on the [separate Features page](blob/master/features.md).
+DeepCaption supports many more features than what has been covered here. Some of them are documented on the [separate Features page](features.md).
