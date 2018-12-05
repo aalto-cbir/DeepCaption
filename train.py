@@ -716,6 +716,8 @@ if __name__ == '__main__':
     print('Started training at {}.'.format(begin))
 
     models = args.load_model
+    if models is None:
+        models = [None]
     for load_model in models:
         args.load_model = load_model
         if args.profiler:
