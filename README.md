@@ -4,6 +4,17 @@ DeepCaption is a framework for image captioning research using deep learning.  T
 
 The goal of image captioning is to convert a given input image into a natural language description. The encoder-decoder framework is widely used for this task. The image encoder is a convolutional neural network (CNN). Baseline code uses [resnet-152](https://arxiv.org/abs/1512.03385) model pretrained on the [ILSVRC-2012-CLS](http://www.image-net.org/challenges/LSVRC/2012/) image classification dataset. The decoder is a long short-term memory (LSTM) recurrent neural network. 
 
+## Features
+
+DeepCaption supports many features, including:
+
+- external pre-calculated features stored in numpy, lmdb or PicSOM bin format
+- persistent features (features input at each RNN iteration)
+- soft attention
+- [teacher forcing scheduling](features.md#teacher-forcing-scheduling)
+
+Some of the advanced features are documented on the [separate features documentation page](features.md).
+
 
 ## Usage 
 
@@ -98,7 +109,3 @@ You can also do inference on any configured dataset:
 ```
 
 You can add e.g., `--scoring cider` to automatically calculate scoring metrics if a ground truth has been defined for that dataset.
-
-## Features
-
-DeepCaption supports many more features than what has been covered here. Some of them are documented on the [separate Features page](features.md).
