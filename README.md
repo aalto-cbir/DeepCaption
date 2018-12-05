@@ -77,7 +77,7 @@ You can plot the training and validation loss and other statistics using the fol
 By adding `--watch` you can have it update the plot automatically every time there are new numbers (typically after each epoch).
 
 
-### 4. Infer from model
+### 4. Infer from your model
 
 Now you can use your model to generate a caption to any random image:
 
@@ -98,3 +98,7 @@ You can also do inference on any configured dataset:
 ```
 
 You can add e.g., `--scoring cider` to automatically calculate scoring metrics if a ground truth has been defined for that dataset.
+
+## Features
+
+DeepCaption supports many more features than what has been covered here. Some of them are documented on the [separate Features page](blob/master/features.md).
