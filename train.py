@@ -440,9 +440,13 @@ def main(args):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
 
+    stats_postfix = None
+    if args.validate_only:
+        stats_postfix = args.validate
+
     # Train the models
-    if args.load_model and not args.validate_only:
-        all_stats = init_stats(args, params)
+    if args.load_model:
+        all_stats = init_stats(args, params, postfix=stats_postfix)
     else:
         all_stats = {}
 
@@ -459,11 +463,15 @@ def main(args):
     if args.validate_only:
         stats = {}
         teacher_p = 1.0
+        if args.teacher_forcing != 'always':
+            print('WARNING: teacher_forcing!=always, not yet implemented for '
+                  '--validate_only mode')
+
         epoch = start_epoch-1
         val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                params, stats, epoch)
         all_stats[epoch+1] = stats
-        save_stats(args, params, all_stats, postfix=args.validate)
+        save_stats(args, params, all_stats, postfix=stats_postfix)
     else:
         for epoch in range(start_epoch, args.num_epochs):
             stats = {}
@@ -592,7 +600,7 @@ if __name__ == '__main__':
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
                         help='location of dataset configuration file')
-    parser.add_argument('--load_model', type=str,
+    parser.add_argument('--load_model', type=str, nargs='+',
                         help='existing model, for continuing training')
     parser.add_argument('--model_name', type=str)
     parser.add_argument('--model_basename', type=str, default='model',
@@ -707,11 +715,14 @@ if __name__ == '__main__':
     begin = datetime.now()
     print('Started training at {}.'.format(begin))
 
-    if args.profiler:
-        import cProfile
-        cProfile.run('main(args=args)', filename='train.prof')
-    else:
-        main(args=args)
+    models = args.load_model
+    for load_model in models:
+        args.load_model = load_model
+        if args.profiler:
+            import cProfile
+            cProfile.run('main(args=args)', filename='train.prof')
+        else:
+            main(args=args)
 
     end = datetime.now()
     print('Training ended at {}. Total training time: {}.'.format(end, end - begin))
