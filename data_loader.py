@@ -11,7 +11,6 @@ import numpy as np
 import torch
 import torch.utils.data as data
 
-#from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
 from collections import namedtuple
 from PIL import Image
 import configparser
@@ -372,6 +371,15 @@ def tokenize_caption(text, vocab, no_tokenize=False, show_tokens=False,
     return target
 
 
+def tokenize_paragraph_caption(caption, vocab):
+    target = []
+    # Get rid of the trailing period before splitting:
+    for sentence in caption.rstrip('.').split('.'):
+        target.append(tokenize_caption(sentence.strip(), vocab))
+
+    return target
+
+
 class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
@@ -399,6 +407,9 @@ class CocoDataset(data.Dataset):
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
         self.config_dict = config_dict
+
+        self.hierarchical_model = config_dict.get('hierarchical_model', False)
+        self.max_sentences = config_dict.get('max_sentences')
 
         print("COCO info loaded for {} images and {} captions.".format(len(self.coco.imgs),
                                                                        len(self.coco.anns)))
@@ -433,8 +444,11 @@ class CocoDataset(data.Dataset):
         # See whether we need to prepend start token to the sequence or not:
         skip_start_token = self.config_dict.get('skip_start_token')
 
-        target = tokenize_caption(caption, self.vocab,
-                                  skip_start_token=skip_start_token)
+        if self.hierarchical_model:
+            target = tokenize_paragraph_caption(caption, self.vocab)
+        else:
+            target = tokenize_caption(caption, self.vocab,
+                                      skip_start_token=skip_start_token)
 
         # We are in feature extraction-only mode,
         # use image filename as image identifier in lmdb:
@@ -474,6 +488,8 @@ class VisualGenomeIM2PDataset(data.Dataset):
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
         self.config_dict = config_dict
+        self.hierarchical_model = config_dict.get('hierarchical_model', False)
+        self.max_sentences = config_dict.get('max_sentences')
 
         self.paragraphs = []
 
@@ -512,7 +528,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
     def __getitem__(self, index):
         """Returns one data pair (image and paragraph)."""
-        cap = self.paragraphs[index]['caption']
+        caption = self.paragraphs[index]['caption']
         img_id = self.paragraphs[index]['image_id']
         path = os.path.join(self.root, str(img_id) + '.jpg')
 
@@ -526,7 +542,13 @@ class VisualGenomeIM2PDataset(data.Dataset):
         # Prepare external features
         # TODO probably wrong index ...
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
-        target = tokenize_caption(cap, self.vocab)
+
+        # For hierarchical model the sentences need to be separated:
+        if self.hierarchical_model:
+            target = tokenize_paragraph_caption(caption, self.vocab)
+        # Otherwise treat each paragraph as a single sentence:
+        else:
+            target = tokenize_caption(caption, self.vocab)
 
         # We are in feature extraction-only mode,
         # use image filename as image identifier in lmdb:
@@ -1000,6 +1022,201 @@ def collate_fn_vist(data):
     return images, targets, lengths, story_ids
 
 
+def collate_hierarchical(data, max_sentences, vocab):
+    """Creates mini-batch tensors from the list of tuples (image, caption).
+
+    We should build custom collate_fn rather than using default collate_fn,
+    because merging caption (including padding) is not supported in default.
+
+    Args:
+        data: list of tuple (image, caption).
+            - image: torch tensor of shape (3, 224, 224).
+            - caption: torch tensor of shape (?); variable length.
+            - img_id: id of the image in the dataset
+
+    Returns:
+        images: torch tensor of shape (batch_size, 3, 224, 224).
+        targets: torch tensor of shape (batch_size, padded_length).
+        lengths: list; valid length for each padded caption.
+    """
+    images, captions, image_ids, feature_sets = zip(*data)
+
+    def debugprint(stuff):
+        _print = False
+        if _print:
+            print(stuff)
+
+    debugprint("=" * 80)
+    debugprint('Raw captions:')
+    for i, paragraph in enumerate(captions):
+        debugprint("=" * 80)
+        debugprint("Paragraph {}, image_id {}".format(i, image_ids[i]))
+        debugprint("=" * 80)
+        for sentence in paragraph:
+            #print(sentence)
+            text = ' '.join(word_ids_to_words(sentence.tolist(), vocab))
+            debugprint('sentence: {}, length: {}, image_id: {}'.format(text, len(sentence), image_ids[i]))
+    debugprint("=" * 80)
+
+    # Merge images (from tuple of 3D tensor to 4D tensor).
+    images = torch.stack(images, 0)
+
+    # Get the length of the longest sentence:
+    _lengths = [[len(sentence) for sentence in paragraph] for paragraph in captions]
+
+    debugprint('Raw lengths: {}'.format(_lengths))
+
+    max_length = max(max(_lengths, key=lambda x: max(x)))
+    debugprint('Max length: {}'.format(max_length))
+    # print('max_length: {}'.format(max_length))
+
+    # Placeholder tensor for all captions, of dimension:
+    #   (batchsize X max allowed sentences per paragraph X longest sentence)
+    targets = torch.zeros(len(captions), max_sentences, max_length).long()
+
+    # Placeholder tensor for all sentence lengths, of dimension
+    #   (batchsize X max allowed sentences per paragraph)
+    lengths = torch.zeros(len(captions), max_sentences).long()
+
+    last_sentence_indicator = torch.zeros(len(captions), max_sentences).long()
+
+    # Generate a table storing data about which sentence in a
+    # paragraph is the last one:
+    for i, paragraph in enumerate(captions):
+        s = len(paragraph)
+        # print('s: {}'.format(s))
+        if s < max_sentences:
+            last_sentence_indicator[i, s - 1] = 1
+            # print('last_sentence_indicator[i, s]: {}'.format(last_sentence_indicator[i, s]))
+        else:
+            last_sentence_indicator[i, max_sentences - 1] = 1
+            # print('last_sentence_indicator[i, max_sentences]: {}'.format(last_sentence_indicator[i, max_sentences - 1]))
+
+    debugprint("=" * 80)
+    debugprint('Last sentence indicator matrix: {}'.format(last_sentence_indicator))
+    # Placeholder tensor for sorted image ids, of dimensions
+    #   (max allowed sentences per paragraph X batchsize)
+    # (NOTE: The sorting order for the sentence RNN is the same as the
+    # sorting order for the first word RNN)
+    # This shouldn't be a tensor! IDs can be anything!
+    # image_ids_sorted = torch.zeros(len(captions), max_sentences)
+
+    debugprint("=" * 80)
+    debugprint("Next step - copying captions to 'targets' tensor and populating"
+          " the 'lengths' tensor")
+    for i in range(len(captions)):
+        debugprint("=" * 80)
+        debugprint("Paragraph {}".format(i))
+        debugprint("=" * 80)
+        # This step also limits the number of sentences per paragraph 
+        # to be <= max_captions
+        for j in range(max_sentences):
+            if len(captions[i]) > j:
+                # print('len(captions[i]): {}'.format(len(captions[i])))
+                # print('captions[i]: {}'.format(captions[i]))
+                # print('j: {}'.format(j))
+                lengths[i, j] = len(captions[i][j])
+                # print('max_length: {}'.format(max_length))
+                # print('caption_length: {}'.
+                #      format(len(captions[i][j])))
+                targets[i, j, :lengths[i, j]] = captions[i][j]
+                text = ' '.join(word_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
+                debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], image_ids[i]))
+    debugprint("=" * 80)
+    # Create a list of lists storing image_ids at each sentence position:
+    # image_ids_sorted list holds actual image_ids at list index = 0,
+    # and sorting indices in the rest of the ids
+    sorting_order = [[] for _ in range(max_sentences)]
+
+    # First create a default sorting order:
+    _, idxs_sorted_0 = torch.sort(lengths[:, 0], descending=True)
+    debugprint("=" * 80)
+    debugprint("Sorting order based on the first sentence in each paragraph:")
+    debugprint(idxs_sorted_0)
+    debugprint("=" * 80)
+
+    lengths = lengths[idxs_sorted_0]
+    targets = targets[idxs_sorted_0]
+    # Sort image ids:
+    image_ids = [image_ids[i] for i in idxs_sorted_0]
+    debugprint("Lengths matrix sorted based on the first sentence in each paragraph:")
+    debugprint(lengths)
+    debugprint("=" * 80)
+
+    debugprint("Target captions sorted based on the first sentence in each paragraph:")
+    for i in range(len(captions)):
+        debugprint("=" * 80)
+        debugprint("Paragraph {}".format(i))
+        debugprint("=" * 80)
+        for j in range(max_sentences):
+            text = ' '.join(word_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
+            debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], image_ids[i]))
+    debugprint("=" * 80)
+
+
+    last_sentence_indicator = last_sentence_indicator[idxs_sorted_0]
+    debugprint('Last sentence indicator after the zeroth sorting:')
+    debugprint(last_sentence_indicator)
+    debugprint("=" * 80)
+
+    # And images:
+    images = images[idxs_sorted_0]
+    # For the first word-rnn we keep the same sorting order as in the sentence-rnn:
+    sorting_order[0] = [i for i in range(len(idxs_sorted_0))]
+
+    debugprint('Sorting order now is: ')
+    debugprint(sorting_order[0])
+    debugprint("=" * 80)
+
+    for j in range(1, max_sentences):
+        debugprint("=" * 80)
+        debugprint("Sorting sentence: {}".format(j))
+        debugprint("=" * 80)
+        lengths[:, j], idxs_sorted = torch.sort(lengths[:, j], descending=True)
+        debugprint('Sorting order:')
+        debugprint(idxs_sorted)
+        debugprint('Sorted lengths:')
+        debugprint(lengths[:, j])
+        # print('lengths: {}'.format(lengths[:, j]))
+        targets[:, j] = targets[:, j][idxs_sorted]
+        #last_sentence_indicator[:, j] = last_sentence_indicator[:, j][idxs_sorted]
+
+        # Sort images also (but only once), images are sorted in the
+        # same order as inputs for the first word-RNN:
+        # Also, image_ids_sorted list holds actual image ids in index = 0,
+        # and sorting indices in the rest of the ids
+        debugprint('Sorted captions:')
+        for i in range(len(images)):
+            text = ' '.join(word_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
+            debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], 
+                                            [image_ids[i] for i in idxs_sorted_0][i]))
+
+        sorting_order[j] = idxs_sorted
+
+    #import sys; sys.exit(3)
+
+
+    #print("Third step:")
+    #for i in range(len(captions)):
+    #    print("Paragraph {}".format(i))
+    #    for j in range(max_sentences):
+    ##        print(' '.join(word_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab)))
+    #       print('Sorting order: {}'.format(sorting_order[j]))
+
+    # print('lengths: {}'.format(lengths[:, 0]))
+
+    # Generate list of (batch_size, concatenated_feature_length) tensors,
+    # one for each feature set
+    batch_size = len(feature_sets)
+    num_feature_sets = len(feature_sets[0])
+    features = [torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0)
+                for fs_i in range(num_feature_sets)]
+
+    # TODO: Test if I can get correct sorting order back!
+    #import sys; sys.exit(3)
+    return (images, targets, lengths, image_ids, features,
+            sorting_order, last_sentence_indicator)
+
 def unzip_image_dir(image_dir):
     # Check if $TMPDIR envirnoment variable is set and use that
     env_tmp = os.environ.get('TMPDIR')
@@ -1041,6 +1258,16 @@ def get_dataset_class(cls_name):
     else:
         print('Invalid dataset {:s} specified'.format(cls_name))
         sys.exit(1)
+
+
+def set_collate_arguments(func, **kwargs):
+    """Outputs a collate function with all configurable arguments set
+    this is needed for data_loader constructur which expects the collate function
+    to be run with one argument only - data, so we need the following wrapper
+    to specify other needed parameters"""
+    def f(data):
+        return func(data, **kwargs)
+    return f
 
 
 def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
@@ -1090,6 +1317,15 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         dataset = datasets[0]
     else:
         dataset = data.ConcatDataset(datasets)
+
+    # Hierarchical model requires a different collate function:
+    if config_dict.get('hierarchical_model'):
+        print('Preparing collate callable for hierarchical model..')
+        max_sentences = config_dict['max_sentences']
+        _collate_fn = set_collate_arguments(collate_hierarchical,
+                                            max_sentences=max_sentences, vocab=vocab)
+    else:
+        _collate_fn = _collate_fn
 
     # Data loader:
     # This will return (images, captions, lengths) for each iteration.
