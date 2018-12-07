@@ -1,12 +1,3 @@
-# Input:
-# File list, H5 file list
-
-# Get 2 lists as input (lists will have one element if there is only on file)
-
-# Parse file names from file name list, use that as key
-
-# Do average 4096 wide features first
-
 import argparse
 import os
 import sys

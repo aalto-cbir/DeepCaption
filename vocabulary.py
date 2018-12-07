@@ -93,7 +93,7 @@ def get_vocab(ext_args, dataset_params=None):
                training the existing model, and if the loaded model contains
                vocabulary, otherwise fetch vocabulary Pickle from
                `vocabs/train1+train2+trainN.pkl` if it exists,
-               or create and load it if it doesnât.
+               or create and load it if it doesn't.
                Train1, train2, trainN are the training datasets used.
         REGEN - create a new vocabulary file from the training datasets used
                 for training, even if the cached vocab file exists
