@@ -412,8 +412,14 @@ class CocoDataset(data.Dataset):
         self.feature_loaders = feature_loaders
         self.config_dict = config_dict
 
-        self.hierarchical_model = config_dict.get('hierarchical_model', False)
-        self.max_sentences = config_dict.get('max_sentences')
+        # We are in training mode if vocab is not None, otherwise we might
+        # be in vocabulary generation mode, where we don't need to care about
+        # the hierarchical model:
+        if vocab is not None:
+            self.hierarchical_model = config_dict.get('hierarchical_model', False)
+            self.max_sentences = config_dict.get('max_sentences')
+        else:
+            self.hierarchical_model = False
 
         print("COCO info loaded for {} images and {} captions.".format(len(self.coco.imgs),
                                                                        len(self.coco.anns)))
@@ -492,8 +498,15 @@ class VisualGenomeIM2PDataset(data.Dataset):
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
         self.config_dict = config_dict
-        self.hierarchical_model = config_dict.get('hierarchical_model', False)
-        self.max_sentences = config_dict.get('max_sentences')
+
+        # We are in training mode if vocab is not None, otherwise we might
+        # be in vocabulary generation mode, where we don't need to care about
+        # the hierarchical model:
+        if vocab is not None:
+            self.hierarchical_model = config_dict.get('hierarchical_model', False)
+            self.max_sentences = config_dict.get('max_sentences')
+        else:
+            self.hierarchical_model = False
 
         self.paragraphs = []
 
@@ -929,6 +942,27 @@ class GenericDataset(data.Dataset):
         return len(self.filelist)
 
 
+def _collate_features(feature_sets):
+    # Generate list of (batch_size, concatenated_feature_length) tensors,
+    # one for each feature set
+    # feature_sets is a tuple of lists -
+    # -- one tuple corresponds to an image
+    # -- list elements correspond to different feature types for the same image
+    if feature_sets[0] is not None:
+        batch_size = len(feature_sets)
+        num_feature_sets = len(feature_sets[0])
+        features = list()
+
+        for fs_i in range(num_feature_sets):
+            if feature_sets[0][fs_i] is not None:
+                features.append(torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0))
+            else:
+                # Allow None features so that the feature type index in train.py stays correct
+                features.append(None)
+    else:
+        features = None
+
+
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption, image_ids).
 
@@ -972,24 +1006,7 @@ def collate_fn(data):
         lengths = None
         targets = None
 
-    # Generate list of (batch_size, concatenated_feature_length) tensors,
-    # one for each feature set
-    # feature_sets is a tuple of lists - 
-    # -- one tuple corresponds to an image
-    # -- list elements correspond to different feature types for the same image
-    if feature_sets[0] is not None:
-        batch_size = len(feature_sets)
-        num_feature_sets = len(feature_sets[0])
-        features = list()
-
-        for fs_i in range(num_feature_sets):
-            if feature_sets[0][fs_i] is not None:
-                features.append(torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0))
-            else:
-                # Allow None features so that the feature type index in train.py stays correct 
-                features.append(None)
-    else:
-        features = None
+    features = _collate_features(feature_sets)
 
     return images, targets, lengths, indices, features
 
@@ -1209,12 +1226,7 @@ def collate_hierarchical(data, max_sentences, vocab):
 
     # print('lengths: {}'.format(lengths[:, 0]))
 
-    # Generate list of (batch_size, concatenated_feature_length) tensors,
-    # one for each feature set
-    batch_size = len(feature_sets)
-    num_feature_sets = len(feature_sets[0])
-    features = [torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0)
-                for fs_i in range(num_feature_sets)]
+    features = _collate_features(feature_sets)
 
     # TODO: Test if I can get correct sorting order back!
     #import sys; sys.exit(3)
@@ -1322,8 +1334,11 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
     else:
         dataset = data.ConcatDataset(datasets)
 
-    # Hierarchical model requires a different collate function:
-    if config_dict.get('hierarchical_model'):
+    # Hierarchical model requires a different collate function,
+    # also when vocab is set to None it means that we are building the vocabulary,
+    # and thus should not be honoring the hierarchical_model specific stuff when loading 
+    # the model
+    if config_dict.get('hierarchical_model') and vocab is not None:
         print('Preparing collate callable for hierarchical model..')
         max_sentences = config_dict['max_sentences']
         _collate_fn = set_collate_arguments(collate_hierarchical,
