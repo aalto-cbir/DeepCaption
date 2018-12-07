@@ -64,10 +64,11 @@ def get_model_name(args, params):
 
 # TODO: convert parameters to **kwargs
 def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
-              skip_start_token, rnn_hidden_init):
+               skip_start_token, rnn_hidden_init):
     model_name = get_model_name(args, params)
 
     state = {
+        'hierarchical_model': params.hierarchical_model,
         'epoch': epoch + 1,
         # Attention models can in principle be trained without an encoder:
         'encoder': encoder.state_dict() if encoder is not None else None,
@@ -87,6 +88,12 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
         'skip_start_token': skip_start_token,
         'rnn_hidden_init': rnn_hidden_init
     }
+
+    if params.hierarchical_model:
+        state['max_sentences'] = params.max_sentences
+        state['dropout_stopping'] = params.dropout_stopping
+        state['dropout_fc'] = params.dropout_fc
+        state['fc_size'] = params.fc_size
 
     file_name = 'ep{}.model'.format(epoch + 1)
 
@@ -129,42 +136,6 @@ def save_stats(args, params, all_stats, postfix=None):
     print('Wrote stats to {}.'.format(filename))
 
 
-def find_matching_model(args, params):
-    """Get a model file matching the parameters given with the latest trained epoch"""
-    print('Attempting to resume from latest epoch matching supplied '
-          'parameters...')
-    # Get a matching filename without the epoch part
-    model_name = get_model_name(args, params)
-
-    # Files matching model:
-    full_path_prefix = os.path.join(args.model_path, model_name)
-    matching_files = glob.glob(full_path_prefix + '*.model')
-
-    print("Looking for: {}".format(full_path_prefix + '*.model'))
-
-    # get a file name with a largest matching epoch:
-    file_regex = full_path_prefix + '/ep([0-9]*).model'
-    r = re.compile(file_regex)
-    last_epoch = 0
-
-    for file in matching_files:
-        m = r.match(file)
-        if m:
-            matched_epoch = int(m.group(1))
-            if matched_epoch > last_epoch:
-                last_epoch = matched_epoch
-
-    model_file_path = None
-    if last_epoch:
-        model_file_name = 'ep{}.model'.format(last_epoch)
-        model_file_path = os.path.join(full_path_prefix, model_file_name)
-        print('Found matching model: {}'.format(args.load_model))
-    else:
-        print("WARNING: Failed to intelligently resume...")
-
-    return model_file_path
-
-
 def get_teacher_prob(k, i, beta=1):
     """Inverse sigmoid sampling scheduler determines the probability
     with which teacher forcing is turned off, more info here:
@@ -201,8 +172,20 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
     res = {}
 
     total_loss = 0
+
+    if params.hierarchical_model:
+        total_loss_sent = 0
+        total_loss_word = 0
+
     num_batches = 0
-    for i, (images, captions, lengths, image_ids, features) in enumerate(valid_loader):
+    for i, data in enumerate(valid_loader):
+        if params.hierarchical_model:
+            (images, captions, lengths, image_ids, features,
+             sorting_order, last_sentence_indicator) = data
+        else:
+            (images, captions, lengths, image_ids, features) = data
+            sorting_order = None
+
         if len(scorers) > 0:
             for j in range(captions.shape[0]):
                 jid = image_ids[j]
@@ -220,8 +203,13 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             targets = pack_padded_sequence(captions[:, 1:], lengths,
                                            batch_first=True)[0]
         else:
-            targets = pack_padded_sequence(captions, lengths,
-                                           batch_first=True)[0]
+            if params.hierarchical_model:
+                targets = prepare_hierarchical_targets(last_sentence_indicator,
+                                                       args.max_sentences,
+                                                       lengths, captions)
+            else:
+                targets = pack_padded_sequence(captions, lengths,
+                                               batch_first=True)[0]
 
         init_features = features[0].to(device)if len(features) > 0 and \
             features[0] is not None else None
@@ -230,7 +218,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
 
         with torch.no_grad():
             outputs = model(images, init_features, captions, lengths,
-                            persist_features, teacher_p, args.teacher_forcing)
+                            persist_features, teacher_p, args.teacher_forcing, sorting_order)
 
             if args.attention is not None:
                 outputs, alphas = outputs
@@ -246,6 +234,11 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                     sampled_ids_batch, alphas = sampled_batch
 
         loss = criterion(outputs, targets)
+
+        if params.hierarchical_model:
+            _, loss_sent, _, loss_word = criterion.item_terms()
+            total_loss_sent += float(loss_sent)
+            total_loss_word += float(loss_word)
 
         if args.attention is not None and args.regularize_attn:
             loss += ((1. - alphas.sum(dim=1)) ** 2).mean()
@@ -273,9 +266,41 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
 
     val_loss = total_loss / num_batches
     stats['validation_loss'] = val_loss
+
+    if params.hierarchical_model:
+        stats['val_loss_sentence'] = total_loss_sent / num_batches
+        stats['val_loss_word'] = total_loss_word / num_batches
     print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
         epoch + 1, end - begin, val_loss))
     return val_loss
+
+
+def prepare_hierarchical_targets(last_sentence_indicator, max_sentences, lengths, captions):
+    """Prepares the training targets used by hierarchical model"""
+    # Validate that the last sentence indicator is outputting correct data:
+    last_sentence_indicator = last_sentence_indicator.to(device)
+    word_rnn_targets = []
+    for j in range(max_sentences):
+        if lengths[0, j] == 0:
+            break   # no more sentences at position >= j in current minibatch
+
+        # print(lengths[:, i])
+        # change to offset / first occurance of zero instead of indices
+        non_zero_idxs = lengths[:, j] > 0
+        #print(j)
+        #print('lengths[:, j] {}'.format(lengths[:, j]))
+        #print('print: captions[:, j] {}'.format(captions[:, j]))
+        # print('non zero indices: {}'.format(non_zero_idxs))
+        # print('filtered: {}'.format(lengths[:, i][non_zero_idxs]))
+        # Pack the non-zero values for each sentence position:
+        packed = pack_padded_sequence(captions[:, j][non_zero_idxs],
+                                      lengths[:, j][non_zero_idxs],
+                                      batch_first=True)[0]
+        word_rnn_targets.append(packed)
+
+    targets = (last_sentence_indicator, word_rnn_targets)
+
+    return targets
 
 
 def main(args):
@@ -313,10 +338,11 @@ def main(args):
     # Set Model parameters #
     ########################
 
-    params = ModelParams.fromargs(args)
+    # Store parameters gotten from arguments separately:
+    arg_params = ModelParams.fromargs(args)
 
     print("Model parameters inferred from command arguments: ")
-    print(params)
+    print(arg_params)
     start_epoch = 0
 
     ###############################
@@ -326,14 +352,9 @@ def main(args):
 
     state = None
 
-    # Intelligently resume from the newest trained epoch matching
-    # supplied configuration:
-    if args.resume:
-        args.load_model = find_matching_model(args, params)
-
     if args.load_model:
         state = torch.load(args.load_model)
-        new_external_features = params.features.external
+        new_external_features = arg_params.features.external
         params = ModelParams(state)
         if len(new_external_features) and params.features.external != new_external_features:
             print('WARNING: external features changed: ',
@@ -342,10 +363,12 @@ def main(args):
             params.update_ext_features(new_external_features)
         start_epoch = state['epoch']
         print('Loaded model {} at epoch {}.'.format(args.load_model,
-                                                     start_epoch))
-        
+                                                    start_epoch))
+
         print("Final model parameters (loaded model + command arguments): ")
         print(params)
+    else:
+        params = arg_params
 
     if params.rnn_hidden_init == 'from_features' and params.skip_start_token:
         print("ERROR: Please remove --skip_start_token if you want to use image features "
@@ -353,6 +376,14 @@ def main(args):
               " the process of sequence generation, since we don't have image features "
               " embedding as the first input token.")
         sys.exit(1)
+
+    # Force set the following hierarchical model parameters every time:
+    if params.hierarchical_model:
+        params.max_sentences = arg_params.max_sentences
+        params.weight_sentence_loss = arg_params.weight_sentence_loss
+        params.weight_word_loss = arg_params.weight_word_loss
+        params.dropout_stopping = arg_params.dropout_stopping
+        params.dropout_fc = arg_params.dropout_fc
 
     ##############################
     # Load dataset configuration #
@@ -381,6 +412,11 @@ def main(args):
             i.config_dict['no_tokenize'] = args.no_tokenize
             i.config_dict['show_tokens'] = args.show_tokens
             i.config_dict['skip_start_token'] = params.skip_start_token
+
+            if params.hierarchical_model:
+                i.config_dict['hierarchical_model'] = True
+                i.config_dict['max_sentences'] = params.max_sentences
+                i.config_dict['crop_regions'] = False
 
         if args.validate is not None:
             validation_dataset_params = dataset_configs.get_params(args.validate)
@@ -460,7 +496,11 @@ def main(args):
     opt_params = model.get_opt_params()
 
     # Loss and optimizer
-    criterion = nn.CrossEntropyLoss()
+    if params.hierarchical_model:
+        criterion = HierarchicalXEntropyLoss(weight_sentence_loss=params.weight_sentence_loss,
+                                             weight_word_loss=params.weight_word_loss)
+    else:
+        criterion = nn.CrossEntropyLoss()
 
     default_lr = 0.001
     if args.optimizer == 'adam':
@@ -527,11 +567,24 @@ def main(args):
         for epoch in range(start_epoch, args.num_epochs):
             stats = {}
             begin = datetime.now()
+
             total_loss = 0
+
+            if params.hierarchical_model:
+                total_loss_sent = 0
+                total_loss_word = 0
+
             num_batches = 0
             vocab_counts = { 'cnt':0, 'max':0, 'min':9999,
                              'sum':0, 'unk_cnt':0, 'unk_sum':0 }
-            for i, (images, captions, lengths, _, features) in enumerate(data_loader):
+            for i, data in enumerate(data_loader):
+
+                if params.hierarchical_model:
+                    (images, captions, lengths, image_ids, features, sorting_order,
+                     last_sentence_indicator) = data
+                else:
+                    (images, captions, lengths, _, features) = data
+
                 if epoch==0:
                     unk = vocab('<unk>')
                     for j in range(captions.shape[0]):
@@ -552,14 +605,20 @@ def main(args):
 
                 # Remove <start> token from targets if we are initializing the RNN
                 # hidden state from image features:
-                if params.rnn_hidden_init == 'from_features':
+                if params.rnn_hidden_init == 'from_features' and not params.hierarchical_model:
                     # Subtract one from all lengths to match new target lengths:
                     lengths = [x - 1 if x > 0 else x for x in lengths]
                     targets = pack_padded_sequence(captions[:, 1:], lengths,
                                                    batch_first=True)[0]
                 else:
-                    targets = pack_padded_sequence(captions, lengths,
-                                                   batch_first=True)[0]
+                    if params.hierarchical_model:
+                        targets = prepare_hierarchical_targets(last_sentence_indicator,
+                                                               args.max_sentences,
+                                                               lengths, captions)
+                    else:
+                        targets = pack_padded_sequence(captions, lengths,
+                                                       batch_first=True)[0]
+                        sorting_order = None
 
                 init_features = features[0].to(device) if len(features) > 0 and \
                     features[0] is not None else None
@@ -574,9 +633,9 @@ def main(args):
 
                 teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                              args.teacher_forcing_beta)
-                
+
                 outputs = model(images, init_features, captions, lengths, persist_features,
-                                teacher_p, args.teacher_forcing)
+                                teacher_p, args.teacher_forcing, sorting_order)
 
                 # Attention models output additional tensor containing attention distribution
                 # over image:
@@ -609,6 +668,11 @@ def main(args):
                 total_loss += loss.item()
                 num_batches += 1
 
+                if params.hierarchical_model:
+                    _, loss_sent, _, loss_word = criterion.item_terms()
+                    total_loss_sent += float(loss_sent)
+                    total_loss_word += float(loss_word)
+
                 # Print log info
                 if (i + 1) % args.log_step == 0:
                     print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, '
@@ -617,12 +681,24 @@ def main(args):
                                  np.exp(loss.item())))
                     sys.stdout.flush()
 
+                    if params.hierarchical_model:
+                        weight_sent, loss_sent, weight_word, loss_word = criterion.item_terms()
+                        print('Sentence Loss: {:.4f}, '
+                              'Word Loss: {:.4f}'.
+                              format(float(loss_sent), float(loss_word)))
+                        sys.stdout.flush()
+
                 if i + 1 == args.num_batches:
                     break
 
             end = datetime.now()
 
             stats['training_loss'] = total_loss / num_batches
+
+            if params.hierarchical_model:
+                stats['loss_sentence'] = total_loss_sent / num_batches
+                stats['loss_word'] = total_loss_word / num_batches
+
             print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                         stats['training_loss']))
             save_model(args, params, model.encoder, model.decoder, optimizer, epoch,
@@ -737,6 +813,26 @@ if __name__ == '__main__':
                         help='initization strategy for RNN hidden and cell states. '
                         'Supported values: None (set to zeros), from_features '
                         '(using a linear transform on (mean/average pooled) image feature vector')
+
+    # Hierarchical model parameters, only in use if --hierarchical_model flag is set:
+    parser.add_argument('--hierarchical_model', action='store_true',
+                        help='Add this flag to train a model with hierarchical decoder RNN')
+    parser.add_argument('--pooling_size', type=int, default=1024,
+                        help='encoder pooling size')
+    parser.add_argument('--max_sentences', type=int, default=6,
+                        help='defines maximum number of sentences per caption'
+                             'for hierachichal model')
+    parser.add_argument('--weight_sentence_loss', type=float, default=5.0,
+                        help='weight for the sentence loss for hierarchical model')
+    parser.add_argument('--weight_word_loss', type=float, default=1.0,
+                        help='weight for the word loss for hierarchical model')
+    parser.add_argument('--dropout_stopping', type=float, default=0.0,
+                        help='dropout for the stopping distribution')
+    parser.add_argument('--dropout_fc', type=float, default=0.0,
+                        help='dropout for the encoder FC layer')
+    parser.add_argument('--fc_size', type=int,
+                        help='size of the fully connected layer in the sentence LSTM '
+                             'Defaults to pooling_size')
 
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
