@@ -109,7 +109,6 @@ You can also do inference on any configured dataset:
 ```
 
 You can add e.g., `--scoring cider` to automatically calculate scoring metrics if a ground truth has been defined for that dataset.
-`
 
 Inference also supports the following flags:
 * `--max_seq_length` - maximum length of decoded caption (in words)
