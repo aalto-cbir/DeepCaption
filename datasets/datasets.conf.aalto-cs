@@ -126,3 +126,12 @@ image_dir     =
 
 [picsom:lsmdc2015:train]
 subset        = all
+
+[picsom:flickr30k]
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/flickr30k
+features_path = features
+caption_path  = textdumps/gt-cooked.txt
+image_dir     =
+
+[picsom:flickr30k:train]
+subset        = all

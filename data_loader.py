@@ -809,7 +809,7 @@ class PicSOMDataset(data.Dataset):
         with open(tt) as fp:
             for l in fp:
                 l = l.rstrip()
-                #print(l)
+                #print('<{}>'.format(l))
                 a = re.match('([^ ]+)( (.*))?', l)
                 assert a, 'reading <'+tt+'> failed'
                 label = a.group(1)

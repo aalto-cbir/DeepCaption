@@ -43,8 +43,8 @@ class ModelParams:
 
     def _get_param(self, d, param, default):
         if param not in d or d[param] is None:
-            print('WARNING: {} not set, using default value {}'.
-                  format(param, default))
+            # print('WARNING: {} not set, using default value {}'.
+            #       format(param, default))
             return default
         return d[param]
 
@@ -87,7 +87,9 @@ class ModelParams:
                                                           self.persist_features)
 
     def _update_ext_features(self, ef, features):
-        return features._replace(external=ef.split(','))
+        if type(ef) is str:
+            ef = ef.split(',')
+        return features._replace(external=ef)
 
     def __str__(self):
         return '\n'.join(['[ModelParams] {}={}'.format(k, v) for k, v in
