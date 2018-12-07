@@ -16,6 +16,14 @@ Teacher forcing is controlled by parameter `--teacher_forcing`. By default this 
 
 `--teacher_forcing_k` sets the value of `k` and `--teacher_forcing_beta` sets the value for `beta`.
 
+## Hierarchical model
+
+This repository contains and implementation of hierarchical model inspired by [Krause et al](arxiv://link). You can train the hierarchical model on for example Visual Genome paragraph data as well as COCO captions (where each caption is considered a paragraph containing single sentence.) 
+
+```bash
+./train.py --dataset vgim2p:train --validate vgim2p:val --vocab AUTO --model_name Hierarchical/basic_hierarchical_model --hierarchical_model
+```
+
 # Model evaluation
 
 COCO evaluation library works only with Python 2. Therefore you will need to make sure that you are running the below code in an environment that supports this.
