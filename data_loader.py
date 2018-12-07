@@ -176,15 +176,16 @@ class DatasetParams:
 
 class ExternalFeature:
     def __init__(self, filename, base_path):
+        if base_path is None:
+            base_path = ''
         full_path = os.path.expanduser(os.path.join(base_path, filename))
         self.lmdb = None
         self.lmdb_path = None
-        self.bin  = None
+        self.bin = None
         self.disable_cache = False
 
         if not os.path.exists(full_path):
-            print('ERROR: external feature file not found:', full_path)
-            sys.exit(1)
+            raise FileNotFoundError('ERROR: external feature file not found: ' + full_path)
         if filename.endswith('.h5'):
             import h5py
             self.f = h5py.File(full_path, 'r')
@@ -274,7 +275,11 @@ class ExternalFeature:
                         x = self._lmdb_to_numpy(txn.get(str(idx).encode('ascii')))
                         x.reshape(self._vdim)
             else:
-                x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+                try:
+                    x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+                except:
+                    print('No feature data was found with key <{}>'.format(str(idx)))
+                    exit(1)
                 x.reshape(self._vdim)
         elif self.bin is not None:
             from picsom.bin_data import picsom_bin_data

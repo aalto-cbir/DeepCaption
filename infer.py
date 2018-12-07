@@ -48,6 +48,16 @@ def fix_caption(caption, skip_start_token=False):
     return ret.capitalize()
 
 
+def caption_ids_to_words(sampled_ids, vocab):
+    sampled_caption = []
+    for word_id in sampled_ids.cpu().numpy():
+        word = vocab.idx2word[word_id]
+        sampled_caption.append(word)
+        if word == '<end>':
+            break
+    return fix_caption(' '.join(sampled_caption))
+
+
 def path_from_id(image_dir, image_id):
     """Return image path based on image directory, image id and
     glob matching for extension"""
@@ -96,12 +106,19 @@ def infer(ext_args=None):
     args = parse_args(ext_args)
 
     global device
-    device = torch.device('cuda' if torch.cuda.is_available()
-                          and not args.cpu else 'cpu')
+    device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
 
     # Create model directory
     if not os.path.exists(args.results_path):
         os.makedirs(args.results_path)
+
+    scorers = {}
+    if args.scoring is not None:
+        for s in args.scoring.split(','):
+            s = s.lower().strip()
+            if s == 'cider':
+                from eval.cider import Cider
+                scorers['CIDEr'] = Cider(df='corpus')
 
     # Image preprocessing
     transform = transforms.Compose([
@@ -194,10 +211,25 @@ def infer(ext_args=None):
                                   args.max_seq_length,
                                   model.decoder.num_attention_locs))
 
+    gts = {}
+    res = {}
+
     print('Starting inference...')
     show_progress = sys.stderr.isatty() and not args.verbose
     for i, (images, ref_captions, lengths, image_ids,
             features) in enumerate(tqdm(data_loader, disable=not show_progress)):
+
+        if len(scorers) > 0:
+            for j in range(len(ref_captions)):
+                jid = image_ids[j]
+                if jid not in gts:
+                    gts[jid] = []
+                rcs = ref_captions[j]
+                if type(rcs) is str:
+                    rcs = [rcs]
+                for rc in rcs:
+                    gts[jid].append(rc.lower())
+
         images = images.to(device)
 
         init_features = features[0].to(device)if len(features) > 0 and \
@@ -244,25 +276,30 @@ def infer(ext_args=None):
                 print('=>', caption)
 
             output_data.append({'caption': caption, 'image_id': image_ids[i]})
+            res[image_ids[i]] = [caption.lower()]
 
-    output_file = None
+    for score_name, scorer in scorers.items():
+        score = scorer.compute_score(gts, res)[0]
+        print('Test', score_name, score)
+
+    # Decide output format, fall back to txt
+    if args.output_format is not None:
+        output_format = args.output_format
+    elif args.output_file and args.output_file.endswith('.json'):
+        output_format = 'json'
+    else:
+        output_format = 'txt'
 
     # Create a sensible default output path for results:
+    output_file = None
     if not args.output_file and not args.print_results:
         model_name = args.model.split(os.sep)[-2]
         model_epoch = basename(args.model)
-        output_file = '{}-{}.{}'.format(model_name, model_epoch, args.output_format)
+        output_file = '{}-{}.{}'.format(model_name, model_epoch, output_format)
     else:
         output_file = args.output_file
 
     if output_file:
-        if args.output_format is not None:
-            output_format = args.output_format
-        elif output_file.endswith('.json'):
-            output_format = 'json'
-        else:
-            output_format = 'txt'
-
         output_path = os.path.join(args.results_path, output_file)
         if output_format == 'json':
             json.dump(output_data, open(output_path, 'w'))
@@ -313,13 +350,13 @@ def parse_args(ext_args=None):
                         help='Save paths to images in the output file')
     parser.add_argument('--output_file', type=str,
                         help='path for output file, default: model_name.txt')
-    parser.add_argument('--output_format', type=str,
-                        help='format of the output file')
+    parser.add_argument('--output_format', type=str, help='format of the output file')
     parser.add_argument('--verbose', help='verbose output',
                         action='store_true')
     parser.add_argument('--results_path', type=str, default='results/',
                         help='path for saving results')
     parser.add_argument('--print_results', action='store_true')
+    parser.add_argument('--scoring', type=str)
     parser.add_argument('--max_seq_length', type=int, default=20,
                         help='maximum allowed length of the decoded sequence')
     parser.add_argument('--no_repeat_sentences', action='store_true',
