@@ -258,13 +258,7 @@ def infer(ext_args=None):
             sampled_ids = sampled_ids_batch[i].cpu().numpy()
 
             # Convert word_ids to words
-            sampled_caption = []
-            for word_id in sampled_ids:
-                word = vocab.idx2word[word_id]
-                sampled_caption.append(word)
-                if word == '<end>':
-                    break
-            caption = fix_caption(' '.join(sampled_caption), params.skip_start_token)
+            caption = caption_ids_to_words(sampled_ids, vocab)
 
             if args.no_repeat_sentences:
                 caption = remove_duplicate_sentences(caption)
