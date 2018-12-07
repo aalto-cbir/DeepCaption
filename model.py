@@ -534,8 +534,9 @@ class EncoderDecoder(nn.Module):
                 teacher_p=1.0, teacher_forcing='always', sorting_order=None):
         features = self.encoder(images, init_features)
         if self.model_type == 'hierarchical_model':
-            outputs = self.decoder(features, captions, lengths, images, persist_features,
-                                   teacher_p, teacher_forcing, sorting_order)
+            # TODO: Make the hierarchical and regular decoder take the same arguments
+            # if possible:
+            outputs = self.decoder(features, captions, lengths, images, sorting_order)
         else:
             outputs = self.decoder(features, captions, lengths, images, persist_features,
                                    teacher_p, teacher_forcing)
