@@ -962,6 +962,8 @@ def _collate_features(feature_sets):
     else:
         features = None
 
+    return features
+
 
 def collate_fn(data):
     """Creates mini-batch tensors from the list of tuples (image, caption, image_ids).
