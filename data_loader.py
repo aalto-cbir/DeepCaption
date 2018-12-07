@@ -16,6 +16,10 @@ from PIL import Image
 import configparser
 
 
+def caption_ids_to_words(a, b):
+    return ['']
+
+
 def basename(fname):
     return os.path.splitext(os.path.basename(fname))[0]
 
@@ -1054,7 +1058,7 @@ def collate_hierarchical(data, max_sentences, vocab):
         debugprint("=" * 80)
         for sentence in paragraph:
             #print(sentence)
-            text = ' '.join(word_ids_to_words(sentence.tolist(), vocab))
+            text = ' '.join(caption_ids_to_words(sentence.tolist(), vocab))
             debugprint('sentence: {}, length: {}, image_id: {}'.format(text, len(sentence), image_ids[i]))
     debugprint("=" * 80)
 
@@ -1120,7 +1124,7 @@ def collate_hierarchical(data, max_sentences, vocab):
                 # print('caption_length: {}'.
                 #      format(len(captions[i][j])))
                 targets[i, j, :lengths[i, j]] = captions[i][j]
-                text = ' '.join(word_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
+                text = ' '.join(caption_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
                 debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], image_ids[i]))
     debugprint("=" * 80)
     # Create a list of lists storing image_ids at each sentence position:
@@ -1149,7 +1153,7 @@ def collate_hierarchical(data, max_sentences, vocab):
         debugprint("Paragraph {}".format(i))
         debugprint("=" * 80)
         for j in range(max_sentences):
-            text = ' '.join(word_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
+            text = ' '.join(caption_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
             debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], image_ids[i]))
     debugprint("=" * 80)
 
@@ -1187,7 +1191,7 @@ def collate_hierarchical(data, max_sentences, vocab):
         # and sorting indices in the rest of the ids
         debugprint('Sorted captions:')
         for i in range(len(images)):
-            text = ' '.join(word_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
+            text = ' '.join(caption_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
             debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], 
                                             [image_ids[i] for i in idxs_sorted_0][i]))
 
@@ -1200,7 +1204,7 @@ def collate_hierarchical(data, max_sentences, vocab):
     #for i in range(len(captions)):
     #    print("Paragraph {}".format(i))
     #    for j in range(max_sentences):
-    ##        print(' '.join(word_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab)))
+    ##        print(' '.join(caption_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab)))
     #       print('Sorting order: {}'.format(sorting_order[j]))
 
     # print('lengths: {}'.format(lengths[:, 0]))
