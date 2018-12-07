@@ -77,23 +77,25 @@ append_command_to_log
 
 # Expected result: same as above, but validation loss is also calculated for each epoch
 $TRAIN_PY --dataset coco:train2014 --validate coco:val2014 --vocab AUTO \
-                  --num_batches 10 --model_name __test/validation --num_epochs 1
+                  --num_batches 10 --model_name __test/validation --num_epochs 1 \
+                  --validation_scoring cider
 append_command_to_log
 
 # Expected result: same as above, but using external features:
 INIT=c_in12_rn152_pool5o_d_a.lmdb
 $TRAIN_PY --dataset coco:train2014 --validate coco:val2014 --features $INIT \
                   --vocab AUTO --num_batches 10 --num_epochs 1 \
-                  --model_name __test/ext_features
+                  --model_name __test/ext_features --validation_scoring cider
 append_command_to_log
 
 
 # Expected result: Model trained on MS COCO dataset with validation loss approaching
 # around 2.06 around epochs 11-12
+# Validation CIDEr 0.7250630490480385 at epoch 11
 $TRAIN_PY --dataset coco:train2014  --validate coco:val2014 --features $INIT \
                 --vocab AUTO --model_name __test/coco_full --lr_schedule \
-                --num_epochs 11 --num_workers 4 --num_layers 2\
-                --dropout 0.2
+                --num_epochs 11 --num_workers 4 --num_layers 2 \
+                --dropout 0.2 --validation_scoring cider
 append_command_to_log
 
 
@@ -102,9 +104,9 @@ MODEL=models/__test/coco_full/ep11.model
 $INFER_PY --model $MODEL --dataset coco:val2014 --num_workers 4 \
                   --output_format json
 append_command_to_log
-# Expected result: reasonable looking results in results/__test_coco_full_ep11.json
+# Expected result: METEOR: 0.240; CIDEr:  0.851
 
-RESULTS=results/__test/coco_full-ep11.json
+RESULTS=results/coco_full-ep11.json
 GROUND_TRUTH=/m/cs/scratch/imagedb/picsom/databases/COCO/download/annotations/captions_val2014.json
 #GROUND_TRUTH=/proj/mediaind/picsom/databases/COCO/download/annotations/captions_val2014.json
 $EVAL_COCO_PY $RESULTS --ground_truth $GROUND_TRUTH
