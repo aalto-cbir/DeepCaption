@@ -8,7 +8,7 @@ MODEL="__test/coco-max-default-nl2-skip_start_token"
                  --features coco\:train2014+coco\:val2014-resnet152-max-normalize-default.lmdb \
                  --validate coco:val2014 \
                  --model_name EncoderDecoder/test/${MODEL} \
-                 --skip_start_token
+                 --skip_start_token --validation_scoring cider
 
 
 # Infer model with skipped start token:

@@ -11,7 +11,7 @@ MODEL="__test/coco-max-default-nl2-rnn_init_tests"
                  --validate coco:val2014 \
                  --model_name EncoderDecoder/test/${MODEL} \
                  --rnn_hidden_init from_features \
-                 --skip_start_token
+                 --skip_start_token 
 
 
 # The following should work:
@@ -20,7 +20,7 @@ MODEL="__test/coco-max-default-nl2-rnn_init_tests"
                  --features coco\:train2014+coco\:val2014-resnet152-max-normalize-default.lmdb \
                  --validate coco:val2014 \
                  --model_name EncoderDecoder/test/${MODEL} \
-                 --rnn_hidden_init from_features --num_batches 10
+                 --rnn_hidden_init from_features --num_batches 10 --validation_scoring cider
                 
 
 # Infer model with skipped start token:
