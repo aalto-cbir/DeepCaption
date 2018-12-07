@@ -255,7 +255,7 @@ def infer(ext_args=None):
                 output_alphas[offset_begin: offset_end, :] = alphas_numpy
 
         for i in range(sampled_ids_batch.shape[0]):
-            sampled_ids = sampled_ids_batch[i].cpu().numpy()
+            sampled_ids = sampled_ids_batch[i]
 
             # Convert word_ids to words
             caption = caption_ids_to_words(sampled_ids, vocab)
