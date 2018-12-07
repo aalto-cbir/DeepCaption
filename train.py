@@ -17,7 +17,9 @@ from torchvision import transforms
 # (Needed to handle Vocabulary pickle)
 from vocabulary import Vocabulary, get_vocab
 from data_loader import get_loader, DatasetParams
-from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
+from model import ModelParams, EncoderDecoder
+from model import SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
+from model import HierarchicalXEntropyLoss
 from infer import caption_ids_to_words
 
 torch.manual_seed(42)
@@ -588,7 +590,9 @@ def main(args):
                 if epoch==0:
                     unk = vocab('<unk>')
                     for j in range(captions.shape[0]):
-                        xl = captions[j,:]
+                        # Flatten the caption in case it's paragraph
+                        # this is harmless for regular captions too:
+                        xl = captions[j,:].view(-1)
                         xw = xl>unk
                         xu = xl==unk
                         xwi = sum(xw).item()
