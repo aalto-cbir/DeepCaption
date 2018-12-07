@@ -7,7 +7,7 @@ Teacher forcing in RNNs refers to feeding ground truth token at time step `t`. [
 To train a model with sampled teacher forcing using `k=2200` and `beta=0.3` run the following:
 
 ```bash
-$ python train.py --dataset coco:train2014 --model_name my_model --teacher_forcing sampled --teacher_forcing_k 2200 --teaacher_forcing_beta 0.3
+python train.py --dataset coco:train2014 --model_name my_model --teacher_forcing sampled --teacher_forcing_k 2200 --teaacher_forcing_beta 0.3
 ```
 
 This inverse sigmoid scheduling implementation depends on the parameter `k` which is usually in the order of `1000s` and can be interpreted as "how soon do we want to start decreasing the probability of teacher forcing?" and parameter `beta` which between `0` and `1` and can be interpreted as "once we start to use model's own outputs, how fast do we want the rate of model outputs usage to increase?", intuitively this is the slope of the middle segment of the inverse sigmoid curve.
@@ -23,17 +23,17 @@ COCO evaluation library works only with Python 2. Therefore you will need to mak
 1) Link to coco-caption library:
 
 ```bash
-$ git clone https://github.com/tylin/coco-caption ~/workdir/coco-caption
-$ cd image_captioning
-$ ln -s path/to/coco-caption/pycocoevalcap datasets/
+git clone https://github.com/tylin/coco-caption ~/workdir/coco-caption
+cd image_captioning
+ln -s path/to/coco-caption/pycocoevalcap datasets/
 ```
 
 2) Install PyCocoTools for Python2 (your Python2 environment may requires loading modules):
 
 ```bash
-$ module purge
-$ module load python-env/2.7.10
-$ pip2 install pycocotools --user
+module purge
+module load python-env/2.7.10
+pip2 install pycocotools --user
 ```
 
 3) modify the file `pycocoevalcap/eval.py` to remove other metrics other than METEOR and CIDEr, on lines 39-45.
@@ -41,14 +41,14 @@ $ pip2 install pycocotools --user
 Once the setup steps above are done, you can perform evaluation on a json file that corresponds to one particular model:
 
 ```bash
-$ python eval_coco.py path/to/result/captions.json --ground_truth datasets/data/COCO/annotations/captions_val2014.json
+python eval_coco.py path/to/result/captions.json --ground_truth datasets/data/COCO/annotations/captions_val2014.json
 ```
 By default the above command creates a file containing METEOR and CIDEr score in JSON formatted file having an extension `*.eval`
 
 Finally, to simplify generating user readable output, an `eval2csv.py` script combines multiple `*.eval` files into a single, easy to parse and read CSV file:
 
 ```bash
-$ python eval2csv.py --evaluations_dir path/containing/eval_files --output_file output_file.csv 
+python eval2csv.py --evaluations_dir path/containing/eval_files --output_file output_file.csv 
 ```
 
 # Feature Extraction
@@ -58,7 +58,7 @@ You can use `extract_dataset_features.py` to extract features from one of the co
 The resulting features are saved using `lmdb` file format. Example command for generating features computed from images in MS-COCO training and validation sets using ResNet-152 CNN:
 
 ```bash
-$ python extract_dataset_features.py --dataset coco:train2014+coco:val2014 --extractor resnet152
+python extract_dataset_features.py --dataset coco:train2014+coco:val2014 --extractor resnet152
 ```
 
 Feature extraction script currently supports the feature types specified by `--feature_type`:
