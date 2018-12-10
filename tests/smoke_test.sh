@@ -71,7 +71,8 @@ trap print_results EXIT
                   --num_batches 10 --model_name __test/simple --num_epochs 1 
 append_command_to_log
 
-# Expected result: same as above, but validation loss is also calculated for each epoch
+# Expected result: same as above, but validation loss and validation score 
+# are also calculated for each epoch:
 ./train.py --dataset coco:train2014 --validate coco:val2014 --vocab AUTO \
                   --num_batches 10 --model_name __test/validation --num_epochs 1 \
                   --validation_scoring cider
