@@ -208,7 +208,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 jid = image_ids[j]
                 if jid not in gts:
                     gts[jid] = []
-                gts[jid].append(caption_ids_to_words(captions[j, :], vocab))
+                gts[jid].append(caption_ids_to_words(captions[j, :], vocab).lower())
 
         # Set mini-batch dataset
         images = images.to(device)
@@ -256,7 +256,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
         if len(scorers) > 0:
             for j in range(sampled_ids_batch.shape[0]):
                 jid = image_ids[j]
-                res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab)]
+                res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab).lower()]
 
         # Used for testing:
         if i + 1 == args.num_batches:
