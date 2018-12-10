@@ -41,9 +41,9 @@ def make_file_names(inputs_list_basename, features_basename, num_files):
     return image_list_files, features_files
 
 
-def make_output_file_name(output_file, output_path, features_basename):
+def make_output_file_name(output_file, output_path, features_basename, pooling_mode):
     if output_file is None:
-        output_file = os.path.basename(features_basename) + '.lmdb'
+        output_file = '{}-{}.lmdb'.format(os.path.basename(features_basename), pooling_mode)
 
     if not output_file.lower().endswith('.lmdb'):
         print("ERROR: Output file name should end with 'lmdb'")
@@ -61,7 +61,7 @@ def main(args):
                                                args.features_basename, args.num_files)
 
     lmdb_path = make_output_file_name(args.output_file, args.output_path,
-                                      args.features_basename)
+                                      args.features_basename, args.pooling_mode)
 
     # Open LMDB file for writing. Make sure it doesn't exist from before
     if os.path.exists(lmdb_path):
@@ -96,7 +96,13 @@ def main(args):
                 print("ERROR: Feature file does not contain dataset 'feats'")
                 sys.exit(1)
 
-            V = np.mean(ff['feats'], axis=1)
+            if args.pooling_mode == 'avg':
+                V = np.mean(ff['feats'], axis=1)
+            elif args.pooling_mode == 'max':
+                V = np.max(ff['feats'], axis=1)
+            else:
+                print("ERROR: Unsupported pooling type {}".format(args.pooling_mode))
+                sys.exit(1)
 
         # Compare the lengths:
         assert len(img_names) == len(V), 'Image file list and feature '
@@ -121,6 +127,9 @@ if __name__ == '__main__':
                         help='Number of image list files and h5 features files (must match)')
     parser.add_argument('--output_file', type=str,
                         help='File name for LMDB database output')
+    parser.add_argument('--pooling_mode', type=str, default='avg',
+                        help='How are the features from all regions combined - '
+                        'supported modes: avg (averaging) or max (elementwise maximum)')
     parser.add_argument('--output_path', type=str, default='features',
                         help='Path where to save LMDB features')
 
