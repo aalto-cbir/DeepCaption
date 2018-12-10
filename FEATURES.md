@@ -223,6 +223,13 @@ sbatch --time=0-24 --mem=128GB --job-name='COCO_TO_DENSECAP' --array=0-9 -o slur
 '../image_captioning_dev/features/densecap_features-coco:train2014:no_resize+coco:val2014:no_resize_${n}_of_${N}.h5`
 ```
 
+Finally, to use the extracted features, you need to convert the extracted features from H5 to LMDB file format used in DeepCaption:
+
+```bash
+./densecap_h5_to_lmdb.py --inputs_list_basename 'file_lists/image_file_list-coco:train2014:no_resize+coco:val2014:no_resize-taito-gpu.csc.fi' \
+--features_basename features/densecap_features-coco:train2014:no_resize+coco:val2014:no_resize --num_files 10
+```
+
 Please look at `scripts/extract_densecap_features.sh` to see what the above command really does.
 
 ### Troubleshooting
