@@ -62,7 +62,9 @@ def get_model_name(args, params):
     return model_name
 
 
-def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
+# TODO: convert parameters to **kwargs
+def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
+              skip_start_token, rnn_hidden_init):
     model_name = get_model_name(args, params)
 
     state = {
@@ -81,7 +83,9 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         'features': params.features,
         'persist_features': params.persist_features,
         'attention': params.attention,
-        'vocab': vocab
+        'vocab': vocab,
+        'skip_start_token': skip_start_token,
+        'rnn_hidden_init': rnn_hidden_init
     }
 
     file_name = 'ep{}.model'.format(epoch + 1)
@@ -156,7 +160,7 @@ def find_matching_model(args, params):
         model_file_path = os.path.join(full_path_prefix, model_file_name)
         print('Found matching model: {}'.format(args.load_model))
     else:
-        print("Warning: Failed to intelligently resume...")
+        print("WARNING: Failed to intelligently resume...")
 
     return model_file_path
 
@@ -204,37 +208,42 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 jid = image_ids[j]
                 if jid not in gts:
                     gts[jid] = []
-                gts[jid].append(caption_ids_to_words(captions[j, :], vocab))
+                gts[jid].append(caption_ids_to_words(captions[j, :], vocab).lower())
 
         # Set mini-batch dataset
         images = images.to(device)
         captions = captions.to(device)
-        targets = pack_padded_sequence(captions, lengths,
-                                       batch_first=True)[0]
+
+        if params.rnn_hidden_init == 'from_features':
+            # Subtract one from all lengths to match new target lengths:
+            lengths = [x - 1 if x > 0 else x for x in lengths]
+            targets = pack_padded_sequence(captions[:, 1:], lengths,
+                                           batch_first=True)[0]
+        else:
+            targets = pack_padded_sequence(captions, lengths,
+                                           batch_first=True)[0]
+
         init_features = features[0].to(device)if len(features) > 0 and \
             features[0] is not None else None
         persist_features = features[1].to(device) if len(features) > 1 and \
             features[1] is not None else None
 
         with torch.no_grad():
-            if args.attention is None:
-                outputs = model(images, init_features, captions, lengths,
-                                persist_features, teacher_p, args.teacher_forcing)
-            else:
-                outputs, alphas = model(images, init_features, captions,
-                                        lengths, persist_features, teacher_p,
-                                        args.teacher_forcing)
+            outputs = model(images, init_features, captions, lengths,
+                            persist_features, teacher_p, args.teacher_forcing)
+
+            if args.attention is not None:
+                outputs, alphas = outputs
 
             if len(scorers) > 0:
                 # Generate a caption from the image
+                sampled_batch = model.sample(images, init_features, persist_features,
+                                             max_seq_length=20,
+                                             start_token_idx=vocab('<start>'))
                 if params.attention is None:
-                    sampled_ids_batch = model.sample(images, init_features,
-                                                     persist_features,
-                                                     max_seq_length=20)
+                    sampled_ids_batch = sampled_batch
                 else:
-                    sampled_ids_batch, _ = model.sample(images, init_features,
-                                                        persist_features,
-                                                        max_seq_length=20)
+                    sampled_ids_batch, alphas = sampled_batch
 
         loss = criterion(outputs, targets)
 
@@ -247,7 +256,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
         if len(scorers) > 0:
             for j in range(sampled_ids_batch.shape[0]):
                 jid = image_ids[j]
-                res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab)]
+                res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab).lower()]
 
         # Used for testing:
         if i + 1 == args.num_batches:
@@ -300,9 +309,55 @@ def main(args):
                 from eval.cider import Cider
                 scorers['CIDEr'] = Cider()
 
+    ########################
+    # Set Model parameters #
+    ########################
+
+    params = ModelParams.fromargs(args)
+
+    print("Model parameters inferred from command arguments: ")
+    print(params)
+    start_epoch = 0
+
+    ###############################
+    # Load existing model state   #
+    # and update Model parameters #
+    ###############################
+
     state = None
 
-    # Get dataset parameters:
+    # Intelligently resume from the newest trained epoch matching
+    # supplied configuration:
+    if args.resume:
+        args.load_model = find_matching_model(args, params)
+
+    if args.load_model:
+        state = torch.load(args.load_model)
+        new_external_features = params.features.external
+        params = ModelParams(state)
+        if len(new_external_features) and params.features.external != new_external_features:
+            print('WARNING: external features changed: ',
+                  params.features.external, new_external_features)
+            print('Updating feature paths...')
+            params.update_ext_features(new_external_features)
+        start_epoch = state['epoch']
+        print('Loaded model {} at epoch {}.'.format(args.load_model,
+                                                     start_epoch))
+        
+        print("Final model parameters (loaded model + command arguments): ")
+        print(params)
+
+    if params.rnn_hidden_init == 'from_features' and params.skip_start_token:
+        print("ERROR: Please remove --skip_start_token if you want to use image features "
+              " to initialize hidden and cell states. <start> token is needed to trigger "
+              " the process of sequence generation, since we don't have image features "
+              " embedding as the first input token.")
+        sys.exit(1)
+
+    ##############################
+    # Load dataset configuration #
+    ##############################
+
     dataset_configs = DatasetParams(args.dataset_config_file)
 
     if args.dataset is None and not args.validate_only:
@@ -325,43 +380,27 @@ def main(args):
         for i in dataset_params:
             i.config_dict['no_tokenize'] = args.no_tokenize
             i.config_dict['show_tokens'] = args.show_tokens
+            i.config_dict['skip_start_token'] = params.skip_start_token
 
     if args.validate is not None:
         validation_dataset_params = dataset_configs.get_params(args.validate)
         for i in validation_dataset_params:
             i.config_dict['no_tokenize'] = args.no_tokenize
             i.config_dict['show_tokens'] = args.show_tokens
+            i.config_dict['skip_start_token'] = params.skip_start_token
 
-    params = ModelParams.fromargs(args)
-    start_epoch = 0
+    #######################
+    # Load the vocabulary #
+    #######################
 
-    # Intelligently resume from the newest trained epoch matching
-    # supplied configuration:
-    if args.resume:
-        args.load_model = find_matching_model(args, params)
-
-    if args.load_model:
-        state = torch.load(args.load_model)
-        external_features = params.features.external
-        params = ModelParams(state)
-        if len(external_features) > 0 and params.features.external != external_features:
-            print('WARNING: external features changed: ',
-                  params.features.external, external_features)
-            print('Updating feature paths...')
-            params.update_ext_features(external_features)
-        start_epoch = state['epoch']
-        print('Loading model {} at epoch {}.'.format(args.load_model,
-                                                     start_epoch))
-    print(params)
-
-    # Load the vocabulary. For pre-trained models attempt to obtain
+    # For pre-trained models attempt to obtain
     # saved vocabulary from the model itself:
     if args.load_model and params.vocab is not None:
         print("Loading vocabulary from the model file:")
         vocab = params.vocab
     else:
         if args.vocab is None:
-            print("Error: You must specify the vocabulary to be used for training using "
+            print("ERROR: You must specify the vocabulary to be used for training using "
                   "--vocab flag.\nTry --vocab AUTO if you want the vocabulary to be "
                   "either generated from the training dataset or loaded from cache.")
             sys.exit(1)
@@ -375,14 +414,15 @@ def main(args):
         with open('vocab-dump.txt', 'w') as vocf:
             print('\n'.join(vocl), file=vocf)
 
-    if args.force_epoch:
-        start_epoch = args.force_epoch - 1
+    ##########################
+    # Initialize data loader #
+    ##########################
 
     ext_feature_sets = [params.features.external, params.persist_features.external]
-
-    # Build data loader
     if not args.validate_only:
         print('Loading dataset: {} with {} workers'.format(args.dataset, args.num_workers))
+        if params.skip_start_token:
+            print("Skipping the use of <start> token...")
         data_loader, ef_dims = get_loader(dataset_params, vocab, transform, args.batch_size,
                                           shuffle=True, num_workers=args.num_workers,
                                           ext_feature_sets=ext_feature_sets,
@@ -397,7 +437,10 @@ def main(args):
                                            skip_images=not params.has_internal_features(),
                                            verbose=args.verbose)
 
-    # Build the models
+    ####################
+    # Build the models #
+    ####################
+
     if args.attention is None:
         _Model = EncoderDecoder
     elif args.attention == 'spatial':
@@ -405,10 +448,14 @@ def main(args):
     elif args.attention == 'soft':
         _Model = SoftAttentionEncoderDecoder
     else:
-        print("Error: Invalid attention model specified")
+        print("ERROR: Invalid attention model specified")
         sys.exit(1)
 
     model = _Model(params, device, len(vocab), state, ef_dims)
+
+    ######################
+    # Optimizer and loss #
+    ######################
 
     opt_params = model.get_opt_params()
 
@@ -439,12 +486,13 @@ def main(args):
     if args.validate is not None and args.lr_scheduler:
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
+    ###################
+    # Train the model #
+    ###################
 
     stats_postfix = None
     if args.validate_only:
         stats_postfix = args.validate
-
-    # Train the models
     if args.load_model:
         all_stats = init_stats(args, params, postfix=stats_postfix)
     else:
@@ -454,6 +502,9 @@ def main(args):
         total_step = len(data_loader)
         print('Start training with num_epochs={:d} num_batches={:d} ...'.
               format(args.num_epochs, args.num_batches))
+
+    if args.force_epoch:
+        start_epoch = args.force_epoch - 1
 
     if args.teacher_forcing != 'always':
         print('\t k: {}'.format(args.teacher_forcing_k))
@@ -481,8 +532,6 @@ def main(args):
             vocab_counts = { 'cnt':0, 'max':0, 'min':9999,
                              'sum':0, 'unk_cnt':0, 'unk_sum':0 }
             for i, (images, captions, lengths, _, features) in enumerate(data_loader):
-                #print(captions.shape)
-                #print(captions)
                 if epoch==0:
                     unk = vocab('<unk>')
                     for j in range(captions.shape[0]):
@@ -497,15 +546,21 @@ def main(args):
                         vocab_counts['min']      = min(vocab_counts['min'], xwi)
                         vocab_counts['unk_cnt'] += xui>0
                         vocab_counts['unk_sum'] += xui
-
                 # Set mini-batch dataset
                 images = images.to(device)
                 captions = captions.to(device)
-                targets = pack_padded_sequence(captions, lengths,
-                                               batch_first=True)[0]
-                #print(features[0].shape)
-                #print(features[0])
-                #exit(1)
+
+                # Remove <start> token from targets if we are initializing the RNN
+                # hidden state from image features:
+                if params.rnn_hidden_init == 'from_features':
+                    # Subtract one from all lengths to match new target lengths:
+                    lengths = [x - 1 if x > 0 else x for x in lengths]
+                    targets = pack_padded_sequence(captions[:, 1:], lengths,
+                                                   batch_first=True)[0]
+                else:
+                    targets = pack_padded_sequence(captions, lengths,
+                                                   batch_first=True)[0]
+
                 init_features = features[0].to(device) if len(features) > 0 and \
                     features[0] is not None else None
                 persist_features = features[1].to(device) if len(features) > 1 and \
@@ -519,13 +574,14 @@ def main(args):
 
                 teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                              args.teacher_forcing_beta)
+                
+                outputs = model(images, init_features, captions, lengths, persist_features,
+                                teacher_p, args.teacher_forcing)
 
-                if args.attention is None:
-                    outputs = model(images, init_features, captions, lengths, persist_features,
-                                    teacher_p, args.teacher_forcing)
-                else:
-                    outputs, alphas = model(images, init_features, captions, lengths,
-                                            persist_features, teacher_p, args.teacher_forcing)
+                # Attention models output additional tensor containing attention distribution
+                # over image:
+                if args.attention is not None:
+                    outputs, alphas = outputs
 
                 loss = criterion(outputs, targets)
 
@@ -567,9 +623,10 @@ def main(args):
             end = datetime.now()
 
             stats['training_loss'] = total_loss / num_batches
-            print('Epoch {} duration: {}, average loss: {:.4f}.'.format(
-                epoch + 1, end - begin, stats['training_loss']))
-            save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
+            print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
+                                                                        stats['training_loss']))
+            save_model(args, params, model.encoder, model.decoder, optimizer, epoch,
+                       vocab, params.skip_start_token, params.rnn_hidden_init)
 
             if epoch == 0:
                 vocab_counts['avg'] = vocab_counts['sum']/vocab_counts['cnt']
@@ -579,6 +636,10 @@ def main(args):
                 print(('Training data contains {sum} words in {cnt} captions (avg. {avg:.1f} w/c)'+
                        ' with {unk_sum} <unk>s ({unk_sum_per:.1f}%)'+
                        ' in {unk_cnt} ({unk_cnt_per:.1f}%) captions').format(**vocab_counts))
+
+            ###################
+            # Validation loss #
+            ###################
 
             if args.validate is not None and (epoch + 1) % args.validation_step == 0:
                 val_loss = do_validate(model, valid_loader, criterion, scorers, vocab,
@@ -642,6 +703,8 @@ if __name__ == '__main__':
                         help='minimum word count threshold')
     parser.add_argument('--show_vocab_stats', action="store_true",
                         help='show generated vocabulary word counts')
+    parser.add_argument('--skip_start_token', action="store_true",
+                        help='Do not prepend <start> token to caption')
 
     # Model parameters:
     parser.add_argument('--features', type=str, default=default_features,
@@ -670,6 +733,10 @@ if __name__ == '__main__':
                         help='dropout for the LSTM')
     parser.add_argument('--encoder_dropout', type=float, default=0.0,
                         help='dropout for the encoder FC layer')
+    parser.add_argument('--rnn_hidden_init', type=str,
+                        help='initization strategy for RNN hidden and cell states. '
+                        'Supported values: None (set to zeros), from_features '
+                        '(using a linear transform on (mean/average pooled) image feature vector')
 
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
@@ -706,7 +773,7 @@ if __name__ == '__main__':
                         'Good values can be found in a range between 400 - 20000'
                         'small values = start using model output quickly, large values -'
                         ' wait for a while before start using model output')
-    parser.add_argument('--teacher_forcing_beta', type=float, default=1,
+    parser.add_argument('--teacher_forcing_beta', type=float, default=0.3,
                         help='sample scheduling parameter that determins the slope of '
                         'the middle segment of the sigmoid')
 

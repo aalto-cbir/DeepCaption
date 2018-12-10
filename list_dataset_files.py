@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import os
 import sys
@@ -25,6 +27,21 @@ def main(args):
                 environment = 'unknown_host'
         file_name = 'image_file_list-{}-{}.txt'.format(args.dataset, environment)
 
+    file_name = os.path.join(args.output_path, file_name)
+
+    os.makedirs(args.output_path, exist_ok=True)
+
+    # If we want to generate multiple files we need to add "_X_of_Y" string to the file
+    # to indicate which file out of the set it is:
+    if args.num_files > 1:
+        file_name_list = []
+        for i in range(args.num_files):
+            file_name_i = os.path.splitext(file_name)[0] + '_{}_of_{}.txt'.format(
+                i + 1, args.num_files)
+            file_name_list.append(file_name_i)
+    else:
+        file_name_list = None
+
     # Check that we are not overwriting anything
     if os.path.exists(file_name):
         print('ERROR: {} exists, please remove it first if you really want to replace it.'.
@@ -51,7 +68,13 @@ def main(args):
     for i, (_, _, _,
             paths, _) in enumerate(tqdm(data_loader, disable=not show_progress)):
 
-        with open(file_name, 'a') as f:
+        if args.num_files == 1:
+            _file_name = file_name
+        else:
+            n = int(i * data_loader.batch_size * args.num_files / len(data_loader.dataset))
+            _file_name = file_name_list[n]
+
+        with open(_file_name, 'a') as f:
             for path in paths:
                 f.write(path + '\n')
 
@@ -73,12 +96,16 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--output_file', type=str, default='',
                         help='file for saving file_list, if no name specified it '
-                             'defaults to "file_list-dataset_name.txt"')
+                             'defaults to "file_list-dataset_name_X_of_Y.txt"')
     parser.add_argument('--environment', type=str,
                         help='Opetionally specify the environment where the paths are valid '
                         'by default value of $HOSTNAME environment variable will be used')
     parser.add_argument('--log_step', type=int, default=10,
                         help='How often do we want to log output')
+    parser.add_argument('--num_files', type=int, default=1,
+                        help='How many output files should be generated')
+    parser.add_argument('--output_path', type=str, default='file_lists',
+                        help='Path where to save generated file lists')
 
     args = parser.parse_args()
     main(args=args)

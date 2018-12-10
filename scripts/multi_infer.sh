@@ -1,31 +1,30 @@
 #!/bin/bash
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:p100:1
+#SBATCH --mem=16GB
+#SBATCH --time=0-1
+#SBATCH --mail-user=arturs.polis@aalto.fi
+#SBATCH --mail-type=FAIL,REQUEUE,TIME_LIMIT_80
 
-if [ -z "$*" ]; then
-    echo "Usage: $0 model1.ckpt model2.ckpt ... --common_param1 val1 ... --common_paramN valN"
-    exit 1
-fi
+# Set billing project
+# newgrp mvsjober
 
-COMMON_PARAMS_OFFSET=1
+# Load modules
+# module purge
+# module load python-env/3.5.3-ml
+# module list
 
-# Find out where the common parameters begin (first param starting 
-# starting with "--":)
-for _PARAM in "$@"
-do
-    if [[ $_PARAM =~ ^-- ]]; then
-        break
-    else
-        COMMON_PARAMS_OFFSET=${COMMON_PARAMS_OFFSET}+1
-    fi
-done
+# research-support@csc.fi suggested for pytorch 0.4.0
+module purge
+module load python-env/intelpython3.6-2018.3
+module load gcc/5.4.0 cuda/9.0 cudnn/7.1-cuda9
 
-MODELS=${@:1:${COMMON_PARAMS_OFFSET}-1} # TODO: check indices
-COMMON_PARAMS=${@:$COMMON_PARAMS_OFFSET}
 
-# Run infer.py for every model:
-for MODEL in $MODELS; do
-    MODEL_PARAM="--model $MODEL"
-    ALL_PARAMS="$MODEL_PARAM $COMMON_PARAMS"
-    (set -x; sbatch --time=0-8 submit.sh infer.py ${ALL_PARAMS})
-    echo $ALL_PARAMS
-    sleep 1
+for model in models/EncoderDecoder/coco*alpha*; do
+    for epoch in {11..15}; do
+        srun python infer.py --dataset coco:val2014 \
+                             --model ${model}/ep${epoch}.model \
+                             --output_format json \
+                             --num_workers 4
+    done
 done

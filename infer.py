@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import numpy as np
 
 from datetime import datetime
 from PIL import Image
@@ -13,9 +14,10 @@ from PIL import Image
 import torch
 from torchvision import transforms
 
-from vocabulary import Vocabulary, get_vocab # (Needed to handle Vocabulary pickle)
+from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
-from model import ModelParams, EncoderDecoder, SpatialAttentionEncoderDecoder
+from model import ModelParams, EncoderDecoder
+from model import SoftAttentionEncoderDecoder, SpatialAttentionEncoderDecoder
 
 try:
     from tqdm import tqdm
@@ -32,8 +34,11 @@ def basename(fname):
     return os.path.splitext(os.path.basename(fname))[0]
 
 
-def fix_caption(caption):
-    m = re.match(r'^<start> (.*?)( <end>)?$', caption)
+def fix_caption(caption, skip_start_token=False):
+    if skip_start_token:
+        m = re.match(r'^(.*?)( <end>)?$', caption)
+    else:
+        m = re.match(r'^<start> (.*?)( <end>)?$', caption)
     if m is None:
         print('ERROR: unexpected caption format: "{}"'.format(caption))
         return caption.capitalize()
@@ -166,6 +171,13 @@ def infer(ext_args=None):
     # Build data loader
     print("Loading dataset: {}".format(args.dataset))
 
+    # Update dataset params with needed model params:
+    for i in dataset_params:
+        i.config_dict['skip_start_token'] = params.skip_start_token
+        # For visualizing attention we need file names instead of IDs in our output:
+        if args.store_image_paths:
+            i.config_dict['return_image_file_name'] = True
+
     ext_feature_sets = [params.features.external, params.persist_features.external]
 
     # We ask it to iterate over images instead of all (image, caption) pairs
@@ -179,12 +191,25 @@ def infer(ext_args=None):
     # Build the models
     if params.attention is None:
         _Model = EncoderDecoder
-    else:
+    elif params.attention == 'spatial':
         _Model = SpatialAttentionEncoderDecoder
+    elif params.attention == 'soft':
+        _Model = SoftAttentionEncoderDecoder
+    else:
+        print("ERROR: Invalid attention model specified")
+        sys.exit(1)
 
     model = _Model(params, device, len(vocab), state, ef_dims).eval()
 
+    # Store captions here:
     output_data = []
+
+    if params.attention is not None:
+        # Store attention weights here:
+        # DIM: ( #images, words/sentence, flattened convolutional image grid)
+        output_alphas = np.zeros((len(data_loader.dataset),
+                                  args.max_seq_length,
+                                  model.decoder.num_attention_locs))
 
     gts = {}
     res = {}
@@ -213,12 +238,21 @@ def infer(ext_args=None):
             features[1] is not None else None
 
         # Generate a caption from the image
+        sampled_batch = model.sample(images, init_features, persist_features,
+                                     max_seq_length=args.max_seq_length,
+                                     start_token_idx=vocab('<start>'))
+
         if params.attention is None:
-            sampled_ids_batch = model.sample(images, init_features, persist_features,
-                                             max_seq_length=args.max_seq_length)
+            sampled_ids_batch = sampled_batch
         else:
-            sampled_ids_batch, alphas = model.sample(images, init_features, persist_features,
-                                                     max_seq_length=args.max_seq_length)
+            # When sampling from attention models we also get an attention
+            # distribution stored in alphas (can be used for visualization):
+            sampled_ids_batch, alphas = sampled_batch
+            if params.attention is not None:
+                alphas_numpy = alphas.detach().cpu().numpy()
+                offset_begin = i * args.batch_size
+                offset_end = offset_begin + alphas_numpy.shape[0]
+                output_alphas[offset_begin: offset_end, :] = alphas_numpy
 
         for i in range(sampled_ids_batch.shape[0]):
             sampled_ids = sampled_ids_batch[i]
@@ -268,7 +302,13 @@ def infer(ext_args=None):
                 for data in output_data:
                     print(data['image_id'], data['caption'], file=fp)
 
-        print('Wrote generated captions to {} as {}'.format(output_path, output_format))
+        print('Wrote generated captions to {} as {}'.format(output_path, args.output_format))
+
+        if params.attention is not None:
+            # Store attention weights:
+            output_path_alphas = os.path.splitext(output_path)[0] + '_alphas.npy'
+            np.save(output_path_alphas, output_alphas)
+            print("Wrote attention weights to {}".format(output_path_alphas))
 
     if args.print_results:
         for d in output_data:
@@ -300,6 +340,8 @@ def parse_args(ext_args=None):
                         'used for training), comma separated')
     parser.add_argument('--ext_persist_features', type=str,
                         help='paths for external persist features')
+    parser.add_argument('--store_image_paths', action='store_true',
+                        help='Save paths to images in the output file')
     parser.add_argument('--output_file', type=str,
                         help='path for output file, default: model_name.txt')
     parser.add_argument('--output_format', type=str, help='format of the output file')
