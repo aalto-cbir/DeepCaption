@@ -91,6 +91,10 @@ def main(args):
     dataset_configs = DatasetParams(args.dataset_config_file)
     dataset_params = dataset_configs.get_params(args.dataset)
 
+    # We want to only get the image file name, not the full path:
+    for i in dataset_params:
+        i.config_dict['return_image_file_name'] = True
+
     # We ask it to iterate over images instead of all (image, caption) pairs
     data_loader, _ = get_loader(dataset_params, vocab=None, transform=transform,
                                 batch_size=args.batch_size, shuffle=False,
