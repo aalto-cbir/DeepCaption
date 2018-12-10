@@ -59,11 +59,11 @@ def caption_ids_to_words(sampled_ids, vocab):
 
 
 def paragraph_ids_to_words(sampled_ids, vocab):
-    sampled_paragraph = ''
-    for sentence in sampled_ids_batch[i]:
+    paragraph = ''
+    for sentence in sampled_ids:
         paragraph += caption_ids_to_words(sentence, vocab) + '. '
 
-    return sampled_paragraph
+    return paragraph
 
 
 def path_from_id(image_dir, image_id):
