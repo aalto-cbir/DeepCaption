@@ -382,12 +382,12 @@ def main(args):
             i.config_dict['show_tokens'] = args.show_tokens
             i.config_dict['skip_start_token'] = params.skip_start_token
 
-        if args.validate is not None:
-            validation_dataset_params = dataset_configs.get_params(args.validate)
-            for i in validation_dataset_params:
-                i.config_dict['no_tokenize'] = args.no_tokenize
-                i.config_dict['show_tokens'] = args.show_tokens
-                i.config_dict['skip_start_token'] = params.skip_start_token
+    if args.validate is not None:
+        validation_dataset_params = dataset_configs.get_params(args.validate)
+        for i in validation_dataset_params:
+            i.config_dict['no_tokenize'] = args.no_tokenize
+            i.config_dict['show_tokens'] = args.show_tokens
+            i.config_dict['skip_start_token'] = params.skip_start_token
 
     #######################
     # Load the vocabulary #
