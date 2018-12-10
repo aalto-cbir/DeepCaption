@@ -20,7 +20,7 @@ from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder
 from model import SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
 from model import HierarchicalXEntropyLoss
-from infer import caption_ids_to_words
+from infer import caption_ids_to_words, paragraph_ids_to_words
 
 torch.manual_seed(42)
 torch.backends.cudnn.deterministic = True
@@ -193,7 +193,10 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 jid = image_ids[j]
                 if jid not in gts:
                     gts[jid] = []
-                gts[jid].append(caption_ids_to_words(captions[j, :], vocab).lower())
+                if params.hierarchical_model:
+                    gts[jid].append(paragraph_ids_to_words(captions[j, :], vocab).lower())
+                else:
+                    gts[jid].append(caption_ids_to_words(captions[j, :], vocab).lower())
 
         # Set mini-batch dataset
         images = images.to(device)
@@ -251,7 +254,10 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
         if len(scorers) > 0:
             for j in range(sampled_ids_batch.shape[0]):
                 jid = image_ids[j]
-                res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+                if params.hierarchical_model:
+                    res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+                else:
+                    res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab).lower()]
 
         # Used for testing:
         if i + 1 == args.num_batches:
@@ -426,6 +432,11 @@ def main(args):
             i.config_dict['no_tokenize'] = args.no_tokenize
             i.config_dict['show_tokens'] = args.show_tokens
             i.config_dict['skip_start_token'] = params.skip_start_token
+
+            if params.hierarchical_model:
+                i.config_dict['hierarchical_model'] = True
+                i.config_dict['max_sentences'] = params.max_sentences
+                i.config_dict['crop_regions'] = False
 
     #######################
     # Load the vocabulary #
