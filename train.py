@@ -847,7 +847,7 @@ if __name__ == '__main__':
                         help='dropout for the encoder FC layer')
     parser.add_argument('--fc_size', type=int,
                         help='size of the fully connected layer in the sentence LSTM '
-                             'Defaults to embed_size')
+                             'Defaults to pooling_size')
 
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,

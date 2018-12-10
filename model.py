@@ -23,6 +23,8 @@ class ModelParams:
         the trainining script"""
         self.hierarchical_model = self._get_param(d, 'hierarchical_model', False)
         self.embed_size = self._get_param(d, 'embed_size', 256)
+        # Default pooling size to embed_size for non-hierarchical models:
+        self.pooling_size = self.embed_size
         self.hidden_size = self._get_param(d, 'hidden_size', 512)
         self.num_layers = self._get_param(d, 'num_layers', 1)
         self.batch_size = self._get_param(d, 'batch_size', 128)
@@ -42,12 +44,13 @@ class ModelParams:
 
         # Below parameters used only by the Hierarchical model:
         if self.hierarchical_model:
+            self.pooling_size = self._get_param(d, 'pooling_size', 1024)
             self.max_sentences = self._get_param(d, 'max_sentences', 6.0)
             self.weight_sentence_loss = self._get_param(d, 'weight_sentence_loss', 5.0)
             self.weight_word_loss = self._get_param(d, 'weight_word_loss', 1.0)
             self.dropout_stopping = self._get_param(d, 'dropout_stopping', 0)
             self.dropout_fc = self._get_param(d, 'dropout_fc', 0)
-            self.fc_size = self._get_param(d, 'fc_size', self.embed_size)
+            self.fc_size = self._get_param(d, 'fc_size', self.pooling_size)
 
     @classmethod
     def fromargs(cls, args):
@@ -249,9 +252,9 @@ class EncoderCNN(nn.Module):
         # used to initialized the Decoder hidden state:
 
         # Add FC layer on top of features to get the desired output dimension
-        self.linear = nn.Linear(total_feat_dim, p.embed_size)
+        self.linear = nn.Linear(total_feat_dim, p.pooling_size)
         self.dropout = nn.Dropout(p=p.encoder_dropout)
-        self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
+        self.bn = nn.BatchNorm1d(p.pooling_size, momentum=0.01)
 
     def forward(self, images, external_features=None):
         """Extract feature vectors from input images."""
@@ -556,16 +559,14 @@ class HierarchicalDecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0, enc_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(HierarchicalDecoderRNN, self).__init__()
-        # Takes image encoder output as it's input, needs to be same
-        # dimension as caption word embeddings:
-        self.sentence_lstm = nn.LSTM(p.embed_size, p.embed_size,
+        self.sentence_lstm = nn.LSTM(p.pooling_size, p.hidden_size,
                                      dropout=p.dropout, batch_first=True)
 
         # Stopping state classifier
         self.dropout_stopping = nn.Dropout(p=p.dropout_stopping)
-        self.linear_stopping = nn.Linear(p.embed_size, 2)
+        self.linear_stopping = nn.Linear(p.hidden_size, 2)
         # Two fully connected layers (assuming same dimension):
-        self.linear1 = nn.Linear(p.embed_size, p.fc_size)
+        self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
         self.dropout_fc = nn.Dropout(p=p.dropout_fc)
         self.linear2 = nn.Linear(p.fc_size, p.embed_size)
         # self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
@@ -645,7 +646,7 @@ class HierarchicalDecoderRNN(nn.Module):
         # and fc2 as the context for the word RNN
         return sentence_stopping, word_rnn_out
 
-    def sample(self, features, images, external_features, states=None, 
+    def sample(self, features, images, external_features, states=None,
                max_seq_length=50, start_token_idx=None):
         """Generate captions for given image features using greedy search."""
 
