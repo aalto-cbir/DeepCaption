@@ -547,7 +547,8 @@ class VisualGenomeIM2PDataset(data.Dataset):
         """Returns one data pair (image and paragraph)."""
         caption = self.paragraphs[index]['caption']
         img_id = self.paragraphs[index]['image_id']
-        path = os.path.join(self.root, str(img_id) + '.jpg')
+        img_filename = str(img_id) + '.jpg'
+        path = os.path.join(self.root, img_filename)
 
         if not self.skip_images:
             image = Image.open(path).convert('RGB')
@@ -558,7 +559,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
         # Prepare external features
         # TODO probably wrong index ...
-        feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, img_filename)
 
         # For hierarchical model the sentences need to be separated:
         if self.hierarchical_model:
@@ -574,7 +575,11 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
         # We are in file list creation mode, extract full path:
         if self.config_dict.get('return_full_image_path'):
-            img_id = os.path.join(self.root, path)
+            img_id = path
+
+        # Sometimes we may want just the image file name without full path:
+        elif self.config_dict.get('return_image_file_name'):
+            img_id = img_filename
 
         return image, target, img_id, feature_sets
 
