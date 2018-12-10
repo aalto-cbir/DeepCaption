@@ -71,7 +71,8 @@ trap print_results EXIT
                   --num_batches 10 --model_name __test/simple --num_epochs 1 
 append_command_to_log
 
-# Expected result: same as above, but validation loss is also calculated for each epoch
+# Expected result: same as above, but validation loss and validation score 
+# are also calculated for each epoch:
 ./train.py --dataset coco:train2014 --validate coco:val2014 --vocab AUTO \
                   --num_batches 10 --model_name __test/validation --num_epochs 1 \
                   --validation_scoring cider
@@ -97,17 +98,28 @@ append_command_to_log
 
 MODEL=models/__test/coco_full/ep11.model
 
+# Inference: Expected result after evaluating the resultant json file: 
+# METEOR: 0.240, CIDEr: 0.851
+# 
+# Script output for test CIDEr 0.7403850771265595
 ./infer.py --model $MODEL --dataset coco:val2014 --num_workers 4 \
-                  --output_format json
+                  --output_format json --scoring cider
 append_command_to_log
-# Expected result: METEOR: 0.240; CIDEr:  0.851
+
+# Training with validation only:
+# Validation CIDEr 0.7250630490480385
+./train.py --load_model $MODEL --validate coco:val2014 --num_workers 4 \
+           --validate_only --validation_scoring cider
+append_command_to_log
+
 
 RESULTS=results/coco_full-ep11.json
 GROUND_TRUTH=/m/cs/scratch/imagedb/picsom/databases/COCO/download/annotations/captions_val2014.json
 #GROUND_TRUTH=/proj/mediaind/picsom/databases/COCO/download/annotations/captions_val2014.json
+# Expected results: Meteor close to 0.240, CIDEr close to: 0.851 -
 ./eval_coco.py $RESULTS --ground_truth $GROUND_TRUTH
 append_command_to_log
-# Expected results: Meteor close to 0.240, CIDEr close to: 0.853
+
 
 #INIT=c_in12_rn101_pool5o_d_a.lmdb,c_in12_rn152_pool5o_d_a.lmdb,fasterRcnn_clasDetFEat80.lmdb
 INIT=c_in12_rn101_pool5o_d_a.lmdb,c_in12_rn152_pool5o_d_a.lmdb

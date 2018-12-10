@@ -22,3 +22,4 @@ datasets/pycocoevalcap
 /datasets/datasets.conf
 .*
 /random_image_dir/
+/tests/submit_tests.sh

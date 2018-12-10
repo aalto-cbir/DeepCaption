@@ -193,7 +193,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 jid = image_ids[j]
                 if jid not in gts:
                     gts[jid] = []
-                gts[jid].append(caption_ids_to_words(captions[j, :], vocab))
+                gts[jid].append(caption_ids_to_words(captions[j, :], vocab).lower())
 
         # Set mini-batch dataset
         images = images.to(device)
@@ -251,7 +251,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
         if len(scorers) > 0:
             for j in range(sampled_ids_batch.shape[0]):
                 jid = image_ids[j]
-                res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab)]
+                res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab).lower()]
 
         # Used for testing:
         if i + 1 == args.num_batches:
@@ -420,12 +420,12 @@ def main(args):
                 i.config_dict['max_sentences'] = params.max_sentences
                 i.config_dict['crop_regions'] = False
 
-        if args.validate is not None:
-            validation_dataset_params = dataset_configs.get_params(args.validate)
-            for i in validation_dataset_params:
-                i.config_dict['no_tokenize'] = args.no_tokenize
-                i.config_dict['show_tokens'] = args.show_tokens
-                i.config_dict['skip_start_token'] = params.skip_start_token
+    if args.validate is not None:
+        validation_dataset_params = dataset_configs.get_params(args.validate)
+        for i in validation_dataset_params:
+            i.config_dict['no_tokenize'] = args.no_tokenize
+            i.config_dict['show_tokens'] = args.show_tokens
+            i.config_dict['skip_start_token'] = params.skip_start_token
 
     #######################
     # Load the vocabulary #
