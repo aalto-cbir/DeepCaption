@@ -460,7 +460,7 @@ class DecoderRNN(nn.Module):
 
         return outputs
 
-    def sample(self, features, images, external_features, states=None, 
+    def sample(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_idx=None):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
@@ -645,7 +645,8 @@ class HierarchicalDecoderRNN(nn.Module):
         # and fc2 as the context for the word RNN
         return sentence_stopping, word_rnn_out
 
-    def sample(self, features, images, external_features, states=None, max_seq_length=50):
+    def sample(self, features, images, external_features, states=None, 
+               max_seq_length=50, start_token_idx=None):
         """Generate captions for given image features using greedy search."""
 
         inputs = features.unsqueeze(1)
