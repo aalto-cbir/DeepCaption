@@ -5,8 +5,9 @@
 #SBATCH --time=0-4
 #SBATCH --job-name=testrunner
 #SBATCH -c 4
+#SBATCH -o slurm-%x-%j.out
 #SBATCH --mail-user=name@domain.tld
-#SBATCH --mail-type=ALL,FAIL,REQUEUE,TIME_LIMIT_80
+#SBATCH --mail-type=END,FAIL,REQUEUE,TIME_LIMIT_80
 
 # Launch shell script containing tests:
 echo "Running command: $*"
