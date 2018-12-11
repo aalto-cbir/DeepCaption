@@ -3,15 +3,12 @@
 #SBATCH --gres=gpu:p100:1
 #SBATCH --mem=16GB
 #SBATCH --time=0-4
-#SBATCH --job-name 'deepcapation-tests'
+#SBATCH --job-name=testrunner
+#SBATCH -c 4
+#SBATCH -o slurm-%x-%j.out
 #SBATCH --mail-user=name@domain.tld
-#SBATCH --mail-type=FAIL,REQUEUE,TIME_LIMIT_80
-
-# research-support@csc.fi suggested for pytorch 0.4.0
-module purge
-module load python-env/intelpython3.6-2018.3
-module load gcc/5.4.0 cuda/9.0 cudnn/7.1-cuda9
+#SBATCH --mail-type=END,FAIL,REQUEUE,TIME_LIMIT_80
 
 # Launch shell script containing tests:
-echo "Running command: $1"
-$1
+echo "Running command: $*"
+srun $*
