@@ -31,7 +31,6 @@ load_python3
                   --num_batches 10 --model_name __test/simple --num_epochs 1 
 append_command_to_log
 
-
 # Expected result FAILURE: no vocab specified
 # If the expected result for the command is different from 0, give it as a parameter to the following line:
 ./train.py --dataset coco:train2014 --num_batches 10 --model_name __test/simple --num_epochs 1 
