@@ -236,3 +236,19 @@ Please look at `scripts/extract_densecap_features.sh` to see what the above comm
 
 If you get errors when running `th` commands, make sure you have first loaded the needed modules for LuA Torch (see above).
 
+# Testing
+
+Simple tests are available in the `tests/` folder. Commonly used testing functions are defined in `tests/functions.sh`. To run "smoke tests" on the codebase, do:
+
+```bash
+./tests/smoke_test.sh --coco_gt PATH_TO_COCO_CAPTIONS_GROUND_TRUTH
+```
+
+You can generally add `--skip_long_commands` parameter if you want to skip running the tests that train the full model for multiple epochs. When running the tests for the first time you will get failed cases for `infer.py` and `coco_eval.py` tests that depend on the full model if the fully trained model created by the long-running test doesn't yet exist.
+
+There are several other test scripts in the `tests/` folder that work in a similar way. Tests can be run in `SLURM` environment using `tests/submit_tests.sh` helper script:
+
+```bash
+sbatch tests/submit_tests.sh tests/smoke_test.sh
+```
+
