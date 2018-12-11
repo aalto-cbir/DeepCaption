@@ -4,6 +4,7 @@
 #SBATCH --mem=16GB
 #SBATCH --time=0-4
 #SBATCH --job-name=testrunner
+#SBATCH -c 4
 #SBATCH --mail-user=name@domain.tld
 #SBATCH --mail-type=ALL,FAIL,REQUEUE,TIME_LIMIT_80
 

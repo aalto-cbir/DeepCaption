@@ -79,7 +79,6 @@ print_results() {
     NUM_SUCCESSES=0
     # Count the successful executions:
     for i in ${!COMMANDS[@]}; do 
-        echo "${array[$index]} is in ${array2[$index]}"
         if [ ${RESULTS[$i]} -eq ${EXPECTED_RESULTS[$i]} ]; then
             ((NUM_SUCCESSES++))
         fi
