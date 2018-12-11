@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
@@ -98,11 +99,15 @@ def main(args):
                 last_modified = modtime
 
             with open(filename, 'r') as fp:
+                print(filename)
+                match = re.match(r'.*train_stats-(.*)\.json$', filename)
                 if i < len(labels):
                     label = labels[i]
+                elif match:
+                    label = match.group(1)
                 else:
                     label = str(i+1)
-                    print('{}: {}'.format(label, filename))
+                    # print('{}: {}'.format(label, filename))
                 if label not in plots:
                     plots[label] = {}
                 plots[label].update(json.load(fp))

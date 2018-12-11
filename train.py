@@ -519,6 +519,10 @@ def main(args):
                   '--validate_only mode')
 
         epoch = start_epoch-1
+        if str(epoch+1) in all_stats.keys() and args.skip_existing_validations:
+            print('WARNING: epoch {} already validated, skipping...'.format(epoch+1))
+            return
+
         val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                params, stats, epoch)
         all_stats[epoch+1] = stats
@@ -755,6 +759,7 @@ if __name__ == '__main__':
     parser.add_argument('--validation_scoring', type=str)
     parser.add_argument('--validate_only', action='store_true',
                         help='Just perform validation with given model, no training')
+    parser.add_argument('--skip_existing_validations', action='store_true')
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
@@ -785,6 +790,9 @@ if __name__ == '__main__':
     models = args.load_model
     if models is None:
         models = [None]
+    if len(models) > 1:
+        print('INFO: Iterating over {} models.'.format(len(models)))
+
     for load_model in models:
         args.load_model = load_model
         if args.profiler:
