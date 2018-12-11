@@ -363,7 +363,8 @@ def main(args):
     if args.load_model:
         state = torch.load(args.load_model)
         new_external_features = arg_params.features.external
-        params = ModelParams(state)
+
+        params = ModelParams(state, arg_params=arg_params)
         if len(new_external_features) and params.features.external != new_external_features:
             print('WARNING: external features changed: ',
                   params.features.external, new_external_features)
@@ -372,9 +373,6 @@ def main(args):
         start_epoch = state['epoch']
         print('Loaded model {} at epoch {}.'.format(args.load_model,
                                                     start_epoch))
-
-        print("Final model parameters (loaded model + command arguments): ")
-        print(params)
     else:
         params = arg_params
 
@@ -386,12 +384,17 @@ def main(args):
         sys.exit(1)
 
     # Force set the following hierarchical model parameters every time:
-    if params.hierarchical_model:
+    if arg_params.hierarchical_model:
+        params.hierarchical_model = True
         params.max_sentences = arg_params.max_sentences
         params.weight_sentence_loss = arg_params.weight_sentence_loss
         params.weight_word_loss = arg_params.weight_word_loss
         params.dropout_stopping = arg_params.dropout_stopping
         params.dropout_fc = arg_params.dropout_fc
+
+    if args.load_model:
+        print("Final model parameters (loaded model + command arguments): ")
+        print(params)
 
     ##############################
     # Load dataset configuration #
@@ -526,7 +529,14 @@ def main(args):
         print('ERROR: unknown optimizer:', args.optimizer)
         sys.exit(1)
 
-    if state:
+    # We don't want to initialize the optimizer if we are transfering
+    # the language model from the regular model to hierarchical model
+    transfer_language_model = False
+
+    if arg_params.hierarchical_model and state and not state.get('hierarchical_model'):
+        transfer_language_model = True
+
+    if state and not transfer_language_model:
         optimizer.load_state_dict(state['optimizer'])
 
     if args.learning_rate:  # override lr if set explicitly in arguments

@@ -18,10 +18,13 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class ModelParams:
-    def __init__(self, d):
+    def __init__(self, d, arg_params=None):
         """Store parameters given e.g. on the command line when invoking
         the trainining script"""
-        self.hierarchical_model = self._get_param(d, 'hierarchical_model', False)
+        if arg_params is not None and arg_params.hierarchical_model is not None:
+            self.hierarchical_model = arg_params.hierarchical_model
+        else:
+            self.hierarchical_model = self._get_param(d, 'hierarchical_model', False)
         self.embed_size = self._get_param(d, 'embed_size', 256)
         # Default pooling size to embed_size for non-hierarchical models:
         self.pooling_size = self.embed_size
@@ -527,8 +530,16 @@ class EncoderDecoder(nn.Module):
                            list(self.encoder.bn.parameters()))
 
         if state:
-            self.encoder.load_state_dict(state['encoder'])
-            self.decoder.load_state_dict(state['decoder'])
+            # If the user has specified that they would like train
+            # a hierarchical model and are also specifying an old model to be loaded
+            # then selectively attempt to use the decoder of the loaded model
+            # as the word-RNN of the hierarchical model:
+            if params.hierarchical_model and not state.get('hierarchical_model'):
+                print("Applying non-hierarchical decoder weights to hierarchical model...")
+                self.decoder.word_decoder.load_state_dict(state['decoder'])
+            else:
+                self.encoder.load_state_dict(state['encoder'])
+                self.decoder.load_state_dict(state['decoder'])
 
     def get_opt_params(self):
         return self.opt_params
