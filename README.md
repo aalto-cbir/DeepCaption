@@ -11,9 +11,9 @@ DeepCaption supports many features, including:
 - external pre-calculated features stored in numpy, lmdb or PicSOM bin format
 - persistent features (features input at each RNN iteration)
 - soft attention
-- [teacher forcing scheduling](features.md#teacher-forcing-scheduling)
+- [teacher forcing scheduling](FEATURES.md#teacher-forcing-scheduling)
 
-Some of the advanced features are documented on the [separate features documentation page](features.md).
+Some of the advanced features are documented on the [separate features documentation page](FEATURES.md).
 
 
 ## Usage 
