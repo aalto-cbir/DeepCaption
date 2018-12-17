@@ -575,7 +575,8 @@ class HierarchicalDecoderRNN(nn.Module):
 
         # Stopping state classifier
         self.dropout_stopping = nn.Dropout(p=p.dropout_stopping)
-        self.linear_stopping = nn.Linear(p.hidden_size, 2)
+        #self.linear_stopping = nn.Linear(p.hidden_size, 2)
+        self.linear_stopping = nn.Linear(p.hidden_size, 1)
         # Two fully connected layers (assuming same dimension):
         self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
         self.dropout_fc = nn.Dropout(p=p.dropout_fc)
@@ -601,7 +602,8 @@ class HierarchicalDecoderRNN(nn.Module):
         hiddens, _ = self.sentence_lstm(features_repeated)
 
         # Dims: (batch_size X max_sentences X 2)
-        sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1], 2).to(device)
+        #sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1], 2).to(device)
+        sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1]).to(device)
         word_rnn_out = []
 
         n_word_rnns = hiddens.size(1)
@@ -670,7 +672,7 @@ class HierarchicalDecoderRNN(nn.Module):
             paragraphs[:, t] = sentence
 
             # Fixme - rewrite stopping support to work with mini-batches
-            if stopping[0][1] >= stopping[0][0]:
+            if stopping[0] >= 0.5:
                 break
 
         return paragraphs
