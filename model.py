@@ -580,7 +580,7 @@ class HierarchicalDecoderRNN(nn.Module):
         self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
         self.dropout_fc = nn.Dropout(p=p.dropout_fc)
         self.linear2 = nn.Linear(p.fc_size, p.embed_size)
-        # self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
+        #self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
         # Word LSTM:
         self.word_decoder = DecoderRNN(p, vocab_size)
 
@@ -597,23 +597,8 @@ class HierarchicalDecoderRNN(nn.Module):
         # Repeat features so that each time-step of sentence LSTM receives the same
         # feature vector as its input:
 
-        if use_teacher_forcing:
-            features_repeated = features.unsqueeze(1).expand(-1, self.max_sentences, -1)
-            hiddens, _ = self.sentence_lstm(features_repeated)
-        else:
-            # Dims: batch_size x max_sentences x hidden_size
-            batch_size = lengths.size()[0]
-            hidden_size = self.sentence_lstm.hidden_size
-            outputs = torch.zeros(batch_size, self.max_sentences, hidden_size).to(device)
-            inputs = features.unsqueeze(1)
-            states = None
-
-            for t in range(self.max_sentences):
-                hiddens, states = self.sentence_lstm(inputs, states)
-                outputs[:, t, :] = hiddens.squeeze(1)
-                inputs = hiddens
-
-            hiddens = outputs
+        features_repeated = features.unsqueeze(1).expand(-1, self.max_sentences, -1)
+        hiddens, _ = self.sentence_lstm(features_repeated)
 
         # Dims: (batch_size X max_sentences X 2)
         sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1], 2).to(device)
@@ -635,7 +620,8 @@ class HierarchicalDecoderRNN(nn.Module):
             h_t = hiddens[:, t]
 
             # Store the hidden state output for {CONTINUE = 0, STOP = 1} classifier
-            sentence_stopping[:, t] = self.dropout_stopping(self.linear_stopping(h_t))
+            #sentence_stopping[:, t] = self.dropout_stopping(self.linear_stopping(h_t).clamp(min=0))
+            sentence_stopping[:, t] = self.dropout_stopping(nn.Sigmoid()(self.linear_stopping(h_t)))
 
             # Get rid of zero-length sentences:
             h_t = h_t[sorting_order[t]][non_zero_idxs]
@@ -643,13 +629,13 @@ class HierarchicalDecoderRNN(nn.Module):
             # Fully connected layer 1 with ReLU activation:
             fc1 = self.linear1(h_t).clamp(min=0)
             # Output from the following layer is our context vector:
-            fc2 = self.dropout_fc(self.linear2(fc1))
-            # fc2 = self.bn(self.dropout_fc(self.linear2(fc1)))
+            topic = self.dropout_fc(self.linear2(fc1))
+            #fc2 = self.bn(self.dropout_fc(self.linear2(fc1)))
 
             # TODO: Check that we reset the state and hiddens for word_decoder here!
 
             # print('fully connected size: {}'.format(fc2.size()))
-            word_rnn_out.append(self.word_decoder(fc2, captions[:, t][non_zero_idxs],
+            word_rnn_out.append(self.word_decoder(topic, captions[:, t][non_zero_idxs],
                                                   lengths[:, t][non_zero_idxs],
                                                   images[sorting_order[t]]))
 
@@ -671,7 +657,8 @@ class HierarchicalDecoderRNN(nn.Module):
             # hiddens: (batch_size, 1, hidden_size)
             hiddens, states = self.sentence_lstm(inputs, states)
             # (1 x 2)
-            stopping = self.linear_stopping(hiddens.squeeze(1))
+            #stopping = self.linear_stopping(hiddens.squeeze(1)).clamp(min=0)
+            stopping = nn.Sigmoid()(self.linear_stopping(hiddens.squeeze(1)))
 
             fc = self.linear1(hiddens).clamp(min=0)
             topic_vector = self.linear2(fc).squeeze(1)
