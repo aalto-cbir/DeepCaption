@@ -947,12 +947,14 @@ class GenericDataset(data.Dataset):
         return len(self.filelist)
 
 
-def _collate_features(feature_sets):
+def _collate_features(feature_sets, sorting_idx=None):
     # Generate list of (batch_size, concatenated_feature_length) tensors,
     # one for each feature set
     # feature_sets is a tuple of lists -
     # -- one tuple corresponds to an image
     # -- list elements correspond to different feature types for the same image
+    # :param sorting_idx: used by hierarchical model to sort the features 
+    #                     to match the initial sorting order when collating
     if feature_sets[0] is not None:
         batch_size = len(feature_sets)
         num_feature_sets = len(feature_sets[0])
@@ -960,7 +962,11 @@ def _collate_features(feature_sets):
 
         for fs_i in range(num_feature_sets):
             if feature_sets[0][fs_i] is not None:
-                features.append(torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0))
+                current_feature = torch.stack([feature_sets[i][fs_i] for i in range(batch_size)], 0)
+                if sorting_idx is not None:
+                    assert len(sorting_idx) == len(current_feature)
+                    current_feature = current_feature[sorting_idx]
+                features.append(current_feature)
             else:
                 # Allow None features so that the feature type index in train.py stays correct
                 features.append(None)
@@ -1233,12 +1239,13 @@ def collate_hierarchical(data, max_sentences, vocab):
 
     # print('lengths: {}'.format(lengths[:, 0]))
 
-    features = _collate_features(feature_sets)
+    features = _collate_features(feature_sets, idxs_sorted_0)
 
     # TODO: Test if I can get correct sorting order back!
     #import sys; sys.exit(3)
     return (images, targets, lengths, image_ids, features,
             sorting_order, last_sentence_indicator)
+
 
 def unzip_image_dir(image_dir):
     # Check if $TMPDIR envirnoment variable is set and use that
