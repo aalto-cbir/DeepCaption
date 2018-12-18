@@ -61,7 +61,11 @@ def caption_ids_to_words(sampled_ids, vocab):
 def paragraph_ids_to_words(sampled_ids, vocab):
     paragraph = ''
     for sentence in sampled_ids:
+        if sentence[0] == vocab("<pad>"):
+            break
         paragraph += caption_ids_to_words(sentence, vocab) + '. '
+
+    paragraph = paragraph.replace(" .", ".")
 
     return paragraph
 
@@ -90,14 +94,13 @@ def remove_duplicate_sentences(caption):
     """Removes consecutively repeating sentences from the caption"""
     sentences = caption.split('.')
 
-    no_dupes = [sentences[0]]
+    no_dupes = [sentences[0].strip()]
 
     for i, _ in enumerate(sentences):
-        if i:
-            if sentences[i - 1] == sentences[i]:
-                no_dupes.append(sentences[i])
+        if sentences[i].strip() != no_dupes[-1].strip():
+            no_dupes.append(sentences[i].strip())
 
-    return '.'.join(no_dupes)
+    return '. '.join(no_dupes)
 
 
 def remove_incomplete_sentences(caption):
