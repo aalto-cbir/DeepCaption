@@ -623,8 +623,9 @@ class HierarchicalDecoderRNN(nn.Module):
 
             # Store the hidden state output for {CONTINUE = 0, STOP = 1} classifier
             #sentence_stopping[:, t] = self.dropout_stopping(self.linear_stopping(h_t).clamp(min=0))
-            sentence_stopping[:, t] = self.dropout_stopping(nn.Sigmoid()(self.linear_stopping(h_t)))
-
+            sentence_stopping[:, t] = nn.Sigmoid()(self.linear_stopping(
+                self.dropout_stopping(h_t))).squeeze()
+            assert(sentence_stopping[:, t].max() <= 1.0 and sentence_stopping[:, t].min() >= 0.0)
             # Get rid of zero-length sentences:
             h_t = h_t[sorting_order[t]][non_zero_idxs]
 
@@ -652,7 +653,12 @@ class HierarchicalDecoderRNN(nn.Module):
         inputs = features.unsqueeze(1)
         num_inputs = inputs.size()[0]
         # Output tensor:
-        paragraphs = torch.zeros(num_inputs, self.max_sentences, max_seq_length).long()
+        paragraphs = torch.zeros(num_inputs, self.max_sentences, max_seq_length).long().to(device)
+
+        # Mini batch indices where the next senteence should be generated
+        # when mask element is set to zero, it means that more more sentences should be
+        # generated for input image at that index
+        mask = torch.ones(num_inputs).byte().to(device)
 
         for t in range(self.max_sentences):
             # Output a sentence state
@@ -669,11 +675,13 @@ class HierarchicalDecoderRNN(nn.Module):
                                                 states=None, max_seq_length=max_seq_length)
 
             # sentences.append(sentence)
-            paragraphs[:, t] = sentence
+            paragraphs[:, t][mask] = sentence[mask]
 
             # Fixme - rewrite stopping support to work with mini-batches
-            if stopping[0] >= 0.5:
-                break
+            # if stopping[0] >= 0.5:
+            #    break
+
+            mask = (mask == (stopping < 0.5).squeeze())
 
         return paragraphs
 
@@ -684,8 +692,9 @@ class HierarchicalXEntropyLoss(nn.Module):
         self.weight_sent = torch.Tensor([weight_sentence_loss]).to(device)
         self.weight_word = torch.Tensor([weight_word_loss]).to(device)
         #self.sent_loss_fun = nn.CrossEntropyLoss()
-        #self.word_loss_fun = nn.CrossEntropyLoss()
-        self.loss = nn.CrossEntropyLoss()
+        #self.word_loss_fun = nn.CrossEntropyLossLoss()
+        self.sent_loss = nn.BCELoss()
+        self.word_loss = nn.CrossEntropyLoss()
 
     def forward(self, outputs, targets):
         """ outputs and targets are both tuples of length = 2
@@ -704,24 +713,34 @@ class HierarchicalXEntropyLoss(nn.Module):
         max_sentences = len(targets[1])
         # print('max_sentences: {}'.format(max_sentences))
 
-        self.loss_sent = torch.Tensor([0]).to(device)
+        self.loss_s = torch.Tensor([0]).to(device)
+
+        assert(outputs[0].max() <= 1.0 and outputs[0].min() >= 0.0)
+
+        mask = torch.ones(len(outputs[0])).byte().to(device)
 
         for j in range(max_sentences):
             # print("Size of outputs[0][{}]: {}, size of targets[0][{}] {}".
             #      format(j, outputs[0][j].size(), j, targets[0][j].size()))
-            self.loss_sent += self.loss(outputs[0][:, j], targets[0][:, j])
+            #self.loss_s += self.sent_loss(outputs[0][:, j], targets[0][:, j])
+            _outputs = outputs[0][:, j][mask]
+            _targets = targets[0][:, j][mask]
 
-        self.loss_word = torch.Tensor([0]).to(device)
+            self.loss_s += self.sent_loss(_outputs, _targets)
+
+            mask = (mask == (outputs[0][:, j] < 0.5).squeeze())
+
+        self.loss_w = torch.Tensor([0]).to(device)
 
         for j in range(max_sentences):
             # print("Size of outputs[1][{}]: {}, size of targets[1][{}] {}".
             #      format(j, outputs[1][j].size(), j, targets[1][j].size()))
-            self.loss_word += self.loss(outputs[1][j], targets[1][j])
+            self.loss_w += self.word_loss(outputs[1][j], targets[1][j])
 
-        return self.weight_sent * self.loss_sent + self.weight_word * self.loss_word
+        return self.weight_sent * self.loss_s + self.weight_word * self.loss_w
 
     def item_terms(self):
-        return self.weight_sent, self.loss_sent, self.weight_word, self.loss_word
+        return self.weight_sent, self.loss_s, self.weight_word, self.loss_w
 
 
 class SpatialAttention(nn.Module):
