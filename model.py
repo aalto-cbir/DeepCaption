@@ -717,18 +717,18 @@ class HierarchicalXEntropyLoss(nn.Module):
 
         assert(outputs[0].max() <= 1.0 and outputs[0].min() >= 0.0)
 
-        mask = torch.ones(len(outputs[0])).byte().to(device)
+        #mask = torch.ones(len(outputs[0])).byte().to(device)
 
         for j in range(max_sentences):
             # print("Size of outputs[0][{}]: {}, size of targets[0][{}] {}".
             #      format(j, outputs[0][j].size(), j, targets[0][j].size()))
-            #self.loss_s += self.sent_loss(outputs[0][:, j], targets[0][:, j])
-            _outputs = outputs[0][:, j][mask]
-            _targets = targets[0][:, j][mask]
+            self.loss_s += self.sent_loss(outputs[0][:, j], targets[0][:, j])
+            #_outputs = outputs[0][:, j][mask]
+            #_targets = targets[0][:, j][mask]
 
-            self.loss_s += self.sent_loss(_outputs, _targets)
+            #self.loss_s += self.sent_loss(_outputs, _targets)
 
-            mask = (mask == (outputs[0][:, j] < 0.5).squeeze())
+            #mask = (mask == (outputs[0][:, j] < 0.5).squeeze())
 
         self.loss_w = torch.Tensor([0]).to(device)
 
