@@ -357,6 +357,13 @@ class DecoderRNN(nn.Module):
                             p.num_layers, dropout=p.dropout, batch_first=True)
         self.linear = nn.Linear(p.hidden_size, vocab_size)
 
+        # TODO: Implement the following approach - 
+        # Using the Output Embedding to Improve Language Models
+        # https://arxiv.org/abs/1608.05859
+        # input_embedding = nn.Embedding(dim1,dim2)
+        # output_embedding =  nn.Embedding(dim2,dim1)
+        # output_embedding.weight.data = input_embedding.weight.data.transpose(0,1)
+
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
         feat_outputs = []
@@ -575,8 +582,8 @@ class HierarchicalDecoderRNN(nn.Module):
 
         # Stopping state classifier
         self.dropout_stopping = nn.Dropout(p=p.dropout_stopping)
-        #self.linear_stopping = nn.Linear(p.hidden_size, 2)
-        self.linear_stopping = nn.Linear(p.hidden_size, 1)
+        self.linear_stopping = nn.Linear(p.hidden_size, 2)
+        #self.linear_stopping = nn.Linear(p.hidden_size, 1)
         # Two fully connected layers (assuming same dimension):
         self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
         self.dropout_fc = nn.Dropout(p=p.dropout_fc)
@@ -602,8 +609,8 @@ class HierarchicalDecoderRNN(nn.Module):
         hiddens, _ = self.sentence_lstm(features_repeated)
 
         # Dims: (batch_size X max_sentences X 2)
-        #sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1], 2).to(device)
-        sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1]).to(device)
+        sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1], 2).to(device)
+        # sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1]).to(device)
         word_rnn_out = []
 
         n_word_rnns = hiddens.size(1)
@@ -623,9 +630,8 @@ class HierarchicalDecoderRNN(nn.Module):
 
             # Store the hidden state output for {CONTINUE = 0, STOP = 1} classifier
             #sentence_stopping[:, t] = self.dropout_stopping(self.linear_stopping(h_t).clamp(min=0))
-            sentence_stopping[:, t] = nn.Sigmoid()(self.linear_stopping(
-                self.dropout_stopping(h_t))).squeeze()
-            assert(sentence_stopping[:, t].max() <= 1.0 and sentence_stopping[:, t].min() >= 0.0)
+            sentence_stopping[:, t] = self.dropout_stopping(nn.Sigmoid()(self.linear_stopping(h_t)).squeeze())
+            #assert(sentence_stopping[:, t].max() <= 1.0 and sentence_stopping[:, t].min() >= 0.0)
             # Get rid of zero-length sentences:
             h_t = h_t[sorting_order[t]][non_zero_idxs]
 
@@ -665,7 +671,6 @@ class HierarchicalDecoderRNN(nn.Module):
             # hiddens: (batch_size, 1, hidden_size)
             hiddens, states = self.sentence_lstm(inputs, states)
             # (1 x 2)
-            #stopping = self.linear_stopping(hiddens.squeeze(1)).clamp(min=0)
             stopping = nn.Sigmoid()(self.linear_stopping(hiddens.squeeze(1)))
 
             fc = self.linear1(hiddens).clamp(min=0)
@@ -681,7 +686,8 @@ class HierarchicalDecoderRNN(nn.Module):
             # if stopping[0] >= 0.5:
             #    break
 
-            mask = (mask == (stopping < 0.5).squeeze())
+            #mask = (mask == (stopping < 0.5).squeeze())
+            mask = (mask == (stopping[:,0] > stopping[:,1]).squeeze())
 
         return paragraphs
 
@@ -693,7 +699,8 @@ class HierarchicalXEntropyLoss(nn.Module):
         self.weight_word = torch.Tensor([weight_word_loss]).to(device)
         #self.sent_loss_fun = nn.CrossEntropyLoss()
         #self.word_loss_fun = nn.CrossEntropyLossLoss()
-        self.sent_loss = nn.BCELoss()
+        #self.sent_loss = nn.BCELoss()
+        self.sent_loss = nn.CrossEntropyLoss()
         self.word_loss = nn.CrossEntropyLoss()
 
     def forward(self, outputs, targets):
@@ -715,20 +722,12 @@ class HierarchicalXEntropyLoss(nn.Module):
 
         self.loss_s = torch.Tensor([0]).to(device)
 
-        assert(outputs[0].max() <= 1.0 and outputs[0].min() >= 0.0)
-
-        #mask = torch.ones(len(outputs[0])).byte().to(device)
+        #assert(outputs[0].max() <= 1.0 and outputs[0].min() >= 0.0)
 
         for j in range(max_sentences):
             # print("Size of outputs[0][{}]: {}, size of targets[0][{}] {}".
             #      format(j, outputs[0][j].size(), j, targets[0][j].size()))
             self.loss_s += self.sent_loss(outputs[0][:, j], targets[0][:, j])
-            #_outputs = outputs[0][:, j][mask]
-            #_targets = targets[0][:, j][mask]
-
-            #self.loss_s += self.sent_loss(_outputs, _targets)
-
-            #mask = (mask == (outputs[0][:, j] < 0.5).squeeze())
 
         self.loss_w = torch.Tensor([0]).to(device)
 
