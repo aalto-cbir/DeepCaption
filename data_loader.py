@@ -1112,7 +1112,8 @@ def collate_hierarchical(data, max_sentences, vocab):
     #   (batchsize X max allowed sentences per paragraph)
     lengths = torch.zeros(len(captions), max_sentences).long()
 
-    last_sentence_indicator = torch.zeros(len(captions), max_sentences).float()
+    #last_sentence_indicator = torch.zeros(len(captions), max_sentences).float()
+    last_sentence_indicator = torch.zeros(len(captions), max_sentences).long()
 
     # Generate a table storing data about which sentence in a
     # paragraph is the last one:
