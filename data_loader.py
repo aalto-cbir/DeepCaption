@@ -16,12 +16,6 @@ from PIL import Image
 import configparser
 
 
-# TODO: remove this stub.
-# If needed it can be used for debugging hierarchical model
-def caption_ids_to_words(a, b):
-    return ['']
-
-
 def basename(fname):
     return os.path.splitext(os.path.basename(fname))[0]
 
@@ -1059,21 +1053,28 @@ def collate_fn_vist(data):
 
 
 def collate_hierarchical(data, max_sentences, vocab):
-    """Creates mini-batch tensors from the list of tuples (image, caption).
-
-    We should build custom collate_fn rather than using default collate_fn,
-    because merging caption (including padding) is not supported in default.
+    """Outputs data in a format compatible with hierarchical Decoder
 
     Args:
         data: list of tuple (image, caption).
             - image: torch tensor of shape (3, 224, 224).
             - caption: torch tensor of shape (?); variable length.
             - img_id: id of the image in the dataset
+            - feature_set
 
     Returns:
         images: torch tensor of shape (batch_size, 3, 224, 224).
         targets: torch tensor of shape (batch_size, padded_length).
-        lengths: list; valid length for each padded caption.
+        lengths: list; valid length for each sentence in a paragraph.
+        image_ids:
+        features: a list of size 2 (0 - initial features, 1 - persistant features)
+        sorting_order: sorting order relative to the first sentence of a paragraph
+                       needed to do pack-padded sequence based operations on individual
+                       sentences
+        last_sentence_indicator: tensor of size (batch_size x max_sentences) storing "1"
+                                 at positions indicating last sentence in the paragraph
+
+    TODO: Getting rid of debug print statements :)
     """
     images, captions, image_ids, feature_sets = zip(*data)
 
@@ -1081,6 +1082,11 @@ def collate_hierarchical(data, max_sentences, vocab):
         _print = False
         if _print:
             print(stuff)
+
+    # TODO: remove this stub.
+    # If needed it can be used for debugging hierarchical model
+    def caption_ids_to_words(a, b):
+        return ['']
 
     debugprint("=" * 80)
     debugprint('Raw captions:')
