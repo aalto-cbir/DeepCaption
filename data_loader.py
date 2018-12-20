@@ -16,6 +16,8 @@ from PIL import Image
 import configparser
 
 
+# TODO: remove this stub.
+# If needed it can be used for debugging hierarchical model
 def caption_ids_to_words(a, b):
     return ['']
 
