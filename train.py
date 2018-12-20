@@ -66,7 +66,7 @@ def get_model_name(args, params):
 
 # TODO: convert parameters to **kwargs
 def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
-               skip_start_token, rnn_hidden_init):
+               skip_start_token, rnn_hidden_init, share_embedding_weights):
     model_name = get_model_name(args, params)
 
     state = {
@@ -89,7 +89,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
         'vocab': vocab,
         'skip_start_token': skip_start_token,
         'rnn_hidden_init': rnn_hidden_init,
-        'share_embedding_weights': hare_embedding_weights
+        'share_embedding_weights': share_embedding_weights
     }
 
     if params.hierarchical_model:
