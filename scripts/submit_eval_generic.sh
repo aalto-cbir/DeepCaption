@@ -20,7 +20,7 @@ REFERENCE_CAPTIONS=$4 # /proj/mediaind/picsom/databases/visualgenome/download/im
 DATABASE=$5 #VGIM2P
 OUTPUT_PATH=$6 # ../image_captioning_dev/results/
 
-cd ../caption_scorer
+cd ../caption-scorer
 for NAME in $MODELS; do
     RESULTS_FILE=$(eval echo $RESULTS_TEMPLATE)
     if [ -f $RESULTS_FILE ]; then
@@ -33,7 +33,7 @@ for NAME in $MODELS; do
 
         srun python2 scorer.py --database VGIM2P \
             --references $REFERENCE_CAPTIONS \
-            --results $RESULTS_TEMPLATE \
+            --results $RESULTS_FILE \
             --eval_results_path $OUTPUT_PATH --range_to_100
     else
         echo "$RESULTS_FILE does not exist, moving on to next file"
