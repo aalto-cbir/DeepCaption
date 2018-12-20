@@ -16,6 +16,14 @@ Teacher forcing is controlled by parameter `--teacher_forcing`. By default this 
 
 `--teacher_forcing_k` sets the value of `k` and `--teacher_forcing_beta` sets the value for `beta`.
 
+## Hierarchical model
+
+This repository contains and implementation of hierarchical model inspired by [Krause et al](arxiv://link). You can train the hierarchical model on for example Visual Genome paragraph data as well as COCO captions (where each caption is considered a paragraph containing single sentence.) 
+
+```bash
+./train.py --dataset vgim2p:train --validate vgim2p:val --vocab AUTO --model_name Hierarchical/basic_hierarchical_model --hierarchical_model
+```
+
 # Model evaluation
 
 COCO evaluation library works only with Python 2. Therefore you will need to make sure that you are running the below code in an environment that supports this.
@@ -213,6 +221,13 @@ Run feature extraction as SLURM array job (please take note that the range of ar
 sbatch --time=0-24 --mem=128GB --job-name='COCO_TO_DENSECAP' --array=0-9 -o slurm-%x-%A_%a.out scripts/extract_densecap_features.sh
 '../image_captioning_dev/file_lists/image_file_list-coco:train2014:no_resize+coco:val2014:no_resize-taito-gpu.csc.fi_${n}_of_${N}.txt' 
 '../image_captioning_dev/features/densecap_features-coco:train2014:no_resize+coco:val2014:no_resize_${n}_of_${N}.h5`
+```
+
+Finally, to use the extracted features, you need to convert the extracted features from H5 to LMDB file format used in DeepCaption:
+
+```bash
+./densecap_h5_to_lmdb.py --inputs_list_basename 'file_lists/image_file_list-coco:train2014:no_resize+coco:val2014:no_resize-taito-gpu.csc.fi' \
+--features_basename features/densecap_features-coco:train2014:no_resize+coco:val2014:no_resize --num_files 10
 ```
 
 Please look at `scripts/extract_densecap_features.sh` to see what the above command really does.

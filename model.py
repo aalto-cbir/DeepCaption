@@ -18,8 +18,18 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 class ModelParams:
-    def __init__(self, d):
+    def __init__(self, d, arg_params=None):
+        """Store parameters given e.g. on the command line when invoking
+        the trainining script"""
+        # Allow changing model from non-hierarchical to hierarchical when loading
+        # from non-hierarchical model:
+        if arg_params is not None and arg_params.hierarchical_model is not None:
+            self.hierarchical_model = arg_params.hierarchical_model
+        else:
+            self.hierarchical_model = self._get_param(d, 'hierarchical_model', False)
         self.embed_size = self._get_param(d, 'embed_size', 256)
+        # Default pooling size to embed_size for non-hierarchical models:
+        self.pooling_size = self.embed_size
         self.hidden_size = self._get_param(d, 'hidden_size', 512)
         self.num_layers = self._get_param(d, 'num_layers', 1)
         self.batch_size = self._get_param(d, 'batch_size', 128)
@@ -36,9 +46,22 @@ class ModelParams:
         self.skip_start_token = self._get_param(d, 'skip_start_token', False)
         # Setting for initializing the hidden unit and cell state of the RNN:
         self.rnn_hidden_init = self._get_param(d, 'rnn_hidden_init', None)
+        # Use the same embedding matrix for input and output word embeddings:
+        self.share_embedding_weights = self._get_param(d, 'share_embedding_weights', False)
+
+        # Below parameters used only by the Hierarchical model:
+        if self.hierarchical_model:
+            self.pooling_size = self._get_param(d, 'pooling_size', 1024)
+            self.max_sentences = self._get_param(d, 'max_sentences', 6.0)
+            self.weight_sentence_loss = self._get_param(d, 'weight_sentence_loss', 5.0)
+            self.weight_word_loss = self._get_param(d, 'weight_word_loss', 1.0)
+            self.dropout_stopping = self._get_param(d, 'dropout_stopping', 0)
+            self.dropout_fc = self._get_param(d, 'dropout_fc', 0)
+            self.fc_size = self._get_param(d, 'fc_size', self.pooling_size)
 
     @classmethod
     def fromargs(cls, args):
+        """Initialize ModelParams class from command line arguments 'args'"""
         return cls(vars(args))
 
     def _get_param(self, d, param, default):
@@ -49,6 +72,9 @@ class ModelParams:
         return d[param]
 
     def _get_features(self, d, param, default):
+        """Either loads a comma-separated list of feature names from command line, and stores
+        features names in a namedtuple called Features, or returns itself if feature is already
+        said namedtuple"""
         p = self._get_param(d, param, default)
 
         # If it's already of type Features, just return it
@@ -68,6 +94,8 @@ class ModelParams:
             else:
                 int_feat.append(fn)
 
+        # Returns a named tuple containing two lists with feature names,
+        # one list for external and one for internal features:
         return Features(ext_feat, int_feat)
 
     def has_persist_features(self):
@@ -231,9 +259,9 @@ class EncoderCNN(nn.Module):
         # used to initialized the Decoder hidden state:
 
         # Add FC layer on top of features to get the desired output dimension
-        self.linear = nn.Linear(total_feat_dim, p.embed_size)
+        self.linear = nn.Linear(total_feat_dim, p.pooling_size)
         self.dropout = nn.Dropout(p=p.encoder_dropout)
-        self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
+        self.bn = nn.BatchNorm1d(p.pooling_size, momentum=0.01)
 
     def forward(self, images, external_features=None):
         """Extract feature vectors from input images."""
@@ -321,6 +349,8 @@ class DecoderRNN(nn.Module):
 
         self.skip_start_token = p.skip_start_token
         self.rnn_hidden_init = p.rnn_hidden_init
+        self.share_embedding_weights = p.share_embedding_weights
+
         if self.rnn_hidden_init == 'from_features':
             assert enc_features_dim is not 0
             self.init_h = nn.ModuleList()
@@ -331,7 +361,17 @@ class DecoderRNN(nn.Module):
 
         self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
                             p.num_layers, dropout=p.dropout, batch_first=True)
-        self.linear = nn.Linear(p.hidden_size, vocab_size)
+
+        if self.share_embedding_weights:
+            print("DecoderRNN: Sharing input and output embeddings for the RNN...")
+            # Using the Output Embedding to Improve Language Models
+            # https://arxiv.org/abs/1608.05859
+            self.dropout_embedding = nn.Dropout(p=p.dropout)
+            self.hidden_to_embeddings = nn.Linear(p.hidden_size, p.embed_size)
+            self.embed_output = nn.Linear(p.embed_size, vocab_size)
+            self.embed_output.weight.data = self.embed.weight.data.transpose(1, 0)
+        else:
+            self.linear = nn.Linear(p.hidden_size, vocab_size)
 
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
@@ -375,7 +415,12 @@ class DecoderRNN(nn.Module):
             inputs = torch.cat([embeddings, persist_features], 2)
             packed = pack_padded_sequence(inputs, lengths, batch_first=True)
             hiddens, _ = self.lstm(packed, states)
-            outputs = self.linear(hiddens[0])
+            if self.share_embedding_weights:
+                output_embeddings = self.hidden_to_embeddings(self.dropout_embedding(hiddens[0]))
+                #outputs = self.embed_output(output_embeddings.t())
+                outputs = torch.matmul(output_embeddings, self.embed_output.weight)
+            else:
+                outputs = self.linear(hiddens[0])
         else:
             # Use sampled or additive scheduling mode:
             batch_size = features.size()[0]
@@ -442,7 +487,7 @@ class DecoderRNN(nn.Module):
 
         return outputs
 
-    def sample(self, features, images, external_features, states=None, 
+    def sample(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_idx=None):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
@@ -470,7 +515,11 @@ class DecoderRNN(nn.Module):
 
         for i in range(max_seq_length):
             hiddens, states = self.lstm(inputs, states)
-            outputs = self.linear(hiddens.squeeze(1))
+            if self.share_embedding_weights:
+                output_embeddings = self.hidden_to_embeddings(hiddens.squeeze(1))
+                outputs = torch.matmul(output_embeddings, self.embed_output.weight)
+            else:
+                outputs = self.linear(hiddens.squeeze(1))
             _, predicted = outputs.max(1)
             sampled_ids.append(predicted)
 
@@ -489,26 +538,47 @@ class EncoderDecoder(nn.Module):
         super(EncoderDecoder, self).__init__()
         print('Using device: {}'.format(device.type))
         print('Initializing EncoderDecoder model...')
+
+        if params.hierarchical_model:
+            self.model_type = 'hierarchical_model'
+            _DecoderRNN = HierarchicalDecoderRNN
+        else:
+            self.model_type = 'regular_model'
+            _DecoderRNN = DecoderRNN
+
         self.encoder = EncoderCNN(params, ef_dims[0]).to(device)
-        self.decoder = DecoderRNN(params, vocab_size, ef_dims[1],
-                                  self.encoder.total_feat_dim).to(device)
+        self.decoder = _DecoderRNN(params, vocab_size, ef_dims[1],
+                                   self.encoder.total_feat_dim).to(device)
 
         self.opt_params = (list(self.decoder.parameters()) +
                            list(self.encoder.linear.parameters()) +
                            list(self.encoder.bn.parameters()))
 
         if state:
-            self.encoder.load_state_dict(state['encoder'])
-            self.decoder.load_state_dict(state['decoder'])
+            # If the user has specified that they would like train
+            # a hierarchical model and are also specifying an old model to be loaded
+            # then selectively attempt to use the decoder of the loaded model
+            # as the word-RNN of the hierarchical model:
+            if params.hierarchical_model and not state.get('hierarchical_model'):
+                print("Applying non-hierarchical decoder weights to hierarchical model...")
+                self.decoder.word_decoder.load_state_dict(state['decoder'])
+            else:
+                self.encoder.load_state_dict(state['encoder'])
+                self.decoder.load_state_dict(state['decoder'])
 
     def get_opt_params(self):
         return self.opt_params
 
     def forward(self, images, init_features, captions, lengths, persist_features,
-                teacher_p=1.0, teacher_forcing='always'):
+                teacher_p=1.0, teacher_forcing='always', sorting_order=None):
         features = self.encoder(images, init_features)
-        outputs = self.decoder(features, captions, lengths, images, persist_features,
-                               teacher_p, teacher_forcing)
+        if self.model_type == 'hierarchical_model':
+            # TODO: Make the hierarchical and regular decoder take the same arguments
+            # if possible:
+            outputs = self.decoder(features, captions, lengths, images, sorting_order)
+        else:
+            outputs = self.decoder(features, captions, lengths, images, persist_features,
+                                   teacher_p, teacher_forcing)
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
@@ -519,6 +589,175 @@ class EncoderDecoder(nn.Module):
                                           start_token_idx=start_token_idx)
 
         return sampled_ids
+
+
+class HierarchicalDecoderRNN(nn.Module):
+    def __init__(self, p, vocab_size, ext_features_dim=0, enc_features_dim=0):
+        """Set the hyper-parameters and build the layers."""
+        super(HierarchicalDecoderRNN, self).__init__()
+        self.sentence_lstm = nn.LSTM(p.pooling_size, p.hidden_size,
+                                     dropout=p.dropout, batch_first=True)
+
+        # Stopping state classifier
+        self.dropout_stopping = nn.Dropout(p=p.dropout_stopping)
+        self.linear_stopping = nn.Linear(p.hidden_size, 2)
+        #self.linear_stopping = nn.Linear(p.hidden_size, 1)
+        # Two fully connected layers (assuming same dimension):
+        self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
+        self.dropout_fc = nn.Dropout(p=p.dropout_fc)
+        self.linear2 = nn.Linear(p.fc_size, p.embed_size)
+        #self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
+        # Word LSTM:
+        self.word_decoder = DecoderRNN(p, vocab_size)
+
+        self.max_sentences = p.max_sentences
+
+    def forward(self, features, captions, lengths, images, sorting_order,
+                use_teacher_forcing=True):
+        """Decode image feature vectors and generates captions.
+        features: image features
+        captions: paragraph captions, regular captions treated as paragraphs
+        of length = 1
+        lengths: of sentences in paragraph"""
+
+        # Repeat features so that each time-step of sentence LSTM receives the same
+        # feature vector as its input:
+
+        features_repeated = features.unsqueeze(1).expand(-1, self.max_sentences, -1)
+        hiddens, _ = self.sentence_lstm(features_repeated)
+
+        # Dims: (batch_size X max_sentences X 2)
+        sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1], 2).to(device)
+        # sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1]).to(device)
+        word_rnn_out = []
+
+        n_word_rnns = hiddens.size(1)
+
+        for t in range(n_word_rnns):
+            if lengths[0, t] == 0:
+                break   # no more sentences at position >= t in currepnt minibatch
+
+            non_zero_idxs = lengths[:, t] > 0
+            # Sort and filter a minibatch of hidden layer t based on:
+            # 1) Image order (as defined in data loader based on caption lengths)
+            # 2) Whether a sentence caption for image at sentence position t
+            # is not-empty
+
+            # Sort mini-batch hidden states based on current sentence position:
+            h_t = hiddens[:, t]
+
+            # Store the hidden state output for {CONTINUE = 0, STOP = 1} classifier
+            #sentence_stopping[:, t] = self.dropout_stopping(self.linear_stopping(h_t).clamp(min=0))
+            sentence_stopping[:, t] = self.dropout_stopping(nn.Sigmoid()(self.linear_stopping(h_t)).squeeze())
+            #assert(sentence_stopping[:, t].max() <= 1.0 and sentence_stopping[:, t].min() >= 0.0)
+            # Get rid of zero-length sentences:
+            h_t = h_t[sorting_order[t]][non_zero_idxs]
+
+            # Fully connected layer 1 with ReLU activation:
+            fc1 = self.linear1(h_t).clamp(min=0)
+            # Output from the following layer is our context vector:
+            topic = self.dropout_fc(self.linear2(fc1))
+            #fc2 = self.bn(self.dropout_fc(self.linear2(fc1)))
+
+            # TODO: Check that we reset the state and hiddens for word_decoder here!
+
+            # print('fully connected size: {}'.format(fc2.size()))
+            word_rnn_out.append(self.word_decoder(topic, captions[:, t][non_zero_idxs],
+                                                  lengths[:, t][non_zero_idxs],
+                                                  images[sorting_order[t]]))
+
+        # We will use hiddens for logistic regression over stopping state
+        # and fc2 as the context for the word RNN
+        return sentence_stopping, word_rnn_out
+
+    def sample(self, features, images, external_features, states=None,
+               max_seq_length=50, start_token_idx=None):
+        """Generate captions for given image features using greedy search."""
+
+        inputs = features.unsqueeze(1)
+        num_inputs = inputs.size()[0]
+        # Output tensor:
+        paragraphs = torch.zeros(num_inputs, self.max_sentences, max_seq_length).long().to(device)
+
+        # Mini batch indices where the next senteence should be generated
+        # when mask element is set to zero, it means that more more sentences should be
+        # generated for input image at that index
+        mask = torch.ones(num_inputs).byte().to(device)
+
+        for t in range(self.max_sentences):
+            # Output a sentence state
+            # hiddens: (batch_size, 1, hidden_size)
+            hiddens, states = self.sentence_lstm(inputs, states)
+            # (1 x 2)
+            stopping = nn.Sigmoid()(self.linear_stopping(hiddens.squeeze(1)))
+
+            fc = self.linear1(hiddens).clamp(min=0)
+            topic_vector = self.linear2(fc).squeeze(1)
+
+            sentence = self.word_decoder.sample(topic_vector, images, external_features,
+                                                states=None, max_seq_length=max_seq_length)
+
+            # sentences.append(sentence)
+            paragraphs[:, t][mask] = sentence[mask]
+
+            # Fixme - rewrite stopping support to work with mini-batches
+            # if stopping[0] >= 0.5:
+            #    break
+
+            #mask = (mask == (stopping < 0.5).squeeze())
+            mask = (mask == (stopping[:,0] > stopping[:,1]).squeeze())
+
+        return paragraphs
+
+
+class HierarchicalXEntropyLoss(nn.Module):
+    def __init__(self, weight_sentence_loss=5.0, weight_word_loss=1.0):
+        super(HierarchicalXEntropyLoss, self).__init__()
+        self.weight_sent = torch.Tensor([weight_sentence_loss]).to(device)
+        self.weight_word = torch.Tensor([weight_word_loss]).to(device)
+        #self.sent_loss_fun = nn.CrossEntropyLoss()
+        #self.word_loss_fun = nn.CrossEntropyLossLoss()
+        #self.sent_loss = nn.BCELoss()
+        self.sent_loss = nn.CrossEntropyLoss()
+        self.word_loss = nn.CrossEntropyLoss()
+
+    def forward(self, outputs, targets):
+        """ outputs and targets are both tuples of length = 2
+        First element: a Tensor of size (batchsize X max_sentences)
+            it tells us the sentence RNN stopping indices
+        Second element:  a list of length=batchsize, of Tensors of
+            size at most = max_sentence the actual captions for each sentence position"""
+        # Compare number of sentences?
+        # outputs: tuple = (captions, stopping_states)
+        # targets: target paragraphs
+        # Do regular loss on individual sentences?
+        # 1) Cross entropy loss of current sentence being last sentence
+        # 2) Cross entropy loss of curent word being correct
+        # For each sample in a mini-batch we want the number of sentences
+        # Max number of sentences in the target mini-batch:
+        max_sentences = len(targets[1])
+        # print('max_sentences: {}'.format(max_sentences))
+
+        self.loss_s = torch.Tensor([0]).to(device)
+
+        #assert(outputs[0].max() <= 1.0 and outputs[0].min() >= 0.0)
+
+        for j in range(max_sentences):
+            # print("Size of outputs[0][{}]: {}, size of targets[0][{}] {}".
+            #      format(j, outputs[0][j].size(), j, targets[0][j].size()))
+            self.loss_s += self.sent_loss(outputs[0][:, j], targets[0][:, j])
+
+        self.loss_w = torch.Tensor([0]).to(device)
+
+        for j in range(max_sentences):
+            # print("Size of outputs[1][{}]: {}, size of targets[1][{}] {}".
+            #      format(j, outputs[1][j].size(), j, targets[1][j].size()))
+            self.loss_w += self.word_loss(outputs[1][j], targets[1][j])
+
+        return self.weight_sent * self.loss_s + self.weight_word * self.loss_w
+
+    def item_terms(self):
+        return self.weight_sent, self.loss_s, self.weight_word, self.loss_w
 
 
 class SpatialAttention(nn.Module):

@@ -58,6 +58,18 @@ def caption_ids_to_words(sampled_ids, vocab):
     return fix_caption(' '.join(sampled_caption))
 
 
+def paragraph_ids_to_words(sampled_ids, vocab):
+    paragraph = ''
+    for sentence in sampled_ids:
+        if sentence[0] == vocab("<pad>"):
+            break
+        paragraph += caption_ids_to_words(sentence, vocab) + '. '
+
+    paragraph = paragraph.replace(" .", ".")
+
+    return paragraph
+
+
 def path_from_id(image_dir, image_id):
     """Return image path based on image directory, image id and
     glob matching for extension"""
@@ -82,14 +94,13 @@ def remove_duplicate_sentences(caption):
     """Removes consecutively repeating sentences from the caption"""
     sentences = caption.split('.')
 
-    no_dupes = [sentences[0]]
+    no_dupes = [sentences[0].strip()]
 
     for i, _ in enumerate(sentences):
-        if i:
-            if sentences[i - 1] == sentences[i]:
-                no_dupes.append(sentences[i])
+        if sentences[i].strip() != no_dupes[-1].strip():
+            no_dupes.append(sentences[i].strip())
 
-    return '.'.join(no_dupes)
+    return '. '.join(no_dupes)
 
 
 def remove_incomplete_sentences(caption):
@@ -258,7 +269,10 @@ def infer(ext_args=None):
             sampled_ids = sampled_ids_batch[i]
 
             # Convert word_ids to words
-            caption = caption_ids_to_words(sampled_ids, vocab)
+            if params.hierarchical_model:
+                caption = paragraph_ids_to_words(sampled_ids, vocab)
+            else:
+                caption = caption_ids_to_words(sampled_ids, vocab)
 
             if args.no_repeat_sentences:
                 caption = remove_duplicate_sentences(caption)
