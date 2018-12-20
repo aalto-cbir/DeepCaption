@@ -88,7 +88,8 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
         'attention': params.attention,
         'vocab': vocab,
         'skip_start_token': skip_start_token,
-        'rnn_hidden_init': rnn_hidden_init
+        'rnn_hidden_init': rnn_hidden_init,
+        'share_embedding_weights': hare_embedding_weights
     }
 
     if params.hierarchical_model:
@@ -731,7 +732,8 @@ def main(args):
             print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                         stats['training_loss']))
             save_model(args, params, model.encoder, model.decoder, optimizer, epoch,
-                       vocab, params.skip_start_token, params.rnn_hidden_init)
+                       vocab, params.skip_start_token, params.rnn_hidden_init,
+                       params.share_embedding_weights)
 
             if epoch == 0:
                 vocab_counts['avg'] = vocab_counts['sum']/vocab_counts['cnt']
@@ -884,6 +886,8 @@ if __name__ == '__main__':
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
     parser.add_argument('--lr_scheduler', action='store_true')
+    parser.add_argument('--share_embedding_weights', action='store_true',
+                        help='Share weights for language model input and output embeddings')
 
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
     parser.add_argument('--teacher_forcing', type=str, default='always',

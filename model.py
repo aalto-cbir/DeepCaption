@@ -44,6 +44,8 @@ class ModelParams:
         self.skip_start_token = self._get_param(d, 'skip_start_token', False)
         # Setting for initializing the hidden unit and cell state of the RNN:
         self.rnn_hidden_init = self._get_param(d, 'rnn_hidden_init', None)
+        # Use the same embedding matrix for input and output word embeddings:
+        self.share_embedding_weights = self._get_param(d, 'share_embedding_weights', False)
 
         # Below parameters used only by the Hierarchical model:
         if self.hierarchical_model:
@@ -345,6 +347,8 @@ class DecoderRNN(nn.Module):
 
         self.skip_start_token = p.skip_start_token
         self.rnn_hidden_init = p.rnn_hidden_init
+        self.share_embedding_weights = p.share_embedding_weights
+
         if self.rnn_hidden_init == 'from_features':
             assert enc_features_dim is not 0
             self.init_h = nn.ModuleList()
@@ -355,14 +359,17 @@ class DecoderRNN(nn.Module):
 
         self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
                             p.num_layers, dropout=p.dropout, batch_first=True)
-        self.linear = nn.Linear(p.hidden_size, vocab_size)
 
-        # TODO: Implement the following approach - 
-        # Using the Output Embedding to Improve Language Models
-        # https://arxiv.org/abs/1608.05859
-        # input_embedding = nn.Embedding(dim1,dim2)
-        # output_embedding =  nn.Embedding(dim2,dim1)
-        # output_embedding.weight.data = input_embedding.weight.data.transpose(0,1)
+        if self.share_embedding_weights:
+            print("DecoderRNN: Sharing input and output embeddings for the RNN...")
+            # Using the Output Embedding to Improve Language Models
+            # https://arxiv.org/abs/1608.05859
+            self.dropout_embedding = nn.Dropout(p=p.dropout)
+            self.hidden_to_embeddings = nn.Linear(p.hidden_size, p.embed_size)
+            self.embed_output = nn.Linear(p.embed_size, vocab_size)
+            self.embed_output.weight.data = self.embed.weight.data.transpose(1, 0)
+        else:
+            self.linear = nn.Linear(p.hidden_size, vocab_size)
 
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
@@ -406,7 +413,12 @@ class DecoderRNN(nn.Module):
             inputs = torch.cat([embeddings, persist_features], 2)
             packed = pack_padded_sequence(inputs, lengths, batch_first=True)
             hiddens, _ = self.lstm(packed, states)
-            outputs = self.linear(hiddens[0])
+            if self.share_embedding_weights:
+                output_embeddings = self.hidden_to_embeddings(self.dropout_embedding(hiddens[0]))
+                #outputs = self.embed_output(output_embeddings.t())
+                outputs = torch.matmul(output_embeddings, self.embed_output.weight)
+            else:
+                outputs = self.linear(hiddens[0])
         else:
             # Use sampled or additive scheduling mode:
             batch_size = features.size()[0]
@@ -501,7 +513,11 @@ class DecoderRNN(nn.Module):
 
         for i in range(max_seq_length):
             hiddens, states = self.lstm(inputs, states)
-            outputs = self.linear(hiddens.squeeze(1))
+            if self.share_embedding_weights:
+                output_embeddings = self.hidden_to_embeddings(hiddens.squeeze(1))
+                outputs = torch.matmul(output_embeddings, self.embed_output.weight)
+            else:
+                outputs = self.linear(hiddens.squeeze(1))
             _, predicted = outputs.max(1)
             sampled_ids.append(predicted)
 
