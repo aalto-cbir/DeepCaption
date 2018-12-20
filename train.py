@@ -782,9 +782,6 @@ if __name__ == '__main__':
                         help='where in /tmp folder to store project data')
     parser.add_argument('--log_step', type=int, default=10,
                         help='step size for printing log info')
-    parser.add_argument('--resume', action="store_true",
-                        help="Resume from largest epoch checkpoint matching \
-                        current parameters")
     parser.add_argument('--verbose', action="store_true", help="Increase verbosity")
     parser.add_argument('--profiler', action="store_true", help="Run in profiler")
     parser.add_argument('--cpu', action="store_true",
