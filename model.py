@@ -21,6 +21,8 @@ class ModelParams:
     def __init__(self, d, arg_params=None):
         """Store parameters given e.g. on the command line when invoking
         the trainining script"""
+        # Allow changing model from non-hierarchical to hierarchical when loading
+        # from non-hierarchical model:
         if arg_params is not None and arg_params.hierarchical_model is not None:
             self.hierarchical_model = arg_params.hierarchical_model
         else:
