@@ -58,6 +58,10 @@ class ModelParams:
             self.dropout_stopping = self._get_param(d, 'dropout_stopping', 0)
             self.dropout_fc = self._get_param(d, 'dropout_fc', 0)
             self.fc_size = self._get_param(d, 'fc_size', self.pooling_size)
+            # Coherent caption parameters:
+            self.coherent_sentences = self._get_param(d, 'coherent_sentences', False)
+            self.coupling_alpha = self._get_param(d, 'coupling_alpha', 1.0)
+            self.coupling_beta = self._get_param(d, 'coupling_beta', 1.5)
 
     @classmethod
     def fromargs(cls, args):

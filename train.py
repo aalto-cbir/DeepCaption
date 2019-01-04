@@ -97,6 +97,9 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
         state['dropout_stopping'] = params.dropout_stopping
         state['dropout_fc'] = params.dropout_fc
         state['fc_size'] = params.fc_size
+        state['coherent_sentences'] = params.coherent_sentences
+        state['coupling_alpha'] = params.coupling_alpha
+        state['coupling_beta'] = params.coupling_beta
 
     file_name = 'ep{}.model'.format(epoch + 1)
 
@@ -392,6 +395,9 @@ def main(args):
         params.weight_word_loss = arg_params.weight_word_loss
         params.dropout_stopping = arg_params.dropout_stopping
         params.dropout_fc = arg_params.dropout_fc
+        params.coherent_sentences = arg_params.coherent_sentences
+        params.coupling_alpha = arg_params.coupling_alpha
+        params.coupling_beta = arg_params.coupling_beta
 
     if args.load_model:
         print("Final model parameters (loaded model + command arguments): ")
@@ -862,6 +868,9 @@ if __name__ == '__main__':
     parser.add_argument('--fc_size', type=int,
                         help='size of the fully connected layer in the sentence LSTM '
                              'Defaults to pooling_size')
+    # Enabled architecture by Chatterjee and Schwing, 2018:
+    parser.add_argument('--coherent_sentences', action='store_true',
+                        help="Enable coherence between sentences")
 
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
