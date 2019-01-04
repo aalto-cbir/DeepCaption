@@ -65,8 +65,7 @@ def get_model_name(args, params):
 
 
 # TODO: convert parameters to **kwargs
-def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
-               skip_start_token, rnn_hidden_init, share_embedding_weights):
+def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
     model_name = get_model_name(args, params)
 
     state = {
@@ -87,9 +86,9 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
         'persist_features': params.persist_features,
         'attention': params.attention,
         'vocab': vocab,
-        'skip_start_token': skip_start_token,
-        'rnn_hidden_init': rnn_hidden_init,
-        'share_embedding_weights': share_embedding_weights
+        'skip_start_token': params.skip_start_token,
+        'rnn_hidden_init': params.rnn_hidden_init,
+        'share_embedding_weights': params.share_embedding_weights
     }
 
     if params.hierarchical_model:
@@ -737,9 +736,7 @@ def main(args):
 
             print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                         stats['training_loss']))
-            save_model(args, params, model.encoder, model.decoder, optimizer, epoch,
-                       vocab, params.skip_start_token, params.rnn_hidden_init,
-                       params.share_embedding_weights)
+            save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
 
             if epoch == 0:
                 vocab_counts['avg'] = vocab_counts['sum']/vocab_counts['cnt']
