@@ -616,7 +616,7 @@ def main(args):
                 if epoch==0:
                     unk = vocab('<unk>')
                     for j in range(captions.shape[0]):
-                        # Flatten the caption in case it's paragraph
+                        # Flatten the caption in case it's a paragraph
                         # this is harmless for regular captions too:
                         xl = captions[j,:].view(-1)
                         xw = xl>unk
@@ -840,7 +840,8 @@ if __name__ == '__main__':
     parser.add_argument('--rnn_hidden_init', type=str,
                         help='initization strategy for RNN hidden and cell states. '
                         'Supported values: None (set to zeros), from_features '
-                        '(using a linear transform on (mean/average pooled) image feature vector')
+                        '(using a linear transform on (mean/average pooled) '
+                        'image feature vector')
 
     # Hierarchical model parameters, only in use if --hierarchical_model flag is set:
     parser.add_argument('--hierarchical_model', action='store_true',

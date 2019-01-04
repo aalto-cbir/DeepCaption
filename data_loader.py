@@ -1073,32 +1073,9 @@ def collate_hierarchical(data, max_sentences, vocab):
                        sentences
         last_sentence_indicator: tensor of size (batch_size x max_sentences) storing "1"
                                  at positions indicating last sentence in the paragraph
-
-    TODO: Getting rid of debug print statements :)
     """
+
     images, captions, image_ids, feature_sets = zip(*data)
-
-    def debugprint(stuff):
-        _print = False
-        if _print:
-            print(stuff)
-
-    # TODO: remove this stub.
-    # If needed it can be used for debugging hierarchical model
-    def caption_ids_to_words(a, b):
-        return ['']
-
-    debugprint("=" * 80)
-    debugprint('Raw captions:')
-    for i, paragraph in enumerate(captions):
-        debugprint("=" * 80)
-        debugprint("Paragraph {}, image_id {}".format(i, image_ids[i]))
-        debugprint("=" * 80)
-        for sentence in paragraph:
-            #print(sentence)
-            text = ' '.join(caption_ids_to_words(sentence.tolist(), vocab))
-            debugprint('sentence: {}, length: {}, image_id: {}'.format(text, len(sentence), image_ids[i]))
-    debugprint("=" * 80)
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
@@ -1106,11 +1083,7 @@ def collate_hierarchical(data, max_sentences, vocab):
     # Get the length of the longest sentence:
     _lengths = [[len(sentence) for sentence in paragraph] for paragraph in captions]
 
-    debugprint('Raw lengths: {}'.format(_lengths))
-
     max_length = max(max(_lengths, key=lambda x: max(x)))
-    debugprint('Max length: {}'.format(max_length))
-    # print('max_length: {}'.format(max_length))
 
     # Placeholder tensor for all captions, of dimension:
     #   (batchsize X max allowed sentences per paragraph X longest sentence)
@@ -1120,23 +1093,17 @@ def collate_hierarchical(data, max_sentences, vocab):
     #   (batchsize X max allowed sentences per paragraph)
     lengths = torch.zeros(len(captions), max_sentences).long()
 
-    #last_sentence_indicator = torch.zeros(len(captions), max_sentences).float()
     last_sentence_indicator = torch.zeros(len(captions), max_sentences).long()
 
     # Generate a table storing data about which sentence in a
     # paragraph is the last one:
     for i, paragraph in enumerate(captions):
         s = len(paragraph)
-        # print('s: {}'.format(s))
         if s < max_sentences:
             last_sentence_indicator[i, s - 1] = 1
-            # print('last_sentence_indicator[i, s]: {}'.format(last_sentence_indicator[i, s]))
         else:
             last_sentence_indicator[i, max_sentences - 1] = 1
-            # print('last_sentence_indicator[i, max_sentences]: {}'.format(last_sentence_indicator[i, max_sentences - 1]))
 
-    debugprint("=" * 80)
-    debugprint('Last sentence indicator matrix: {}'.format(last_sentence_indicator))
     # Placeholder tensor for sorted image ids, of dimensions
     #   (max allowed sentences per paragraph X batchsize)
     # (NOTE: The sorting order for the sentence RNN is the same as the
@@ -1144,114 +1111,45 @@ def collate_hierarchical(data, max_sentences, vocab):
     # This shouldn't be a tensor! IDs can be anything!
     # image_ids_sorted = torch.zeros(len(captions), max_sentences)
 
-    debugprint("=" * 80)
-    debugprint("Next step - copying captions to 'targets' tensor and populating"
-          " the 'lengths' tensor")
     for i in range(len(captions)):
-        debugprint("=" * 80)
-        debugprint("Paragraph {}".format(i))
-        debugprint("=" * 80)
-        # This step also limits the number of sentences per paragraph 
+        # This step also limits the number of sentences per paragraph
         # to be <= max_captions
         for j in range(max_sentences):
             if len(captions[i]) > j:
-                # print('len(captions[i]): {}'.format(len(captions[i])))
-                # print('captions[i]: {}'.format(captions[i]))
-                # print('j: {}'.format(j))
                 lengths[i, j] = len(captions[i][j])
-                # print('max_length: {}'.format(max_length))
-                # print('caption_length: {}'.
-                #      format(len(captions[i][j])))
                 targets[i, j, :lengths[i, j]] = captions[i][j]
-                text = ' '.join(caption_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
-                debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], image_ids[i]))
-    debugprint("=" * 80)
-    # Create a list of lists storing image_ids at each sentence position:
-    # image_ids_sorted list holds actual image_ids at list index = 0,
-    # and sorting indices in the rest of the ids
-    sorting_order = [[] for _ in range(max_sentences)]
 
+    ##################################################################
+    # Sort everything based on the lenght of first sentence of each  #
+    # paragraph caption in the minibatch:                            #
+    ##################################################################
+    sorting_order = [[] for _ in range(max_sentences)]
     # First create a default sorting order:
+    # (Good to know: torch.sort() outputs a tuple of sorted data structure and sorted indices)
     _, idxs_sorted_0 = torch.sort(lengths[:, 0], descending=True)
-    debugprint("=" * 80)
-    debugprint("Sorting order based on the first sentence in each paragraph:")
-    debugprint(idxs_sorted_0)
-    debugprint("=" * 80)
 
     lengths = lengths[idxs_sorted_0]
     targets = targets[idxs_sorted_0]
     # Sort image ids:
     image_ids = [image_ids[i] for i in idxs_sorted_0]
-    debugprint("Lengths matrix sorted based on the first sentence in each paragraph:")
-    debugprint(lengths)
-    debugprint("=" * 80)
-
-    debugprint("Target captions sorted based on the first sentence in each paragraph:")
-    for i in range(len(captions)):
-        debugprint("=" * 80)
-        debugprint("Paragraph {}".format(i))
-        debugprint("=" * 80)
-        for j in range(max_sentences):
-            text = ' '.join(caption_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
-            debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], image_ids[i]))
-    debugprint("=" * 80)
-
-
     last_sentence_indicator = last_sentence_indicator[idxs_sorted_0]
-    debugprint('Last sentence indicator after the zeroth sorting:')
-    debugprint(last_sentence_indicator)
-    debugprint("=" * 80)
-
-    # And images:
+    # Sort images also (but only once), images are sorted in the
+    # same order as inputs for the first WordRNN:
     images = images[idxs_sorted_0]
-    # For the first word-rnn we keep the same sorting order as in the sentence-rnn:
+
+    ##############################################################
+    # Store sorting order indexed by sentence in the mini batch: #
+    ##############################################################
+    # For the first word-rnn we keep the same sorting order as in the SentenceRNN:
     sorting_order[0] = [i for i in range(len(idxs_sorted_0))]
 
-    debugprint('Sorting order now is: ')
-    debugprint(sorting_order[0])
-    debugprint("=" * 80)
-
     for j in range(1, max_sentences):
-        debugprint("=" * 80)
-        debugprint("Sorting sentence: {}".format(j))
-        debugprint("=" * 80)
         lengths[:, j], idxs_sorted = torch.sort(lengths[:, j], descending=True)
-        debugprint('Sorting order:')
-        debugprint(idxs_sorted)
-        debugprint('Sorted lengths:')
-        debugprint(lengths[:, j])
-        # print('lengths: {}'.format(lengths[:, j]))
         targets[:, j] = targets[:, j][idxs_sorted]
-        #last_sentence_indicator[:, j] = last_sentence_indicator[:, j][idxs_sorted]
-
-        # Sort images also (but only once), images are sorted in the
-        # same order as inputs for the first word-RNN:
-        # Also, image_ids_sorted list holds actual image ids in index = 0,
-        # and sorting indices in the rest of the ids
-        debugprint('Sorted captions:')
-        for i in range(len(images)):
-            text = ' '.join(caption_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab))
-            debugprint('sentence: {}, length: {}, image_id: {}'.format(text, lengths[i, j], 
-                                            [image_ids[i] for i in idxs_sorted_0][i]))
-
         sorting_order[j] = idxs_sorted
-
-    #import sys; sys.exit(3)
-
-
-    #print("Third step:")
-    #for i in range(len(captions)):
-    #    print("Paragraph {}".format(i))
-    #    for j in range(max_sentences):
-    ##        print(' '.join(caption_ids_to_words(targets[i, j, :lengths[i, j]].tolist(), vocab)))
-    #       print('Sorting order: {}'.format(sorting_order[j]))
-
-    # print('lengths: {}'.format(lengths[:, 0]))
 
     features = _collate_features(feature_sets, idxs_sorted_0)
 
-    # TODO: Test if I can get correct sorting order back!
-    #import sys; sys.exit(3)
     return (images, targets, lengths, image_ids, features,
             sorting_order, last_sentence_indicator)
 

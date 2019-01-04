@@ -715,9 +715,6 @@ class HierarchicalXEntropyLoss(nn.Module):
         super(HierarchicalXEntropyLoss, self).__init__()
         self.weight_sent = torch.Tensor([weight_sentence_loss]).to(device)
         self.weight_word = torch.Tensor([weight_word_loss]).to(device)
-        #self.sent_loss_fun = nn.CrossEntropyLoss()
-        #self.word_loss_fun = nn.CrossEntropyLossLoss()
-        #self.sent_loss = nn.BCELoss()
         self.sent_loss = nn.CrossEntropyLoss()
         self.word_loss = nn.CrossEntropyLoss()
 
