@@ -7,7 +7,7 @@ import torchvision.models as models
 import numpy as np
 
 from collections import OrderedDict, namedtuple
-from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 import external_models as ext_models
 
@@ -415,6 +415,8 @@ class DecoderRNN(nn.Module):
                 persist_features = (persist_features.unsqueeze(1).
                                     expand(-1, seq_length, -1))
 
+        hiddens = None
+
         if teacher_forcing == 'always':
             # Teacher forcing enabled -
             # Feed ground truth as next input at each time-step when training:
@@ -608,19 +610,36 @@ class HierarchicalDecoderRNN(nn.Module):
         self.sentence_lstm = nn.LSTM(p.pooling_size, p.hidden_size,
                                      dropout=p.dropout, batch_first=True)
 
+        self.coherent_sentences = p.coherent_sentences
+        if self.coherent_sentences:
+            self.coupling_unit = HierarchicalCoupling(p.hidden_size,
+                                                      p.embed_size,
+                                                      p.coupling_alpha,
+                                                      p.coupling_beta)
+
         # Stopping state classifier
         self.dropout_stopping = nn.Dropout(p=p.dropout_stopping)
         self.linear_stopping = nn.Linear(p.hidden_size, 2)
-        #self.linear_stopping = nn.Linear(p.hidden_size, 1)
         # Two fully connected layers (assuming same dimension):
         self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
         self.dropout_fc = nn.Dropout(p=p.dropout_fc)
         self.linear2 = nn.Linear(p.fc_size, p.embed_size)
-        #self.bn = nn.BatchNorm1d(p.embed_size, momentum=0.01)
         # Word LSTM:
         self.word_decoder = DecoderRNN(p, vocab_size)
 
         self.max_sentences = p.max_sentences
+
+    def _get_global_topic(self, topics):
+        topic_vector_norms = torch.norm(topics, dim=2)
+        topic_sums = torch.sum(topic_vector_norms, dim=1)
+        topic_sums = topic_sums.unsqueeze(1).expand(-1, self.max_sentences)
+        # alphas denote topic weights:
+        alphas = topic_vector_norms / topic_sums
+        alphas = alphas.unsqueeze(-1)
+
+        G = torch.sum(alphas * topics, dim=1)
+
+        return G
 
     def forward(self, features, captions, lengths, images, sorting_order,
                 use_teacher_forcing=True):
@@ -633,51 +652,97 @@ class HierarchicalDecoderRNN(nn.Module):
         # Repeat features so that each time-step of sentence LSTM receives the same
         # feature vector as its input:
 
-        features_repeated = features.unsqueeze(1).expand(-1, self.max_sentences, -1)
+        batch_size = lengths.size()[0]
+        n_sentences = lengths.size()[1]
+
+        features_repeated = features.unsqueeze(1).expand(-1, n_sentences, -1)
         hiddens, _ = self.sentence_lstm(features_repeated)
 
         # Dims: (batch_size X max_sentences X 2)
-        sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1], 2).to(device)
-        # sentence_stopping = torch.zeros(lengths.size()[0], lengths.size()[1]).to(device)
-        word_rnn_out = []
+        sentence_stopping = torch.zeros(batch_size, n_sentences, 2).to(device)
+        # sentence_stopping = torch.zeros(lengths.size()[0], ).to(device)
 
-        n_word_rnns = hiddens.size(1)
+        topics = torch.zeros(batch_size, n_sentences, self.linear2.out_features).to(device)
 
-        for t in range(n_word_rnns):
+        # We will use hiddens for logistic regression over stopping state
+        # and fc2 as the context for the word RNN
+        for t in range(n_sentences):
             if lengths[0, t] == 0:
-                break   # no more sentences at position >= t in currepnt minibatch
+                break   # no more sentences at position >= t in current minibatch
 
-            non_zero_idxs = lengths[:, t] > 0
+            # Get the unsurted hidden layer outputs from the SentenceRNN
+            h_t = hiddens[:, t]
+
+            # Store the hidden state output for {CONTINUE = 0, STOP = 1} classifier
+            # NOTE: For this step, we do no not need to sort sentences at each position t
+            sentence_stopping[:, t] = self.dropout_stopping(nn.Sigmoid()(
+                self.linear_stopping(h_t)).squeeze())
+
             # Sort and filter a minibatch of hidden layer t based on:
             # 1) Image order (as defined in data loader based on caption lengths)
             # 2) Whether a sentence caption for image at sentence position t
             # is not-empty
 
-            # Sort mini-batch hidden states based on current sentence position:
-            h_t = hiddens[:, t]
-
-            # Store the hidden state output for {CONTINUE = 0, STOP = 1} classifier
-            #sentence_stopping[:, t] = self.dropout_stopping(self.linear_stopping(h_t).clamp(min=0))
-            sentence_stopping[:, t] = self.dropout_stopping(nn.Sigmoid()(self.linear_stopping(h_t)).squeeze())
-            #assert(sentence_stopping[:, t].max() <= 1.0 and sentence_stopping[:, t].min() >= 0.0)
-            # Get rid of zero-length sentences:
-            h_t = h_t[sorting_order[t]][non_zero_idxs]
+            # Sort mini-batch hidden states based on current sentence position and
+            # get rid of zero-length sentences (note that the lengths are already sorted)
+            # NOTE: lengths[:, t] is already sorted according to the sorting order defined
+            # in sorting_order[:, t]
+            non_zero_idxs = lengths[:, t] > 0
+            h_t = h_t[sorting_order[:, t]][non_zero_idxs]
 
             # Fully connected layer 1 with ReLU activation:
             fc1 = self.linear1(h_t).clamp(min=0)
             # Output from the following layer is our context vector:
-            topic = self.dropout_fc(self.linear2(fc1))
-            #fc2 = self.bn(self.dropout_fc(self.linear2(fc1)))
+            fc2 = self.dropout_fc(self.linear2(fc1))
 
-            # TODO: Check that we reset the state and hiddens for word_decoder here!
+            # Some sentences at position t will be zero length and will have no topic vector,
+            # we need to account for that:
+            num_results = fc2.size()[0]
+            topics[:num_results, t] = fc2
 
-            # print('fully connected size: {}'.format(fc2.size()))
-            word_rnn_out.append(self.word_decoder(topic, captions[:, t][non_zero_idxs],
-                                                  lengths[:, t][non_zero_idxs],
-                                                  images[sorting_order[t]]))
+            # Dim=1 of topics is thus sorted according to the sorting_order
 
-        # We will use hiddens for logistic regression over stopping state
-        # and fc2 as the context for the word RNN
+        word_rnn_out = []
+
+        # Use WordRNN hidden layer value to initialize the next topic vector (coherent mode):
+        if self.coherent_sentences:
+            # TODO: Need to sort back to get G!
+            G = self._get_global_topic(topics)
+            hiddens = None
+
+            for t in range(n_sentences):
+                non_zero_idxs = lengths[:, t] > 0
+                topic = topics[:, t][sorting_order[t]][non_zero_idxs]
+                if hiddens is not None:
+                    # Note: pad_packed_sequence() returns a tuple where first element is
+                    # a tensor containing padded sentences and second element is an array of
+                    # last element with actual value for each sequence
+                    _hiddens, _seq_lengths = pad_packed_sequence(hiddens, batch_first=True)
+
+                    # Convert lengths to indices:
+                    seq_end_idxs = (_seq_lengths - 1).to(device)
+
+                    # Select hidden layer values at end of sequence indices for each sequence
+                    # TODO: rewrite below line by merging 2 first dimensions of the _hiddens
+                    # and using a cumulative sume in seq_end_idxs to index over that!
+                    hiddens = torch.stack([_hiddens[i, j] for i, j in enumerate(seq_end_idxs)])
+                    # FIX the following line - currrently it crashes here
+                    hiddens = hiddens[sorting_order[t][:len(hiddens)]][non_zero_idxs[:len(hiddens)]]
+
+                topic = self.coupling_unit(hiddens, G[sorting_order[t]][non_zero_idxs], topic)
+                output, hiddens = self.word_decoder(topic, captions[:, t][non_zero_idxs],
+                                                    lengths[:, t][non_zero_idxs],
+                                                    images[sorting_order[t]],
+                                                    output_hiddens=True)
+                word_rnn_out.append(output)
+        else:
+            for t in range(n_sentences):
+                non_zero_idxs = lengths[:, t] > 0
+                topic = topics[:, t][non_zero_idxs]
+                word_rnn_out.append(self.word_decoder(topic, captions[:, t][non_zero_idxs],
+                                                      lengths[:, t][non_zero_idxs],
+                                                      images[sorting_order[t]]))
+
         return sentence_stopping, word_rnn_out
 
     def sample(self, features, images, external_features, states=None,
@@ -685,39 +750,67 @@ class HierarchicalDecoderRNN(nn.Module):
         """Generate captions for given image features using greedy search."""
 
         inputs = features.unsqueeze(1)
-        num_inputs = inputs.size()[0]
+        batch_size = inputs.size()[0]
         # Output tensor:
-        paragraphs = torch.zeros(num_inputs, self.max_sentences, max_seq_length).long().to(device)
+        paragraphs = torch.zeros(batch_size, self.max_sentences,
+                                 max_seq_length).long().to(device)
 
-        # Mini batch indices where the next senteence should be generated
-        # when mask element is set to zero, it means that more more sentences should be
+        # Mini batch indices where the next sentence should be generated
+        # when mask element is set to zero, it means that more sentences should be
         # generated for input image at that index
-        mask = torch.ones(num_inputs).byte().to(device)
+        masks = torch.ones(batch_size, self.max_sentences).byte().to(device)
 
+        hiddens = torch.zeros(batch_size, self.max_sentences,
+                              self.sentence_lstm.out_features).to(device)
+
+        # Get stopping indicators for sentences each position t:
         for t in range(self.max_sentences):
             # Output a sentence state
             # hiddens: (batch_size, 1, hidden_size)
-            hiddens, states = self.sentence_lstm(inputs, states)
+            hiddens[:, t], states = self.sentence_lstm(inputs, states)
             # (1 x 2)
             stopping = nn.Sigmoid()(self.linear_stopping(hiddens.squeeze(1)))
 
-            fc = self.linear1(hiddens).clamp(min=0)
+            # If stopping[:, 0] > stopping[:, 1] => CONTINUE
+            # If stopping[:, 0] <= stopping[:, 1] => STOP
+            if t + 1 < self.max_sentences:
+                masks[:, t + 1:] = (
+                    masks[:, t] and (stopping[:, 0] > stopping[:, 1]).squeeze())
+
+        for t in range(self.max_sentences):
+            fc = self.linear1(hiddens[:, t]).clamp(min=0)
             topic_vector = self.linear2(fc).squeeze(1)
 
             sentence = self.word_decoder.sample(topic_vector, images, external_features,
                                                 states=None, max_seq_length=max_seq_length)
 
-            # sentences.append(sentence)
+            mask = masks[:, t]
             paragraphs[:, t][mask] = sentence[mask]
 
-            # Fixme - rewrite stopping support to work with mini-batches
-            # if stopping[0] >= 0.5:
-            #    break
-
-            #mask = (mask == (stopping < 0.5).squeeze())
-            mask = (mask == (stopping[:,0] > stopping[:,1]).squeeze())
-
         return paragraphs
+
+
+class HierarchicalCoupling(nn.Module):
+    def __init__(self, hidden_size, embed_size, alpha, beta):
+        super(HierarchicalCoupling, self).__init__()
+        self.linear1 = nn.Linear(hidden_size, embed_size)
+        self.linear2 = nn.Linear(embed_size, embed_size)
+        self.gate = nn.GRU(embed_size, embed_size, 1, batch_first=True)
+        self.alpha = alpha
+        self.beta = beta
+
+    def forward(self, hiddens, G, T):
+        if hiddens is not None:
+            x = self.linear1(hiddens).clamp(min=0)
+            C = self.linear2(x)
+        else:
+            C = 0
+
+        T_fused_C = (self.alpha * T + self.beta * C) / (self.alpha + self.beta)
+        # RNN wants inputs of dim (bs x input_size x n_layers_in_rnn):
+        T_prime = self.gate(T_fused_C.unsqueeze(1), G.unsqueeze(0))
+
+        return T_prime[0].squeeze(1)
 
 
 class HierarchicalXEntropyLoss(nn.Module):
