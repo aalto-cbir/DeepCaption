@@ -546,9 +546,16 @@ class DecoderRNN(nn.Module):
             embeddings = self.embed(predicted)
             inputs = torch.cat([embeddings, persist_features], 1).unsqueeze(1)
 
+            if output_hiddens:
+                all_hiddens[:, i] = hiddens.squeeze(1)
+
         # sampled_ids: (batch_size, max_seq_length)
         sampled_ids = torch.stack(sampled_ids, 1)
-        return sampled_ids
+
+        if output_hiddens:
+            return sampled_ids, all_hiddens,
+        else:
+            return sampled_ids
 
 
 class EncoderDecoder(nn.Module):
