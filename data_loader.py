@@ -1077,6 +1077,8 @@ def collate_hierarchical(data, max_sentences, vocab):
 
     images, captions, image_ids, feature_sets = zip(*data)
 
+    batch_size = len(captions)
+
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
 
@@ -1087,13 +1089,13 @@ def collate_hierarchical(data, max_sentences, vocab):
 
     # Placeholder tensor for all captions, of dimension:
     #   (batchsize X max allowed sentences per paragraph X longest sentence)
-    targets = torch.zeros(len(captions), max_sentences, max_length).long()
+    targets = torch.zeros(batch_size, max_sentences, max_length).long()
 
     # Placeholder tensor for all sentence lengths, of dimension
     #   (batchsize X max allowed sentences per paragraph)
-    lengths = torch.zeros(len(captions), max_sentences).long()
+    lengths = torch.zeros(batch_size, max_sentences).long()
 
-    last_sentence_indicator = torch.zeros(len(captions), max_sentences).long()
+    last_sentence_indicator = torch.zeros(batch_size, max_sentences).long()
 
     # Generate a table storing data about which sentence in a
     # paragraph is the last one:
@@ -1111,7 +1113,7 @@ def collate_hierarchical(data, max_sentences, vocab):
     # This shouldn't be a tensor! IDs can be anything!
     # image_ids_sorted = torch.zeros(len(captions), max_sentences)
 
-    for i in range(len(captions)):
+    for i in range(batch_size):
         # This step also limits the number of sentences per paragraph
         # to be <= max_captions
         for j in range(max_sentences):
@@ -1120,10 +1122,11 @@ def collate_hierarchical(data, max_sentences, vocab):
                 targets[i, j, :lengths[i, j]] = captions[i][j]
 
     ##################################################################
-    # Sort everything based on the lenght of first sentence of each  #
+    # Sort everything based on the length of first sentence of each  #
     # paragraph caption in the minibatch:                            #
     ##################################################################
-    sorting_order = [[] for _ in range(max_sentences)]
+    # sorting_order = [[] for _ in range(max_sentences)]
+    sorting_order = torch.zeros(batch_size, max_sentences).long()
     # First create a default sorting order:
     # (Good to know: torch.sort() outputs a tuple of sorted data structure and sorted indices)
     _, idxs_sorted_0 = torch.sort(lengths[:, 0], descending=True)
@@ -1141,12 +1144,12 @@ def collate_hierarchical(data, max_sentences, vocab):
     # Store sorting order indexed by sentence in the mini batch: #
     ##############################################################
     # For the first word-rnn we keep the same sorting order as in the SentenceRNN:
-    sorting_order[0] = [i for i in range(len(idxs_sorted_0))]
+    sorting_order[:, 0] = torch.tensor([i for i in range(len(idxs_sorted_0))])
 
     for j in range(1, max_sentences):
         lengths[:, j], idxs_sorted = torch.sort(lengths[:, j], descending=True)
         targets[:, j] = targets[:, j][idxs_sorted]
-        sorting_order[j] = idxs_sorted
+        sorting_order[:, j] = idxs_sorted
 
     features = _collate_features(feature_sets, idxs_sorted_0)
 
