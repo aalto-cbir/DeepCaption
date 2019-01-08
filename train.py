@@ -615,6 +615,7 @@ def main(args):
                 if params.hierarchical_model:
                     (images, captions, lengths, image_ids, features, sorting_order,
                      last_sentence_indicator) = data
+                    sorting_order = sorting_order.to(device)
                 else:
                     (images, captions, lengths, _, features) = data
 
