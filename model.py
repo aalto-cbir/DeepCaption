@@ -810,29 +810,65 @@ class HierarchicalDecoderRNN(nn.Module):
         # generated for input image at that index
         masks = torch.ones(batch_size, self.max_sentences).byte().to(device)
 
-        hiddens = torch.zeros(batch_size, self.max_sentences,
-                              self.sentence_lstm.out_features).to(device)
+        # Tensor storing raw hidden layer output from Sentence RNN:
+        hiddens_s = torch.zeros(batch_size, self.max_sentences, 1,
+                                self.sentence_lstm.hidden_size).to(device)
 
         # Get stopping indicators for sentences each position t:
         for t in range(self.max_sentences):
             # Output a sentence state
             # hiddens: (batch_size, 1, hidden_size)
-            hiddens[:, t], states = self.sentence_lstm(inputs, states)
+            hiddens_s[:, t], states = self.sentence_lstm(inputs, states)
             # (1 x 2)
-            stopping = nn.Sigmoid()(self.linear_stopping(hiddens.squeeze(1)))
+            stopping = nn.Sigmoid()(self.linear_stopping(hiddens_s[:, t].squeeze(1)))
 
             # If stopping[:, 0] > stopping[:, 1] => CONTINUE
             # If stopping[:, 0] <= stopping[:, 1] => STOP
             if t + 1 < self.max_sentences:
-                masks[:, t + 1:] = (
-                    masks[:, t] and (stopping[:, 0] > stopping[:, 1]).squeeze())
+                masks[:, t + 1] = (
+                    masks[:, t] & (stopping[:, 0] > stopping[:, 1]))
 
+        # Tensor storing sentence topics which are used as input for Word RNN:
+        topics = torch.zeros(batch_size,
+                             self.max_sentences, self.linear2.out_features).to(device)
+
+        # Generate sentence topics:
+        hiddens_s = hiddens_s.squeeze(2)
         for t in range(self.max_sentences):
-            fc = self.linear1(hiddens[:, t]).clamp(min=0)
-            topic_vector = self.linear2(fc).squeeze(1)
+            fc = self.linear1(hiddens_s[:, t]).clamp(min=0)
+            topics[:, t] = self.linear2(fc).squeeze(1)
 
-            sentence = self.word_decoder.sample(topic_vector, images, external_features,
-                                                states=None, max_seq_length=max_seq_length)
+        if self.coherent_sentences:
+            # hiddens_w stores the hidden state at the last token in the
+            # preceding sentence. In this case it corresponds to either the
+            # end of line character ('.' == <end>) or last word in the sequence,
+            # if sequence is truncated at max_seq_length.
+            hiddens_w = None
+            G = self._get_global_topic(topics)
+
+        # Generate sentences from topics
+        for t in range(self.max_sentences):
+            topic = topics[:, t]
+            if self.coherent_sentences:
+                topic = self.coupling_unit(hiddens_w, G, topic)
+                sentence, hiddens_w = self.word_decoder.sample(topic, images,
+                                                               external_features,
+                                                               max_seq_length=max_seq_length,
+                                                               output_hiddens=True)
+
+                # TODO: Get the right hiddens_w from the previous crop of outputs
+                # For each sentence, get the index of the token corresponding to end_token_idx
+                assert end_token_id is not None
+
+                # Index the end of sentence token for each sentence.
+                # If end of sentence token not found, index is set to last column
+                # of the "sentence" tensor.
+                _, eos_indices = torch.max((sentence == end_token_id).t(), 0)
+
+                hiddens_w = torch.stack([hiddens_w[i, j] for i, j in enumerate(eos_indices)])
+            else:
+                sentence = self.word_decoder.sample(topic, images, external_features,
+                                                    max_seq_length=max_seq_length)
 
             mask = masks[:, t]
             paragraphs[:, t][mask] = sentence[mask]
