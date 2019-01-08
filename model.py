@@ -677,6 +677,10 @@ class HierarchicalDecoderRNN(nn.Module):
         sentence_stopping = torch.zeros(batch_size, n_sentences, 2).to(device)
         # sentence_stopping = torch.zeros(lengths.size()[0], ).to(device)
 
+        unsorting_order = torch.zeros(batch_size, n_sentences, 1).long().to(device)
+        unsorted_non_zero_idxs = torch.zeros(batch_size,
+                                             n_sentences, 1).byte().to(device)
+
         topics = torch.zeros(batch_size, n_sentences, self.linear2.out_features).to(device)
 
         # We will use hiddens for logistic regression over stopping state
@@ -701,9 +705,9 @@ class HierarchicalDecoderRNN(nn.Module):
             # Sort mini-batch hidden states based on current sentence position and
             # get rid of zero-length sentences (note that the lengths are already sorted)
             # NOTE: lengths[:, t] is already sorted according to the sorting order defined
-            # in sorting_order[:, t]
+            # in sorting_order[t]
             non_zero_idxs = lengths[:, t] > 0
-            h_t = h_t[sorting_order[:, t]][non_zero_idxs]
+            #h_t = h_t[sorting_order[t]][non_zero_idxs]
 
             # Fully connected layer 1 with ReLU activation:
             fc1 = self.linear1(h_t).clamp(min=0)
@@ -712,56 +716,87 @@ class HierarchicalDecoderRNN(nn.Module):
 
             # Some sentences at position t will be zero length and will have no topic vector,
             # we need to account for that:
-            num_results = fc2.size()[0]
-            topics[:num_results, t] = fc2
+            # num_results = fc2.size()[0]
 
-            # Dim=1 of topics is thus sorted according to the sorting_order
+            # Create unsorting indices:
+            unsorting_order[:, t].scatter_(0,
+                                           sorting_order[:, t].unsqueeze(1).to(device),
+                                           sorting_order[:, 0].unsqueeze(1).to(device))
+
+            unsorted_non_zero_idxs[:, t].scatter_(0,
+                                                  sorting_order[:, t].unsqueeze(1).to(device),
+                                                  non_zero_idxs.unsqueeze(1).to(device))
+
+            # Keep topics unsorted, sort them on demand at latter stages:
+            #topics[:, t][unsorted_non_zero_idxs] = fc2[unsorting_order[unsorted_non_zero_idxs]]
+            topics[:, t] = fc2
 
         word_rnn_out = []
 
         # Use WordRNN hidden layer value to initialize the next topic vector (coherent mode):
         if self.coherent_sentences:
-            # TODO: Need to sort back to get G!
+            # Need to sort topics back to get the right G!
             G = self._get_global_topic(topics)
-            hiddens = None
+
+            # Hidden layer output of WordRNN for previous sentence, initialize to None
+            # for the first sentence:
+            hiddens_w = None
 
             for t in range(n_sentences):
                 non_zero_idxs = lengths[:, t] > 0
-                topic = topics[:, t][sorting_order[t]][non_zero_idxs]
-                if hiddens is not None:
+                topic = topics[:, t][sorting_order[:, t]][non_zero_idxs]
+
+                if hiddens_w is not None:
                     # Note: pad_packed_sequence() returns a tuple where first element is
                     # a tensor containing padded sentences and second element is an array of
                     # last element with actual value for each sequence
-                    _hiddens, _seq_lengths = pad_packed_sequence(hiddens, batch_first=True)
+                    _hiddens_w, _seq_lengths = pad_packed_sequence(hiddens_w, batch_first=True)
 
                     # Convert lengths to indices:
                     seq_end_idxs = (_seq_lengths - 1).to(device)
 
                     # Select hidden layer values at end of sequence indices for each sequence
-                    # TODO: rewrite below line by merging 2 first dimensions of the _hiddens
+                    # TODO? rewrite below line by merging 2 first dimensions of the _hiddens
                     # and using a cumulative sume in seq_end_idxs to index over that!
-                    hiddens = torch.stack([_hiddens[i, j] for i, j in enumerate(seq_end_idxs)])
-                    # FIX the following line - currrently it crashes here
-                    hiddens = hiddens[sorting_order[t][:len(hiddens)]][non_zero_idxs[:len(hiddens)]]
+                    hiddens_w = torch.stack(
+                        [_hiddens_w[i, j] for i, j in enumerate(seq_end_idxs)])
 
-                topic = self.coupling_unit(hiddens, G[sorting_order[t]][non_zero_idxs], topic)
-                output, hiddens = self.word_decoder(topic, captions[:, t][non_zero_idxs],
-                                                    lengths[:, t][non_zero_idxs],
-                                                    images[sorting_order[t]],
-                                                    output_hiddens=True)
+                    # Next lines ensure that hiddens_w are always sorted relative to the order
+                    # defined in t=0, and not relative to the order defined in previous
+                    # time step t=t-1
+
+                    # Do magic -
+                    # 1) Sort from order defined for step t=t-1 to order defined in step t=0,
+                    # 2) Sort from order defined for t=0 to order defined for t=t
+                    # 3) Remove elements that do not have corresponding sentences at t=t
+                    resort_idxs = unsorting_order[:, t - 1][sorting_order[:, t]][non_zero_idxs]
+
+                    # Hiddens_w need to be sorted according to the sorting order defined for
+                    # SentenceRNN output at position t, not position t-1, hence antics above
+                    hiddens_w = hiddens_w[resort_idxs]
+
+                topic = self.coupling_unit(hiddens_w,
+                                           G[sorting_order[:, t]][non_zero_idxs],
+                                           topic)
+
+                output, hiddens_w = self.word_decoder(topic, captions[:, t][non_zero_idxs],
+                                                      lengths[:, t][non_zero_idxs],
+                                                      images[sorting_order[:, t]],
+                                                      output_hiddens=True)
                 word_rnn_out.append(output)
+        # Otherwise do the "regular" hierarchical model (Krause et al 2017):
         else:
             for t in range(n_sentences):
                 non_zero_idxs = lengths[:, t] > 0
-                topic = topics[:, t][non_zero_idxs]
+                topic = topics[:, t][sorting_order[:, t]][non_zero_idxs]
                 word_rnn_out.append(self.word_decoder(topic, captions[:, t][non_zero_idxs],
                                                       lengths[:, t][non_zero_idxs],
-                                                      images[sorting_order[t]]))
+                                                      images[sorting_order[:, t]]))
 
         return sentence_stopping, word_rnn_out
 
     def sample(self, features, images, external_features, states=None,
-               max_seq_length=50, start_token_idx=None):
+               max_seq_length=50, start_token_id=None, end_token_id=None):
         """Generate captions for given image features using greedy search."""
 
         inputs = features.unsqueeze(1)
@@ -816,7 +851,7 @@ class HierarchicalCoupling(nn.Module):
 
     def forward(self, hiddens, G, T):
         if hiddens is not None:
-            x = self.linear1(hiddens).clamp(min=0)
+            x = self.linear1(hiddens.squeeze(1)).clamp(min=0)
             C = self.linear2(x)
         else:
             C = 0
