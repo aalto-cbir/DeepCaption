@@ -500,23 +500,30 @@ class DecoderRNN(nn.Module):
             return outputs
 
     def sample(self, features, images, external_features, states=None,
-               max_seq_length=20, start_token_idx=None):
+               max_seq_length=20, start_token_id=None, output_hiddens=False):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
+
+        batch_size = len(images)
 
         # Concatenate internal and external features
         persist_features = self._cat_features(images, external_features)
         if persist_features is None:
             persist_features = features.new_empty(0)
 
+        if output_hiddens:
+            all_hiddens = torch.zeros(batch_size,
+                                      max_seq_length, self.lstm.hidden_size).to(device)
+
+        # Initialize the rnn from input features, instead of setting the hidden
+        # state to zeros (as done by default):
         if self.rnn_hidden_init == 'from_features':
             states = init_hidden_state(self, features)
 
-            assert start_token_idx is not None
+            assert start_token_id is not None
 
             # Start generating the sentence by first feeding in the start token:
-            start_token_embedding = self.embed(torch.tensor(start_token_idx).to(device))
-            batch_size = len(images)
+            start_token_embedding = self.embed(torch.tensor(start_token_id).to(device))
             embed_size = len(start_token_embedding)
             start_token_embedding = start_token_embedding.unsqueeze(0).expand(batch_size,
                                                                               embed_size)
@@ -594,11 +601,12 @@ class EncoderDecoder(nn.Module):
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20, start_token_idx=None):
+               max_seq_length=20, start_token_id=None, end_token_id=None):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
                                           max_seq_length=max_seq_length,
-                                          start_token_idx=start_token_idx)
+                                          start_token_id=start_token_id,
+                                          end_token_id=end_token_id)
 
         return sampled_ids
 
@@ -1033,7 +1041,7 @@ class SoftAttentionDecoderRNN(nn.Module):
         return outputs, alphas
 
     def sample(self, features, images, external_features, states=None, max_seq_length=20,
-               start_token_idx=None):
+               start_token_id=None):
         sampled_ids = []
 
         # Concatenate internal and external features
@@ -1048,14 +1056,14 @@ class SoftAttentionDecoderRNN(nn.Module):
 
         h, c = init_hidden_state(self, features)
 
-        assert start_token_idx is not None
+        assert start_token_id is not None
 
         # Append start token to the output:
         predicted_initial = torch.ones([batch_size],
-                                       dtype=torch.int64).to(device) * start_token_idx
+                                       dtype=torch.int64).to(device) * start_token_id
         sampled_ids.append(predicted_initial)
 
-        start_token_embedding = self.embed(torch.tensor(start_token_idx).to(device))
+        start_token_embedding = self.embed(torch.tensor(start_token_id).to(device))
         embed_size = len(start_token_embedding)
 
         embeddings = start_token_embedding.unsqueeze(0).expand(batch_size,
@@ -1111,11 +1119,11 @@ class SoftAttentionEncoderDecoder(nn.Module):
         return outputs, alphas
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20, start_token_idx=None):
+               max_seq_length=20, start_token_id=None):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids, alphas = self.decoder.sample(feature, image_tensor, persist_features,
                                                   states, max_seq_length=max_seq_length,
-                                                  start_token_idx=start_token_idx)
+                                                  start_token_id=start_token_id)
 
         return sampled_ids, alphas
 

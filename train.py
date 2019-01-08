@@ -235,7 +235,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 # Generate a caption from the image
                 sampled_batch = model.sample(images, init_features, persist_features,
                                              max_seq_length=20,
-                                             start_token_idx=vocab('<start>'))
+                                             start_token_id=vocab('<start>'))
                 if params.attention is None:
                     sampled_ids_batch = sampled_batch
                 else:
