@@ -19,7 +19,7 @@ from vocabulary import Vocabulary, get_vocab
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder
 from model import SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
-from model import HierarchicalXEntropyLoss
+from model import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
 from infer import caption_ids_to_words, paragraph_ids_to_words
 
 torch.manual_seed(42)
@@ -241,7 +241,13 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 else:
                     sampled_ids_batch, alphas = sampled_batch
 
-        loss = criterion(outputs, targets)
+        if args.share_embedding_weights:
+            # Weights of (HxH) projection matrix used for regularizing
+            # models that share embedding weights
+            projection = model.decoder.projection.weight
+            loss = criterion(projection, outputs, targets)
+        else:
+            loss = criterion(outputs, targets)
 
         if params.hierarchical_model:
             _, loss_sent, _, loss_word = criterion.item_terms()
@@ -521,6 +527,8 @@ def main(args):
     if params.hierarchical_model:
         criterion = HierarchicalXEntropyLoss(weight_sentence_loss=params.weight_sentence_loss,
                                              weight_word_loss=params.weight_word_loss)
+    elif args.share_embedding_weights:
+        criterion = SharedEmbeddingXentropyLoss(param_lambda=0.15)
     else:
         criterion = nn.CrossEntropyLoss()
 
@@ -678,7 +686,13 @@ def main(args):
                 if args.attention is not None:
                     outputs, alphas = outputs
 
-                loss = criterion(outputs, targets)
+                if args.share_embedding_weights:
+                    # Weights of (HxH) projection matrix used for regularizing
+                    # models that share embedding weights
+                    projection = model.decoder.projection.weight
+                    loss = criterion(projection, outputs, targets)
+                else:
+                    loss = criterion(outputs, targets)
 
                 # Attention regularizer
                 if args.attention is not None and args.regularize_attn:
@@ -702,6 +716,7 @@ def main(args):
                 optimizer.step()
 
                 total_loss += loss.item()
+
                 num_batches += 1
 
                 if params.hierarchical_model:

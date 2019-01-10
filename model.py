@@ -371,6 +371,7 @@ class DecoderRNN(nn.Module):
             # Using the Output Embedding to Improve Language Models
             # https://arxiv.org/abs/1608.05859
             self.dropout_embedding = nn.Dropout(p=p.dropout)
+            self.projection = nn.Linear(p.hidden_size, p.hidden_size)
             self.hidden_to_embeddings = nn.Linear(p.hidden_size, p.embed_size)
             self.embed_output = nn.Linear(p.embed_size, vocab_size)
             self.embed_output.weight.data = self.embed.weight.data.transpose(1, 0)
@@ -424,7 +425,8 @@ class DecoderRNN(nn.Module):
             packed = pack_padded_sequence(inputs, lengths, batch_first=True)
             hiddens, _ = self.lstm(packed, states)
             if self.share_embedding_weights:
-                output_embeddings = self.hidden_to_embeddings(self.dropout_embedding(hiddens[0]))
+                hiddens_p = self.projection(hiddens[0])
+                output_embeddings = self.hidden_to_embeddings(hiddens_p)
                 #outputs = self.embed_output(output_embeddings.t())
                 outputs = torch.matmul(output_embeddings, self.embed_output.weight)
             else:
@@ -534,8 +536,11 @@ class DecoderRNN(nn.Module):
 
         for i in range(max_seq_length):
             hiddens, states = self.lstm(inputs, states)
+
+            # If we are sharing embedding weights before and after the RNN processing:
             if self.share_embedding_weights:
-                output_embeddings = self.hidden_to_embeddings(hiddens.squeeze(1))
+                hiddens_p = self.projection(hiddens.squeeze(1))
+                output_embeddings = self.hidden_to_embeddings(hiddens_p)
                 outputs = torch.matmul(output_embeddings, self.embed_output.weight)
             else:
                 outputs = self.linear(hiddens.squeeze(1))
@@ -616,6 +621,19 @@ class EncoderDecoder(nn.Module):
                                           end_token_id=end_token_id)
 
         return sampled_ids
+
+
+class SharedEmbeddingXentropyLoss(nn.Module):
+    def __init__(self, param_lambda=0.15):
+        super(SharedEmbeddingXentropyLoss, self).__init__()
+        self.loss = nn.CrossEntropyLoss()
+        self.param_lambda = param_lambda
+
+    def forward(self, P, outputs, targets):
+        """:param P - projection matrix of size (hidden_size x hidden_size)"""
+        reg_term = self.param_lambda * P.norm()
+
+        return self.loss(outputs, targets) + reg_term
 
 
 class HierarchicalDecoderRNN(nn.Module):
