@@ -321,12 +321,16 @@ def prepare_hierarchical_targets(last_sentence_indicator, max_sentences, lengths
 
 
 def main(args):
+    if args.model_name is not None:
+        print('Preparing to train model: {}'.format(args.model_name))
+
     global device
     device = torch.device('cuda' if torch.cuda.is_available() and
                           not args.cpu else 'cpu')
 
-    if args.validate is None and args.lr_scheduler:
-        print('ERROR: you need to enable validation in order to use the lr_scheduler')
+    if args.validate is None and args.lr_scheduler == 'ReduceLROnPlateau':
+        print('ERROR: you need to enable validation in order to use '
+              ' default lr_scheduler (ReduceLROnPlateau)')
         print('Hint: use something like --validate=coco:val2017')
         sys.exit(1)
 
@@ -515,7 +519,19 @@ def main(args):
         print("ERROR: Invalid attention model specified")
         sys.exit(1)
 
-    model = _Model(params, device, len(vocab), state, ef_dims)
+    # Set per parameter learning rate here, if supplied by the user:
+
+    if args.lr_word_decoder is not None:
+        if not params.hierarchical_model:
+            print("ERROR: Setting word decoder learning rate currently "
+                  "supported in Hierarchical Model only.")
+            sys.exit(1)
+
+        lr_dict = {'word_decoder': args.lr_word_decoder}
+    else:
+        lr_dict = {}
+
+    model = _Model(params, device, len(vocab), state, ef_dims, lr_dict)
 
     ######################
     # Optimizer and loss #
@@ -553,16 +569,39 @@ def main(args):
     if state and not transfer_language_model:
         optimizer.load_state_dict(state['optimizer'])
 
-    if args.learning_rate:  # override lr if set explicitly in arguments
+    # override lr if set explicitly in arguments -
+    # 1) Global learning rate:
+    if args.learning_rate:
         for param_group in optimizer.param_groups:
             param_group['lr'] = args.learning_rate
         params.learning_rate = args.learning_rate
     else:
         params.learning_rate = default_lr
 
-    if args.validate is not None and args.lr_scheduler:
+    # 2) Paramter-group specific learning rate:
+    if args.lr_word_decoder is not None:
+        # We want to give user an option to set learning rate for word_decoder
+        # separately. Other exceptions can be added as needed:
+        for param_group in optimizer.param_groups:
+            if param_group.get('name') == 'word_decoder':
+                param_group['lr'] = args.lr_word_decoder
+                break
+
+    if args.validate is not None and args.lr_scheduler == 'ReduceLROnPlateau':
+        print('Using ReduceLROnPlateau learning rate scheduler')
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
+    elif args.lr_scheduler == 'StepLR':
+        print('Using StepLR learning rate scheduler')
+        # Decrease the learning rate by the factor of gamme at every
+        # step_size epochs (for example every 5 or 10 epochs):
+        step_size = args.lr_step_size
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size,
+                                                    gamma=0.5, last_epoch=-1)
+    elif args.lr_scheduler is not None:
+        print('ERROR: Invalid learing rate scheduler specified: {}'.format(args.lr_scheduler))
+        sys.exit(1)
+
     ###################
     # Train the model #
     ###################
@@ -763,16 +802,18 @@ def main(args):
                        ' with {unk_sum} <unk>s ({unk_sum_per:.1f}%)'+
                        ' in {unk_cnt} ({unk_cnt_per:.1f}%) captions').format(**vocab_counts))
 
-            ###################
-            # Validation loss #
-            ###################
+            ############################################
+            # Validation loss and learning rate update #
+            ############################################
 
             if args.validate is not None and (epoch + 1) % args.validation_step == 0:
                 val_loss = do_validate(model, valid_loader, criterion, scorers, vocab,
                                        teacher_p, args, params, stats, epoch)
 
-                if args.lr_scheduler:
+                if args.lr_scheduler == 'ReduceLROnPlateau':
                     scheduler.step(val_loss)
+            elif args.lr_scheduler == 'StepLR':
+                scheduler.step()
 
             all_stats[epoch + 1] = stats
             save_stats(args, params, all_stats)
@@ -865,6 +906,8 @@ if __name__ == '__main__':
     # Hierarchical model parameters, only in use if --hierarchical_model flag is set:
     parser.add_argument('--hierarchical_model', action='store_true',
                         help='Add this flag to train a model with hierarchical decoder RNN')
+    parser.add_argument('--lr_word_decoder', type=float,
+                        help='Set own learning rate for WordRNN in hierarchical model')
     parser.add_argument('--pooling_size', type=int, default=1024,
                         help='encoder pooling size')
     parser.add_argument('--max_sentences', type=int, default=6,
@@ -905,7 +948,12 @@ if __name__ == '__main__':
     parser.add_argument('--skip_existing_validations', action='store_true')
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--lr_scheduler', action='store_true')
+    parser.add_argument('--lr_scheduler', nargs='?', const='ReduceLROnPlateau', type=str,
+                        help='Use learning rate scheduler. Supported scheduler types: \n'
+                             'ReduceLROnPlateau (used by default) .i.e plain --lr_scheduler\n'
+                             'StepLR - use --lr_scheduler StepLR to enable')
+    parser.add_argument('--lr_step_size', type=int, default=5,
+                        help='Default step size for StepLR lr scheduler')
     parser.add_argument('--share_embedding_weights', action='store_true',
                         help='Share weights for language model input and output embeddings')
 

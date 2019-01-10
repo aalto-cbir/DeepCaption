@@ -565,8 +565,10 @@ class DecoderRNN(nn.Module):
 
 
 class EncoderDecoder(nn.Module):
-    def __init__(self, params, device, vocab_size, state, ef_dims):
-        """Vanilla EncoderDecoder model"""
+    def __init__(self, params, device, vocab_size, state, ef_dims, lr_dict={}):
+        """Vanilla EncoderDecoder model
+        :param params_lr - optional parameter specifying a dict of parameter groups for which
+        a special learning rate needs to be applied"""
         super(EncoderDecoder, self).__init__()
         print('Using device: {}'.format(device.type))
         print('Initializing EncoderDecoder model...')
@@ -582,9 +584,20 @@ class EncoderDecoder(nn.Module):
         self.decoder = _DecoderRNN(params, vocab_size, ef_dims[1],
                                    self.encoder.total_feat_dim).to(device)
 
-        self.opt_params = (list(self.decoder.parameters()) +
-                           list(self.encoder.linear.parameters()) +
-                           list(self.encoder.bn.parameters()))
+        encoder_params = [{'params': (list(self.encoder.linear.parameters()) +
+                                      list(self.encoder.bn.parameters()))}]
+
+        if params.hierarchical_model and lr_dict.get('word_decoder'):
+            lr = lr_dict.get('word_decoder')
+            dec_params = self.decoder.named_parameters()
+            sent_params = [v for k, v in dec_params if not k.startswith('word_decoder')]
+            word_params = list(self.decoder.word_decoder.parameters())
+            decoder_params = [{'params': sent_params},
+                              {'params': word_params, 'lr': lr, 'name': 'word_decoder'}]
+        else:
+            decoder_params = [{'params': list(self.decoder.parameters())}]
+
+        self.opt_params = decoder_params + encoder_params
 
         if state:
             # If the user has specified that they would like train
@@ -945,8 +958,6 @@ class HierarchicalXEntropyLoss(nn.Module):
 
         self.loss_s = torch.Tensor([0]).to(device)
 
-        #assert(outputs[0].max() <= 1.0 and outputs[0].min() >= 0.0)
-
         for j in range(max_sentences):
             # print("Size of outputs[0][{}]: {}, size of targets[0][{}] {}".
             #      format(j, outputs[0][j].size(), j, targets[0][j].size()))
@@ -970,7 +981,7 @@ class SpatialAttention(nn.Module):
     https://github.com/sgrvinod/a-PyTorch-Tutorial-to-Image-Captioning and
     "Knowing when to look" by Lu et al"""
 
-    def __init__(self, feature_size, num_attention_locs, hidden_size):
+    def __init__(self, feature_size, num_attention_locs, hidden_size, lr_dict={}):
         """Initialize a network that learns the attention weights for each time step
         feature_size - size C of a single 1x1xC tensor at each image location
         num_attention_locs - number of feature vectors in one image
@@ -1190,7 +1201,7 @@ class SoftAttentionDecoderRNN(nn.Module):
 
 
 class SoftAttentionEncoderDecoder(nn.Module):
-    def __init__(self, params, device, vocab_size, state, ef_dims):
+    def __init__(self, params, device, vocab_size, state, ef_dims, lr_dict={}):
         super(SoftAttentionEncoderDecoder, self).__init__()
         print('Using device: {}'.format(device.type))
         print('Initializing SoftAttentionEncoderDecoder model...')
