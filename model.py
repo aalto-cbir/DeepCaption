@@ -584,9 +584,11 @@ class EncoderDecoder(nn.Module):
         self.decoder = _DecoderRNN(params, vocab_size, ef_dims[1],
                                    self.encoder.total_feat_dim).to(device)
 
-        encoder_params = [{'params': (list(self.encoder.linear.parameters()) +
-                                      list(self.encoder.bn.parameters()))}]
+        encoder_params = (list(self.encoder.linear.parameters()) +
+                          list(self.encoder.bn.parameters()))
 
+        # Use separate parameter groups for hierarchical model for more control
+        # over the learning rate.
         if params.hierarchical_model:
             if lr_dict.get('word_decoder'):
                 lr = lr_dict.get('word_decoder')
@@ -598,8 +600,10 @@ class EncoderDecoder(nn.Module):
             word_params = list(self.decoder.word_decoder.parameters())
             decoder_params = [{'params': sent_params},
                               {'params': word_params, 'lr': lr, 'name': 'word_decoder'}]
+
+            encoder_params = [{'params': encoder_params}]
         else:
-            decoder_params = [{'params': list(self.decoder.parameters())}]
+            decoder_params = list(self.decoder.parameters())
 
         self.opt_params = decoder_params + encoder_params
 
