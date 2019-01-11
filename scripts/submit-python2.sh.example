@@ -1,0 +1,11 @@
+#!/bin/bash
+#SBATCH --mem=4GB
+#SBATCH --time=0-5
+#SBATCH --mail-user=arturs.polis@aalto.fi
+#SBATCH --mail-type=FAIL,REQUEUE,TIME_LIMIT_80
+
+module purge
+module load python-env/2.7.10
+
+# Launch python script
+srun $*
