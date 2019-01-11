@@ -587,8 +587,12 @@ class EncoderDecoder(nn.Module):
         encoder_params = [{'params': (list(self.encoder.linear.parameters()) +
                                       list(self.encoder.bn.parameters()))}]
 
-        if params.hierarchical_model and lr_dict.get('word_decoder'):
-            lr = lr_dict.get('word_decoder')
+        if params.hierarchical_model:
+            if lr_dict.get('word_decoder'):
+                lr = lr_dict.get('word_decoder')
+            else:
+                lr = None
+
             dec_params = self.decoder.named_parameters()
             sent_params = [v for k, v in dec_params if not k.startswith('word_decoder')]
             word_params = list(self.decoder.word_decoder.parameters())
