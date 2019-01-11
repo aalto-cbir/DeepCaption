@@ -23,4 +23,4 @@ datasets/pycocoevalcap
 .*
 /random_image_dir/
 /tests/submit_tests.sh
-#/batch_jobs
+/batch_jobs
