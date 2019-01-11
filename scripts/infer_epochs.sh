@@ -10,6 +10,6 @@ echo "Epoch start: $EP_BEGIN"
 echo "Epoch end: $EP_END"
 
 for EPOCH in $(eval echo {$EP_BEGIN..$EP_END}); do
-    python3 infer.py --model $MODEL_PATH/$EPOCH.model --dataset $DATASET \
-                     --data_format json --num_workers 4
+    python3 infer.py --model "$MODEL_PATH/ep${EPOCH}.model" --dataset $DATASET \
+                     --output_format json --num_workers 4
 done
