@@ -567,7 +567,9 @@ def main(args):
         transfer_language_model = True
 
     if state and not transfer_language_model:
-        optimizer.load_state_dict(state['optimizer'])
+        # Check that number of parameter groups is the same
+        if len(optimizer.param_groups) == len(state['optimizer']['param_groups']):
+            optimizer.load_state_dict(state['optimizer'])
 
     # override lr if set explicitly in arguments -
     # 1) Global learning rate:
