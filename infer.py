@@ -251,7 +251,8 @@ def infer(ext_args=None):
         # Generate a caption from the image
         sampled_batch = model.sample(images, init_features, persist_features,
                                      max_seq_length=args.max_seq_length,
-                                     start_token_idx=vocab('<start>'))
+                                     start_token_id=vocab('<start>'),
+                                     end_token_id=vocab('<end>'))
 
         if params.attention is None:
             sampled_ids_batch = sampled_batch

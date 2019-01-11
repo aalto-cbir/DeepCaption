@@ -19,7 +19,7 @@ from vocabulary import Vocabulary, get_vocab
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder
 from model import SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
-from model import HierarchicalXEntropyLoss
+from model import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
 from infer import caption_ids_to_words, paragraph_ids_to_words
 
 torch.manual_seed(42)
@@ -65,8 +65,7 @@ def get_model_name(args, params):
 
 
 # TODO: convert parameters to **kwargs
-def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
-               skip_start_token, rnn_hidden_init, share_embedding_weights):
+def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
     model_name = get_model_name(args, params)
 
     state = {
@@ -87,9 +86,9 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
         'persist_features': params.persist_features,
         'attention': params.attention,
         'vocab': vocab,
-        'skip_start_token': skip_start_token,
-        'rnn_hidden_init': rnn_hidden_init,
-        'share_embedding_weights': share_embedding_weights
+        'skip_start_token': params.skip_start_token,
+        'rnn_hidden_init': params.rnn_hidden_init,
+        'share_embedding_weights': params.share_embedding_weights
     }
 
     if params.hierarchical_model:
@@ -97,6 +96,9 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab,
         state['dropout_stopping'] = params.dropout_stopping
         state['dropout_fc'] = params.dropout_fc
         state['fc_size'] = params.fc_size
+        state['coherent_sentences'] = params.coherent_sentences
+        state['coupling_alpha'] = params.coupling_alpha
+        state['coupling_beta'] = params.coupling_beta
 
     file_name = 'ep{}.model'.format(epoch + 1)
 
@@ -233,13 +235,19 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 # Generate a caption from the image
                 sampled_batch = model.sample(images, init_features, persist_features,
                                              max_seq_length=20,
-                                             start_token_idx=vocab('<start>'))
+                                             start_token_id=vocab('<start>'))
                 if params.attention is None:
                     sampled_ids_batch = sampled_batch
                 else:
                     sampled_ids_batch, alphas = sampled_batch
 
-        loss = criterion(outputs, targets)
+        if args.share_embedding_weights:
+            # Weights of (HxH) projection matrix used for regularizing
+            # models that share embedding weights
+            projection = model.decoder.projection.weight
+            loss = criterion(projection, outputs, targets)
+        else:
+            loss = criterion(outputs, targets)
 
         if params.hierarchical_model:
             _, loss_sent, _, loss_word = criterion.item_terms()
@@ -313,12 +321,16 @@ def prepare_hierarchical_targets(last_sentence_indicator, max_sentences, lengths
 
 
 def main(args):
+    if args.model_name is not None:
+        print('Preparing to train model: {}'.format(args.model_name))
+
     global device
     device = torch.device('cuda' if torch.cuda.is_available() and
                           not args.cpu else 'cpu')
 
-    if args.validate is None and args.lr_scheduler:
-        print('ERROR: you need to enable validation in order to use the lr_scheduler')
+    if args.validate is None and args.lr_scheduler == 'ReduceLROnPlateau':
+        print('ERROR: you need to enable validation in order to use '
+              ' default lr_scheduler (ReduceLROnPlateau)')
         print('Hint: use something like --validate=coco:val2017')
         sys.exit(1)
 
@@ -392,6 +404,9 @@ def main(args):
         params.weight_word_loss = arg_params.weight_word_loss
         params.dropout_stopping = arg_params.dropout_stopping
         params.dropout_fc = arg_params.dropout_fc
+        params.coherent_sentences = arg_params.coherent_sentences
+        params.coupling_alpha = arg_params.coupling_alpha
+        params.coupling_beta = arg_params.coupling_beta
 
     if args.load_model:
         print("Final model parameters (loaded model + command arguments): ")
@@ -504,7 +519,19 @@ def main(args):
         print("ERROR: Invalid attention model specified")
         sys.exit(1)
 
-    model = _Model(params, device, len(vocab), state, ef_dims)
+    # Set per parameter learning rate here, if supplied by the user:
+
+    if args.lr_word_decoder is not None:
+        if not params.hierarchical_model:
+            print("ERROR: Setting word decoder learning rate currently "
+                  "supported in Hierarchical Model only.")
+            sys.exit(1)
+
+        lr_dict = {'word_decoder': args.lr_word_decoder}
+    else:
+        lr_dict = {}
+
+    model = _Model(params, device, len(vocab), state, ef_dims, lr_dict)
 
     ######################
     # Optimizer and loss #
@@ -516,6 +543,8 @@ def main(args):
     if params.hierarchical_model:
         criterion = HierarchicalXEntropyLoss(weight_sentence_loss=params.weight_sentence_loss,
                                              weight_word_loss=params.weight_word_loss)
+    elif args.share_embedding_weights:
+        criterion = SharedEmbeddingXentropyLoss(param_lambda=0.15)
     else:
         criterion = nn.CrossEntropyLoss()
 
@@ -538,18 +567,43 @@ def main(args):
         transfer_language_model = True
 
     if state and not transfer_language_model:
-        optimizer.load_state_dict(state['optimizer'])
+        # Check that number of parameter groups is the same
+        if len(optimizer.param_groups) == len(state['optimizer']['param_groups']):
+            optimizer.load_state_dict(state['optimizer'])
 
-    if args.learning_rate:  # override lr if set explicitly in arguments
+    # override lr if set explicitly in arguments -
+    # 1) Global learning rate:
+    if args.learning_rate:
         for param_group in optimizer.param_groups:
             param_group['lr'] = args.learning_rate
         params.learning_rate = args.learning_rate
     else:
         params.learning_rate = default_lr
 
-    if args.validate is not None and args.lr_scheduler:
+    # 2) Paramter-group specific learning rate:
+    if args.lr_word_decoder is not None:
+        # We want to give user an option to set learning rate for word_decoder
+        # separately. Other exceptions can be added as needed:
+        for param_group in optimizer.param_groups:
+            if param_group.get('name') == 'word_decoder':
+                param_group['lr'] = args.lr_word_decoder
+                break
+
+    if args.validate is not None and args.lr_scheduler == 'ReduceLROnPlateau':
+        print('Using ReduceLROnPlateau learning rate scheduler')
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
+    elif args.lr_scheduler == 'StepLR':
+        print('Using StepLR learning rate scheduler')
+        # Decrease the learning rate by the factor of gamme at every
+        # step_size epochs (for example every 5 or 10 epochs):
+        step_size = args.lr_step_size
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size,
+                                                    gamma=0.5, last_epoch=-1)
+    elif args.lr_scheduler is not None:
+        print('ERROR: Invalid learing rate scheduler specified: {}'.format(args.lr_scheduler))
+        sys.exit(1)
+
     ###################
     # Train the model #
     ###################
@@ -610,13 +664,14 @@ def main(args):
                 if params.hierarchical_model:
                     (images, captions, lengths, image_ids, features, sorting_order,
                      last_sentence_indicator) = data
+                    sorting_order = sorting_order.to(device)
                 else:
                     (images, captions, lengths, _, features) = data
 
                 if epoch==0:
                     unk = vocab('<unk>')
                     for j in range(captions.shape[0]):
-                        # Flatten the caption in case it's paragraph
+                        # Flatten the caption in case it's a paragraph
                         # this is harmless for regular captions too:
                         xl = captions[j,:].view(-1)
                         xw = xl>unk
@@ -672,7 +727,13 @@ def main(args):
                 if args.attention is not None:
                     outputs, alphas = outputs
 
-                loss = criterion(outputs, targets)
+                if args.share_embedding_weights:
+                    # Weights of (HxH) projection matrix used for regularizing
+                    # models that share embedding weights
+                    projection = model.decoder.projection.weight
+                    loss = criterion(projection, outputs, targets)
+                else:
+                    loss = criterion(outputs, targets)
 
                 # Attention regularizer
                 if args.attention is not None and args.regularize_attn:
@@ -696,6 +757,7 @@ def main(args):
                 optimizer.step()
 
                 total_loss += loss.item()
+
                 num_batches += 1
 
                 if params.hierarchical_model:
@@ -731,9 +793,7 @@ def main(args):
 
             print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
                                                                         stats['training_loss']))
-            save_model(args, params, model.encoder, model.decoder, optimizer, epoch,
-                       vocab, params.skip_start_token, params.rnn_hidden_init,
-                       params.share_embedding_weights)
+            save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
 
             if epoch == 0:
                 vocab_counts['avg'] = vocab_counts['sum']/vocab_counts['cnt']
@@ -744,16 +804,18 @@ def main(args):
                        ' with {unk_sum} <unk>s ({unk_sum_per:.1f}%)'+
                        ' in {unk_cnt} ({unk_cnt_per:.1f}%) captions').format(**vocab_counts))
 
-            ###################
-            # Validation loss #
-            ###################
+            ############################################
+            # Validation loss and learning rate update #
+            ############################################
 
             if args.validate is not None and (epoch + 1) % args.validation_step == 0:
                 val_loss = do_validate(model, valid_loader, criterion, scorers, vocab,
                                        teacher_p, args, params, stats, epoch)
 
-                if args.lr_scheduler:
+                if args.lr_scheduler == 'ReduceLROnPlateau':
                     scheduler.step(val_loss)
+            elif args.lr_scheduler == 'StepLR':
+                scheduler.step()
 
             all_stats[epoch + 1] = stats
             save_stats(args, params, all_stats)
@@ -840,11 +902,14 @@ if __name__ == '__main__':
     parser.add_argument('--rnn_hidden_init', type=str,
                         help='initization strategy for RNN hidden and cell states. '
                         'Supported values: None (set to zeros), from_features '
-                        '(using a linear transform on (mean/average pooled) image feature vector')
+                        '(using a linear transform on (mean/average pooled) '
+                        'image feature vector')
 
     # Hierarchical model parameters, only in use if --hierarchical_model flag is set:
     parser.add_argument('--hierarchical_model', action='store_true',
                         help='Add this flag to train a model with hierarchical decoder RNN')
+    parser.add_argument('--lr_word_decoder', type=float,
+                        help='Set own learning rate for WordRNN in hierarchical model')
     parser.add_argument('--pooling_size', type=int, default=1024,
                         help='encoder pooling size')
     parser.add_argument('--max_sentences', type=int, default=6,
@@ -861,6 +926,9 @@ if __name__ == '__main__':
     parser.add_argument('--fc_size', type=int,
                         help='size of the fully connected layer in the sentence LSTM '
                              'Defaults to pooling_size')
+    # Enabled architecture by Chatterjee and Schwing, 2018:
+    parser.add_argument('--coherent_sentences', action='store_true',
+                        help="Enable coherence between sentences")
 
     # Training parameters
     parser.add_argument('--force_epoch', type=int, default=0,
@@ -882,7 +950,12 @@ if __name__ == '__main__':
     parser.add_argument('--skip_existing_validations', action='store_true')
     parser.add_argument('--optimizer', type=str, default="rmsprop")
     parser.add_argument('--weight_decay', type=float, default=1e-6)
-    parser.add_argument('--lr_scheduler', action='store_true')
+    parser.add_argument('--lr_scheduler', nargs='?', const='ReduceLROnPlateau', type=str,
+                        help='Use learning rate scheduler. Supported scheduler types: \n'
+                             'ReduceLROnPlateau (used by default) .i.e plain --lr_scheduler\n'
+                             'StepLR - use --lr_scheduler StepLR to enable')
+    parser.add_argument('--lr_step_size', type=int, default=5,
+                        help='Default step size for StepLR lr scheduler')
     parser.add_argument('--share_embedding_weights', action='store_true',
                         help='Share weights for language model input and output embeddings')
 

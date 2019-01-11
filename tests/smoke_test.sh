@@ -87,6 +87,8 @@ append_command_to_log
 
 RESULTS_FILE=results/coco_full-ep11.json
 
+echo "We are on hostname: $HOSTNAME"
+
 if [ ! -z $COCO_GT ]; then
   echo "Setting ground truth path for COCO from command line parameter: $COCO_GT"
   GROUND_TRUTH=$COCO_GT

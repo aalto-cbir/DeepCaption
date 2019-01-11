@@ -111,6 +111,8 @@ load_python3() {
     module load python-env/intelpython3.6-2018.3
     module load gcc/5.4.0 cuda/9.0 cudnn/7.1-cuda9
     print_separator
+  else
+    echo "WARNING: Did not load python3 due to an unknown environment"
   fi
   #TODO: Add the same for Triton or any other environments
 }
@@ -122,6 +124,8 @@ load_python2() {
     echo "Loading Python 2 Environment on Taito"
     module load python-env/2.7.10
     print_separator
+  else
+    echo "WARNING: Did not load python2 due to an unknown environment"
   fi
   #TODO: Add the same for Triton or any other environments
 }
