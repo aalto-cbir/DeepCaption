@@ -252,3 +252,14 @@ There are several other test scripts in the `tests/` folder that work in a simil
 sbatch tests/submit_tests.sh tests/smoke_test.sh
 ```
 
+# Pandas/Feather dataset format
+
+Sometimes when the JSON file containing the dataset is large, contains many different fields, and needs to be sorted and filtered in various ways when loading each data point, it may become unwieldy to do all of these things by manipulating Python dicts that we get from loading a JSON file.
+
+For this reason, a helper file `datasets/dataset_to_pandas.py` allows converting any JSON file to a Pandas-readable and fast to load `feather` file format. At the time of writing, this feature has been used to load Visual Genome Region descriptions dataset. The `feather` file for the dataset has been created using the following command:
+
+```bash
+python3 datasets/dataset_to_pandas.py \
+    /proj/mediaind/picsom/databases/visualgenome/download/1.2/VG/1.2/region_descriptions.json \
+    --record_path regions
+```
