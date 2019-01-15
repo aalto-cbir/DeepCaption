@@ -554,7 +554,6 @@ class VisualGenomeIM2PDataset(data.Dataset):
             image = torch.zeros(1, 1)
 
         # Prepare external features
-        # TODO probably wrong index ...
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, img_filename)
 
         # For hierarchical model the sentences need to be separated:
@@ -583,8 +582,111 @@ class VisualGenomeIM2PDataset(data.Dataset):
         return len(self.paragraphs)
 
 
+class VisualGenomeRegionsDataset(data.Dataset):
+    """Visual Genome Regions Dataset"""
+
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
+        """Set the path for images, captions and vocabulary wrapper.
+        Args:
+            root: image directory.
+            json_file: coco annotation file path.
+            vocab: vocabulary wrapper.
+            subset: file defining a further subset of the dataset to be used
+            transform: image transformer.
+        """
+        import pandas as pd
+        import copy
+        self.root = root
+        self.vocab = vocab
+        self.transform = transform
+        self.skip_images = skip_images
+        self.iter_over_images = iter_over_images
+        self.feature_loaders = feature_loaders
+        self.config_dict = config_dict
+
+        # We are in training mode if vocab is not None, otherwise we might
+        # be in vocabulary generation mode, where we don't need to care about
+        # the hierarchical model:
+        if vocab is not None:
+            self.hierarchical_model = config_dict.get('hierarchical_model', False)
+            self.max_sentences = config_dict.get('max_sentences')
+        else:
+            self.hierarchical_model = False
+
+        print("Loading Visual Genome Region description data from {} ...".
+              format(json_file))
+        all_regions = pd.read_feather(json_file)
+
+        # Subset path definition should is in format file_path:subset_name:
+        if subset is not None:
+            print("Loading Visual Genome Region description subset data...")
+            (subset_path, split_name) = tuple(subset.split(':'))
+
+            subset_path = os.path.join(self.config_dict['root_dir'], subset_path)
+            with open(subset_path) as f:
+                self.image_ids = json.load(f)[split_name]
+
+            self.regions = all_regions[all_regions.image_id.isin(self.image_ids)]
+        else:
+            self.image_ids = all_regions['image_id'].unique().tolist()
+            self.regions = all_regions
+
+        print("VisualGenome region data loaded for {} images "
+              "and {} regions...".format(len(self.image_ids), len(self.regions)))
+
+    def __getitem__(self, index):
+        """Returns one data pair (image and paragraph)."""
+        if self.iter_over_images:
+            img_id = self.image_ids[index]
+            #caption = self.regions[self.regions['image_id'] == img_id]['phrase'].tolist()
+            caption = None
+        else:
+            caption = self.regions.iloc[index]['phrase']
+            img_id = self.regions.iloc[index]['image_id']
+            #region_id = self.regions.iloc[index]['region_id']
+
+        img_filename = str(img_id) + '.jpg'
+        path = os.path.join(self.root, img_filename)
+
+        if not self.skip_images:
+            image = Image.open(path).convert('RGB')
+            if self.transform is not None:
+                image = self.transform(image)
+        else:
+            image = torch.zeros(1, 1)
+
+        # Prepare external features
+        feature_sets = ExternalFeature.load_sets(self.feature_loaders, img_filename)
+
+        if self.iter_over_images:
+            target = None
+        else:
+            if self.hierarchical_model:
+                target = tokenize_paragraph_caption(caption, self.vocab)
+            else:
+                target = tokenize_caption(caption, self.vocab)
+
+        # We are in file list creation mode, extract full path:
+        if self.config_dict.get('return_full_image_path'):
+            img_id = path
+        # Sometimes (for example when extracting features)
+        # we may want just the image file name without full path:
+        elif self.config_dict.get('return_image_file_name'):
+            img_id = img_filename
+
+        return image, target, img_id, feature_sets
+
+    def __len__(self):
+        if self.iter_over_images:
+            return len(self.image_ids)
+        else:
+            return len(self.regions)
+
+
 class VistDataset(data.Dataset):
-    """VIST Custom Dataset for sequence processing, compatible with torch.utils.data.DataLoader."""
+    """VIST Custom Dataset for sequence processing,
+    compatible with torch.utils.data.DataLoader."""
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
@@ -1186,6 +1288,8 @@ def get_dataset_class(cls_name):
         return CocoDataset
     elif cls_name == 'VisualGenomeIM2PDataset':
         return VisualGenomeIM2PDataset
+    elif cls_name == 'VisualGenomeRegionsDataset':
+        return VisualGenomeRegionsDataset
     elif cls_name == 'VistDataset':
         return VistDataset
     elif cls_name == 'MSRVTTDataset':
