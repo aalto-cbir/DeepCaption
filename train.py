@@ -706,7 +706,7 @@ def main(args):
 
         val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                params, stats, epoch)
-        all_stats[epoch+1] = stats
+        all_stats[str(epoch + 1)] = stats
         save_stats(args, params, all_stats, postfix=stats_postfix)
     else:
         for epoch in range(start_epoch, args.num_epochs):
@@ -886,7 +886,7 @@ def main(args):
             elif args.lr_scheduler == 'StepLR':
                 scheduler.step()
 
-            all_stats[epoch + 1] = stats
+            all_stats[str(epoch + 1)] = stats
             save_stats(args, params, all_stats, writer=writer)
 
             if writer is not None:
