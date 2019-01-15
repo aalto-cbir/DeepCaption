@@ -22,6 +22,13 @@ from model import SpatialAttentionEncoderDecoder, SoftAttentionEncoderDecoder
 from model import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
 from infer import caption_ids_to_words, paragraph_ids_to_words
 
+try:
+    from tensorboardX import SummaryWriter
+except ImportError as e:
+    print('WARNING: tensorboardx module not found. '
+          'Install it if you want to have support for advanced logging :-)')
+    SummaryWriter = None
+
 torch.manual_seed(42)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
@@ -132,13 +139,53 @@ def init_stats(args, params, postfix=None):
         return dict()
 
 
-def save_stats(args, params, all_stats, postfix=None):
+def save_stats(args, params, all_stats, postfix=None, writer=None):
     filename = stats_filename(args, params, postfix)
     os.makedirs(os.path.dirname(filename), exist_ok=True)
 
     with open(filename, 'w') as outfile:
         json.dump(all_stats, outfile, indent=2)
     print('Wrote stats to {}.'.format(filename))
+
+    # Write events to tensorboardx if available:
+    if writer is not None:
+        epoch = int(max(list(all_stats.keys())))
+        writer.add_scalars('train_stats', all_stats[str(epoch)], epoch)
+
+
+def log_model_data(params, model, n_iter, writer):
+    """Log model data using tensorboard"""
+    def _get_weights(x):
+        """Clone tensor x to numpy for logging"""
+        return x.clone().cpu().detach().numpy()
+
+    if params.hierarchical_model:
+        word_decoder = model.decoder.word_decoder
+        sentence_decoder = model.decoder
+        if params.coherent_sentences:
+            cu = sentence_decoder.coupling_unit
+            writer.add_histogram('weights/coupling/linear_1',
+                                 _get_weights(cu.linear1.weight),
+                                 n_iter)
+            writer.add_histogram('weights/coupling/linear_2',
+                                 _get_weights(cu.linear2.weight),
+                                 n_iter)
+            writer.add_histogram('weights/coupling/gru_hh_l0',
+                                 _get_weights(cu.gate.weight_hh_l0),
+                                 n_iter)
+            writer.add_histogram('weights/coupling/gru_ih_l0',
+                                 _get_weights(cu.gate.weight_ih_l0),
+                                 n_iter)
+
+    else:
+        word_decoder = model.decoder
+        sentence_decoder = None
+
+    if params.share_embedding_weights:
+
+        writer.add_histogram('weights/embedding_projection',
+                             _get_weights(word_decoder.projection.weight),
+                             n_iter)
 
 
 def get_teacher_prob(k, i, beta=1):
@@ -505,6 +552,22 @@ def main(args):
                                            skip_images=not params.has_internal_features(),
                                            verbose=args.verbose)
 
+    #########################################
+    # Setup (optional) TensorBoardX logging #
+    #########################################
+
+    writer = None
+    if args.tensorboard:
+        if SummaryWriter is not None:
+            model_name = get_model_name(args, params)
+            timestamp = datetime.now().strftime('%Y-%m-%d@%H:%M:%S')
+            log_dir = 'runs/{}_{}'.format(model_name, timestamp)
+            writer = SummaryWriter(log_dir=log_dir)
+            print("INFO: Logging TensorBoardX events to {}".format(log_dir))
+        else:
+            print("WARNING: SummaryWriter object not available. "
+                  "Hint: Please install TensorBoardX using pip install tensorboardx")
+
     ####################
     # Build the models #
     ####################
@@ -531,7 +594,7 @@ def main(args):
     else:
         lr_dict = {}
 
-    model = _Model(params, device, len(vocab), state, ef_dims, lr_dict)
+    model = _Model(params, device, len(vocab), state, ef_dims, lr_dict=lr_dict)
 
     ######################
     # Optimizer and loss #
@@ -643,7 +706,7 @@ def main(args):
 
         val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                params, stats, epoch)
-        all_stats[epoch+1] = stats
+        all_stats[str(epoch + 1)] = stats
         save_stats(args, params, all_stats, postfix=stats_postfix)
     else:
         for epoch in range(start_epoch, args.num_epochs):
@@ -719,8 +782,14 @@ def main(args):
                 teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                              args.teacher_forcing_beta)
 
+                # Allow model to log values at the last batch of the epoch
+                writer_data = None
+                if writer and (i == args.batch_size - 1 or i == args.num_batches - 1):
+                    writer_data = {'writer': writer, 'epoch': epoch + 1}
+
                 outputs = model(images, init_features, captions, lengths, persist_features,
-                                teacher_p, args.teacher_forcing, sorting_order)
+                                teacher_p, args.teacher_forcing, sorting_order,
+                                writer_data=writer_data)
 
                 # Attention models output additional tensor containing attention distribution
                 # over image:
@@ -817,8 +886,15 @@ def main(args):
             elif args.lr_scheduler == 'StepLR':
                 scheduler.step()
 
-            all_stats[epoch + 1] = stats
-            save_stats(args, params, all_stats)
+            all_stats[str(epoch + 1)] = stats
+            save_stats(args, params, all_stats, writer=writer)
+
+            if writer is not None:
+                # Log model data to tensorboard
+                log_model_data(params, model, epoch + 1, writer)
+
+    if writer is not None:
+        writer.close()
 
 
 if __name__ == '__main__':
@@ -848,6 +924,8 @@ if __name__ == '__main__':
     parser.add_argument('--profiler', action="store_true", help="Run in profiler")
     parser.add_argument('--cpu', action="store_true",
                         help="Use CPU even when GPU is available")
+    parser.add_argument('--tensorboard', action="store_true",
+                        help="Enable logging to TensorBoardX if is_available")
 
     # Vocabulary configuration:
     parser.add_argument('--vocab', type=str, default=None,
