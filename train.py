@@ -149,8 +149,43 @@ def save_stats(args, params, all_stats, postfix=None, writer=None):
 
     # Write events to tensorboardx if available:
     if writer is not None:
-        epoch = max(list(all_stats.keys()))
-        writer.add_scalars('train_stats', all_stats[epoch], epoch)
+        epoch = int(max(list(all_stats.keys())))
+        writer.add_scalars('train_stats', all_stats[str(epoch)], epoch)
+
+
+def log_model_data(params, model, n_iter, writer):
+    """Log model data using tensorboard"""
+    def _get_weights(x):
+        """Clone tensor x to numpy for logging"""
+        return x.clone().cpu().detach().numpy()
+
+    if params.hierarchical_model:
+        word_decoder = model.decoder.word_decoder
+        sentence_decoder = model.decoder
+        if params.coherent_sentences:
+            cu = sentence_decoder.coupling_unit
+            writer.add_histogram('weights/coupling/linear_1',
+                                 _get_weights(cu.linear1.weight),
+                                 n_iter)
+            writer.add_histogram('weights/coupling/linear_2',
+                                 _get_weights(cu.linear2.weight),
+                                 n_iter)
+            writer.add_histogram('weights/coupling/gru_hh_l0',
+                                 _get_weights(cu.gate.weight_hh_l0),
+                                 n_iter)
+            writer.add_histogram('weights/coupling/gru_ih_l0',
+                                 _get_weights(cu.gate.weight_ih_l0),
+                                 n_iter)
+
+    else:
+        word_decoder = model.decoder
+        sentence_decoder = None
+
+    if params.share_embedding_weights:
+
+        writer.add_histogram('weights/embedding_projection',
+                             _get_weights(word_decoder.projection.weight),
+                             n_iter)
 
 
 def get_teacher_prob(k, i, beta=1):
@@ -747,8 +782,14 @@ def main(args):
                 teacher_p = get_teacher_prob(args.teacher_forcing_k, iteration,
                                              args.teacher_forcing_beta)
 
+                # Allow model to log values at the last batch of the epoch
+                writer_data = None
+                if writer and (i == args.batch_size - 1 or i == args.num_batches - 1):
+                    writer_data = {'writer': writer, 'epoch': epoch + 1}
+
                 outputs = model(images, init_features, captions, lengths, persist_features,
-                                teacher_p, args.teacher_forcing, sorting_order)
+                                teacher_p, args.teacher_forcing, sorting_order,
+                                writer_data=writer_data)
 
                 # Attention models output additional tensor containing attention distribution
                 # over image:
@@ -847,6 +888,10 @@ def main(args):
 
             all_stats[epoch + 1] = stats
             save_stats(args, params, all_stats, writer=writer)
+
+            if writer is not None:
+                # Log model data to tensorboard
+                log_model_data(params, model, epoch + 1, writer)
 
     if writer is not None:
         writer.close()

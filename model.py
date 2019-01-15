@@ -623,12 +623,14 @@ class EncoderDecoder(nn.Module):
         return self.opt_params
 
     def forward(self, images, init_features, captions, lengths, persist_features,
-                teacher_p=1.0, teacher_forcing='always', sorting_order=None):
+                teacher_p=1.0, teacher_forcing='always', sorting_order=None,
+                writer_data=None):
         features = self.encoder(images, init_features)
         if self.model_type == 'hierarchical_model':
             # TODO: Make the hierarchical and regular decoder take the same arguments
             # if possible:
-            outputs = self.decoder(features, captions, lengths, images, sorting_order)
+            outputs = self.decoder(features, captions, lengths, images, sorting_order,
+                                   writer_data=writer_data)
         else:
             outputs = self.decoder(features, captions, lengths, images, persist_features,
                                    teacher_p, teacher_forcing)
@@ -697,7 +699,7 @@ class HierarchicalDecoderRNN(nn.Module):
         return G
 
     def forward(self, features, captions, lengths, images, sorting_order,
-                use_teacher_forcing=True):
+                use_teacher_forcing=True, writer_data=None):
         """Decode image feature vectors and generates captions.
         features: image features
         captions: paragraph captions, regular captions treated as paragraphs
@@ -706,6 +708,17 @@ class HierarchicalDecoderRNN(nn.Module):
 
         # Repeat features so that each time-step of sentence LSTM receives the same
         # feature vector as its input:
+
+        # Setup logging objects and allow certain important values
+        # to be logged. Usually this is triggered once per epoch by calling
+        # side i.e train.py setting writer_data to be non-zero dict 
+        # containing the writer object and current epoch number:
+        log_values = False
+        if writer_data is not None:
+            _writer = writer_data['writer']
+            _epoch = writer_data['epoch']
+            log_values = True
+
 
         batch_size = lengths.size()[0]
         n_sentences = lengths.size()[1]
@@ -771,12 +784,22 @@ class HierarchicalDecoderRNN(nn.Module):
             #topics[:, t][unsorted_non_zero_idxs] = fc2[unsorting_order[unsorted_non_zero_idxs]]
             topics[:, t] = fc2
 
+            if log_values:
+                _writer.add_histogram('values/topics_pre_coherence' + str(t),
+                                      topics[:, t].clone().cpu().detach().numpy(),
+                                      _epoch)
+
         word_rnn_out = []
 
         # Use WordRNN hidden layer value to initialize the next topic vector (coherent mode):
         if self.coherent_sentences:
             # Need to sort topics back to get the right G!
             G = self._get_global_topic(topics)
+
+            if log_values:
+                _writer.add_histogram('values/global_topic_G',
+                                      G.clone().cpu().detach().numpy(),
+                                      _epoch)
 
             # Hidden layer output of WordRNN for previous sentence, initialize to None
             # for the first sentence:
@@ -818,6 +841,15 @@ class HierarchicalDecoderRNN(nn.Module):
                 topic = self.coupling_unit(hiddens_w,
                                            G[sorting_order[:, t]][non_zero_idxs],
                                            topic)
+
+                if log_values:
+                    _writer.add_histogram('values/topics_post_coherence' + str(t),
+                                          topic.clone().cpu().detach().numpy(),
+                                          _epoch)
+                    if hiddens_w is not None:
+                        _writer.add_histogram('values/hiddens_w' + str(t),
+                                              hiddens_w.clone().cpu().detach().numpy(),
+                                              _epoch)
 
                 output, hiddens_w = self.word_decoder(topic, captions[:, t][non_zero_idxs],
                                                       lengths[:, t][non_zero_idxs],
