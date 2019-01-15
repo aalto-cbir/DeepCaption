@@ -92,10 +92,10 @@ echo "We are on hostname: $HOSTNAME"
 if [ ! -z $COCO_GT ]; then
   echo "Setting ground truth path for COCO from command line parameter: $COCO_GT"
   GROUND_TRUTH=$COCO_GT
-elif [[ $HOSTNAME == *"taito"* ]]; then
+elif [[ $ENVIRONMENT == "taito" ]]; then
   echo "Setting ground truth path for COCO evaluation for Taito..."
   GROUND_TRUTH=/proj/mediaind/picsom/databases/COCO/download/annotations/captions_val2014.json
-elif [[ $HOSTNAME == *"triton"* ]] || [[ $HOSTNAME == *"aalto"* ]]; then
+elif [[ $ENVIRONMENT == "aalto" ]]; then
   echo "Setting ground truth path for COCO evaluation for Aalto/Triton..."
   GROUND_TRUTH=/m/cs/scratch/imagedb/picsom/databases/COCO/download/annotations/captions_val2014.json
 else

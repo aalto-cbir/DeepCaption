@@ -22,6 +22,8 @@ usage() {
     echo "   ";
     echo "  --coco_gt : STRING - Path to ground truth file for COCO";
     echo "  --skip_long_commands : BOOLEAN - Skip commands that take long time";
+    echo "  --env : String - manually specify environment."
+    echo "    supported environments: taito, aalto"
     echo "  -h | --help : This message";
 }
 
@@ -34,6 +36,7 @@ parse_args() {
       case "$1" in
           "--coco_gt" ) COCO_GT=$2; echo "COCO ground truth captions path: $COCO_GT"; shift;;
           "--skip_long_commands" ) SKIP_LONG_COMMANDS=TRUE; echo "Skipping long commands..."; ;;
+          "--env" ) ENVIRONMENT=$2; shift;;
           "-h" | "--help" ) usage; exit;; # quit and show usage
       esac
       shift # move to next kv pair
@@ -42,6 +45,30 @@ parse_args() {
 
 # Detect any known command line arguments:
 parse_args $*
+
+# Determine the environment from the args or the hostname
+# Manual using --env flag:
+if [[ ! -z $ENVIRONMENT ]]; then
+  if [[ $ENVIRONMENT == "taito" ]] || [[ $ENVIRONMENT == "aalto" ]]; then
+    echo "Setting user specified environment: $ENVIRONMENT";
+  else
+    echo "Unknown environment specified: $ENVIRONMENT"
+    exit 1
+  fi
+# Automatic by checking the $HOSTNAME environmental variable:
+else
+  if [[ $HOSTNAME == *"taito"* ]]; then
+    ENVIRONMENT="taito"
+  elif [[ $HOSTNAME == *"triton"* ]] || [[ $HOSTNAME == *"aalto"* ]]; then
+    ENVIRONMENT="aalto"
+  fi
+
+  if [[ ! -z $ENVIRONMENT ]]; then
+    echo "Setting automatically detected environment: $ENVIRONMENT"
+  else
+    echo "Running in unknown environment. Some tests may fail."
+  fi
+fi
 
 # Array of commands
 declare -a COMMANDS
@@ -105,7 +132,7 @@ print_results() {
 
 # Function for loading correct Python 3 version
 load_python3() {
-  if [[ $HOSTNAME == *"taito"* ]]; then
+  if [[ $ENVIRONMENT == "taito" ]]; then
     print_separator
     echo "Loading Python 3 Environment on Taito"
     module load python-env/intelpython3.6-2018.3
@@ -119,7 +146,7 @@ load_python3() {
 
 # Function for loading correct Python 2 version
 load_python2() {
-  if [[ $HOSTNAME == *"taito"* ]]; then
+  if [[ $ENVIRONMENT == "taito" ]]; then
     print_separator
     echo "Loading Python 2 Environment on Taito"
     module load python-env/2.7.10
