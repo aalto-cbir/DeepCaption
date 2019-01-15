@@ -818,6 +818,7 @@ class PicSOMDataset(data.Dataset):
 
         subset = self.db_root+'/classes/'+self.subset
         # print(subset)
+        assert os.path.isfile(subset), 'subset class file <'+subset+'> inexistent'
         self.restr = picsom_class(subset)
         restr_size = len(self.restr.objects())
         print('PicSOM class file {:s} contains {:d} objects'.format(self.restr.path(),
