@@ -41,8 +41,10 @@ class DatasetParams:
         # If the configuration file is not found, we can still use
         # 'generic' dataset with sensible defaults when infering.
         if not config_path:
-            print('Config file not found. Loading default settings for generic dataset.')
-            print('Hint: you can use datasets/datasets.conf.default as a starting point.')
+            print(('Config file <{}> not found. Loading default settings '+
+                   'for generic dataset.').format(dataset_config_file))
+            print('Hint: you can use datasets/datasets.conf.default '+
+                  'as a starting point.')
 
         # Otherwise all is good, and we are using the config file as
         else:
