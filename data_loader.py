@@ -259,7 +259,7 @@ class ExternalFeature:
 
         assert x1 is None or not np.isnan(x1).any(), full_path
 
-        print('Loaded feature {} with dim {}.'.format(full_path, self.vdim()))
+        print('Loaded feature {} with dim {}'.format(full_path, self.vdim()))
 
     def vdim(self):
         return self._vdim

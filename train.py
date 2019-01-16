@@ -145,7 +145,7 @@ def save_stats(args, params, all_stats, postfix=None, writer=None):
 
     with open(filename, 'w') as outfile:
         json.dump(all_stats, outfile, indent=2)
-    print('Wrote stats to {}.'.format(filename))
+    print('Wrote stats to {}'.format(filename))
 
     # Write events to tensorboardx if available:
     if writer is not None:
@@ -334,8 +334,8 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
     if params.hierarchical_model:
         stats['val_loss_sentence'] = total_loss_sent / num_batches
         stats['val_loss_word'] = total_loss_word / num_batches
-    print('Epoch {} validation duration: {}, validation average loss: {:.4f}.'.format(
-        epoch + 1, end - begin, val_loss))
+    print('Epoch {} validation duration: {}, validation average loss: {:.4f}'.
+          format(epoch + 1, end - begin, val_loss))
     return val_loss
 
 
@@ -431,8 +431,8 @@ def main(args):
             print('Updating feature paths...')
             params.update_ext_features(new_external_features)
         start_epoch = state['epoch']
-        print('Loaded model {} at epoch {}.'.format(args.load_model,
-                                                    start_epoch))
+        print('Loaded model {} at epoch {}'.format(args.load_model,
+                                                   start_epoch))
     else:
         params = arg_params
 
@@ -860,9 +860,12 @@ def main(args):
                 stats['loss_sentence'] = total_loss_sent / num_batches
                 stats['loss_word'] = total_loss_word / num_batches
 
-            print('Epoch {} duration: {}, average loss: {:.4f}.'.format(epoch + 1, end - begin,
-                                                                        stats['training_loss']))
-            save_model(args, params, model.encoder, model.decoder, optimizer, epoch, vocab)
+            print('Epoch {} duration: {}, average loss: {:.4f}'.
+                  format(epoch + 1, end - begin,
+                         stats['training_loss']))
+
+            save_model(args, params, model.encoder, model.decoder,
+                       optimizer, epoch, vocab)
 
             if epoch == 0:
                 vocab_counts['avg'] = vocab_counts['sum']/vocab_counts['cnt']
@@ -1058,13 +1061,13 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     begin = datetime.now()
-    print('Started training at {}.'.format(begin))
+    print('Started training at {}'.format(begin))
 
     models = args.load_model
     if models is None:
         models = [None]
     if len(models) > 1:
-        print('INFO: Iterating over {} models.'.format(len(models)))
+        print('INFO: Iterating over {} models'.format(len(models)))
 
     for load_model in models:
         args.load_model = load_model
@@ -1075,4 +1078,5 @@ if __name__ == '__main__':
             main(args=args)
 
     end = datetime.now()
-    print('Training ended at {}. Total training time: {}.'.format(end, end - begin))
+    print('Training ended at {}. Total training time: {}'.
+          format(end, end - begin))
