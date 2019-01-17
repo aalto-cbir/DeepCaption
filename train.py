@@ -629,7 +629,11 @@ def main(args):
     if arg_params.hierarchical_model and state and not state.get('hierarchical_model'):
         transfer_language_model = True
 
-    if state and not transfer_language_model:
+    # Set optimizer state to the one found in a loaded model, unless
+    # we are doing a transfer learning step from flat to hierarchical model,
+    # or the number of unique parameter groups has changed, or the user
+    # has explicitly told us *not to* reuse optimizer parameters from before
+    if state and not transfer_language_model and not args.optimizer_reset:
         # Check that number of parameter groups is the same
         if len(optimizer.param_groups) == len(state['optimizer']['param_groups']):
             optimizer.load_state_dict(state['optimizer'])
@@ -908,6 +912,8 @@ if __name__ == '__main__':
                         help='location of dataset configuration file')
     parser.add_argument('--load_model', type=str, nargs='+',
                         help='existing model, for continuing training')
+    parser.add_argument('--optimizer_reset', action="store_true",
+                        help='reset optimizer parameters for loaded model')
     parser.add_argument('--model_name', type=str)
     parser.add_argument('--model_basename', type=str, default='model',
                         help='base name for model snapshot filenames')
