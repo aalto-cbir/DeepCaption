@@ -37,8 +37,9 @@ def dump_dict(d, prefix=''):
 
 
 def model_info(filename):
-    state = torch.load(filename)
+    state = torch.load(filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
     dump_dict(state)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
