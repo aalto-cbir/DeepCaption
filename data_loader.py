@@ -458,11 +458,6 @@ class CocoDataset(data.Dataset):
             target = tokenize_caption(caption, self.vocab,
                                       skip_start_token=skip_start_token)
 
-        # We are in feature extraction-only mode,
-        # use image filename as image identifier in lmdb:
-        if self.vocab is None and self.feature_loaders is None:
-            img_id = path
-
         # We are in file list generation mode and want to output full paths to images:
         if self.config_dict.get('return_full_image_path'):
             img_id = os.path.join(self.root, path)
@@ -565,15 +560,9 @@ class VisualGenomeIM2PDataset(data.Dataset):
         else:
             target = tokenize_caption(caption, self.vocab)
 
-        # We are in feature extraction-only mode,
-        # use image filename as image identifier in lmdb:
-        if self.vocab is None and self.feature_loaders is None:
-            img_id = path
-
         # We are in file list creation mode, extract full path:
         if self.config_dict.get('return_full_image_path'):
             img_id = path
-
         # Sometimes we may want just the image file name without full path:
         elif self.config_dict.get('return_image_file_name'):
             img_id = img_filename
@@ -598,7 +587,6 @@ class VisualGenomeRegionsDataset(data.Dataset):
             transform: image transformer.
         """
         import pandas as pd
-        import copy
         self.root = root
         self.vocab = vocab
         self.transform = transform
