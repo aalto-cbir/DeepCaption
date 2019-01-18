@@ -94,6 +94,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         'attention': params.attention,
         'vocab': vocab,
         'skip_start_token': params.skip_start_token,
+        'rnn_arch': params.rnn_arch,
         'rnn_hidden_init': params.rnn_hidden_init,
         'share_embedding_weights': params.share_embedding_weights
     }
@@ -983,6 +984,9 @@ if __name__ == '__main__':
                         help='dropout for the LSTM')
     parser.add_argument('--encoder_dropout', type=float, default=0.0,
                         help='dropout for the encoder FC layer')
+    parser.add_argument('--rnn_arch', type=str, default='LSTM',
+                        help='RNN architecture to use in the decoder. Supported options: '
+                        'GRU, LSTM. Default option: LSTM')
     parser.add_argument('--rnn_hidden_init', type=str,
                         help='initization strategy for RNN hidden and cell states. '
                         'Supported values: None (set to zeros), from_features '

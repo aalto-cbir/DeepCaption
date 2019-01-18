@@ -1,5 +1,5 @@
 import os
-
+import sys
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -48,6 +48,7 @@ class ModelParams:
         self.rnn_hidden_init = self._get_param(d, 'rnn_hidden_init', None)
         # Use the same embedding matrix for input and output word embeddings:
         self.share_embedding_weights = self._get_param(d, 'share_embedding_weights', False)
+        self.rnn_arch = self._get_param(d, 'rnn_arch', 'LSTM').upper()
 
         # Below parameters used only by the Hierarchical model:
         if self.hierarchical_model:
@@ -363,8 +364,15 @@ class DecoderRNN(nn.Module):
                 self.init_h.append(nn.Linear(enc_features_dim, p.hidden_size))
                 self.init_c.append(nn.Linear(enc_features_dim, p.hidden_size))
 
-        self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
-                            p.num_layers, dropout=p.dropout, batch_first=True)
+        if p.rnn_arch == 'LSTM':
+            self.rnn = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
+                               p.num_layers, dropout=p.dropout, batch_first=True)
+        elif p.rnn_arch == 'GRU':
+            self.rnn = nn.GRU(p.embed_size + total_feat_dim, p.hidden_size,
+                              p.num_layers, dropout=p.dropout, batch_first=True)
+        else:
+            print("Invalid RNN architecture specified: {}".format(p.rnn_arch))
+            sys.exit(1)
 
         if self.share_embedding_weights:
             print("DecoderRNN: Sharing input and output embeddings for the RNN...")
@@ -377,6 +385,18 @@ class DecoderRNN(nn.Module):
             self.embed_output.weight.data = self.embed.weight.data.transpose(1, 0)
         else:
             self.linear = nn.Linear(p.hidden_size, vocab_size)
+
+    # hack to be able to load old state files which used the "lstm." prefix instead of
+    # a more generic "rnn." one
+    def load_state_dict(self, state_dict, strict=True):
+        fixed_states = []
+        for key, value in state_dict.items():
+            if key.startswith('lstm.'):
+                key = 'rnn.' + key[5:]
+            fixed_states.append((key, value))
+
+        fixed_state_dict = OrderedDict(fixed_states)
+        super(DecoderRNN, self).load_state_dict(fixed_state_dict, strict)
 
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
@@ -423,7 +443,7 @@ class DecoderRNN(nn.Module):
             # Feed ground truth as next input at each time-step when training:
             inputs = torch.cat([embeddings, persist_features], 2)
             packed = pack_padded_sequence(inputs, lengths, batch_first=True)
-            hiddens, _ = self.lstm(packed, states)
+            hiddens, _ = self.rnn(packed, states)
             if self.share_embedding_weights:
                 hiddens_p = self.projection(hiddens[0])
                 output_embeddings = self.hidden_to_embeddings(hiddens_p)
@@ -439,7 +459,7 @@ class DecoderRNN(nn.Module):
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
             for t in range(seq_length - 1):
-                hiddens, states = self.lstm(inputs, states)
+                hiddens, states = self.rnn(inputs, states)
                 step_output = self.linear(hiddens.squeeze(1))
                 outputs[:, t, :] = step_output
 
@@ -516,7 +536,7 @@ class DecoderRNN(nn.Module):
 
         if output_hiddens:
             all_hiddens = torch.zeros(batch_size,
-                                      max_seq_length, self.lstm.hidden_size).to(device)
+                                      max_seq_length, self.rnn.hidden_size).to(device)
 
         # Initialize the rnn from input features, instead of setting the hidden
         # state to zeros (as done by default):
@@ -536,7 +556,7 @@ class DecoderRNN(nn.Module):
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
         for i in range(max_seq_length):
-            hiddens, states = self.lstm(inputs, states)
+            hiddens, states = self.rnn(inputs, states)
 
             # If we are sharing embedding weights before and after the RNN processing:
             if self.share_embedding_weights:
@@ -664,8 +684,13 @@ class HierarchicalDecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0, enc_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(HierarchicalDecoderRNN, self).__init__()
-        self.sentence_lstm = nn.LSTM(p.pooling_size, p.hidden_size,
-                                     dropout=p.dropout, batch_first=True)
+
+        if p.rnn_arch == 'LSTM':
+            self.sentence_rnn = nn.LSTM(p.pooling_size, p.hidden_size,
+                                        dropout=p.dropout, batch_first=True)
+        elif p.rnn_arch == 'GRU':
+            self.sentence_rnn = nn.GRU(p.pooling_size, p.hidden_size,
+                                       dropout=p.dropout, batch_first=True)
 
         self.coherent_sentences = p.coherent_sentences
         if self.coherent_sentences:
@@ -720,12 +745,11 @@ class HierarchicalDecoderRNN(nn.Module):
             _epoch = writer_data['epoch']
             log_values = True
 
-
         batch_size = lengths.size()[0]
         n_sentences = lengths.size()[1]
 
         features_repeated = features.unsqueeze(1).expand(-1, n_sentences, -1)
-        hiddens, _ = self.sentence_lstm(features_repeated)
+        hiddens, _ = self.sentence_rnn(features_repeated)
 
         # Dims: (batch_size X max_sentences X 2)
         sentence_stopping = torch.zeros(batch_size, n_sentences, 2).to(device)
@@ -885,13 +909,13 @@ class HierarchicalDecoderRNN(nn.Module):
 
         # Tensor storing raw hidden layer output from Sentence RNN:
         hiddens_s = torch.zeros(batch_size, self.max_sentences, 1,
-                                self.sentence_lstm.hidden_size).to(device)
+                                self.sentence_rnn.hidden_size).to(device)
 
         # Get stopping indicators for sentences each position t:
         for t in range(self.max_sentences):
             # Output a sentence state
             # hiddens: (batch_size, 1, hidden_size)
-            hiddens_s[:, t], states = self.sentence_lstm(inputs, states)
+            hiddens_s[:, t], states = self.sentence_rnn(inputs, states)
             # (1 x 2)
             stopping = nn.Sigmoid()(self.linear_stopping(hiddens_s[:, t].squeeze(1)))
 
