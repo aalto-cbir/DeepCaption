@@ -681,6 +681,7 @@ class HierarchicalDecoderRNN(nn.Module):
         self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
         self.dropout_fc = nn.Dropout(p=p.dropout_fc)
         self.linear2 = nn.Linear(p.fc_size, p.embed_size)
+        self.non_lin = nn.SELU()
         # Word LSTM:
         self.word_decoder = DecoderRNN(p, vocab_size)
 
@@ -763,7 +764,7 @@ class HierarchicalDecoderRNN(nn.Module):
             #h_t = h_t[sorting_order[t]][non_zero_idxs]
 
             # Fully connected layer 1 with ReLU activation:
-            fc1 = self.linear1(h_t).clamp(min=0)
+            fc1 = self.non_lin(self.linear1(h_t))
             # Output from the following layer is our context vector:
             fc2 = self.dropout_fc(self.linear2(fc1))
 
@@ -907,7 +908,7 @@ class HierarchicalDecoderRNN(nn.Module):
         # Generate sentence topics:
         hiddens_s = hiddens_s.squeeze(2)
         for t in range(self.max_sentences):
-            fc = self.linear1(hiddens_s[:, t]).clamp(min=0)
+            fc = self.non_lin(self.linear1(hiddens_s[:, t]))
             topics[:, t] = self.linear2(fc).squeeze(1)
 
         if self.coherent_sentences:
@@ -953,13 +954,14 @@ class HierarchicalCoupling(nn.Module):
         super(HierarchicalCoupling, self).__init__()
         self.linear1 = nn.Linear(hidden_size, embed_size)
         self.linear2 = nn.Linear(embed_size, embed_size)
+        self.non_lin = nn.SELU()
         self.gate = nn.GRU(embed_size, embed_size, 1, batch_first=True)
         self.alpha = alpha
         self.beta = beta
 
     def forward(self, hiddens, G, T):
         if hiddens is not None:
-            x = self.linear1(hiddens.squeeze(1)).clamp(min=0)
+            x = self.non_lin(self.linear1(hiddens.squeeze(1)))
             C = self.linear2(x)
         else:
             C = 0
