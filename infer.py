@@ -225,7 +225,7 @@ def infer(ext_args=None):
     gts = {}
     res = {}
 
-    print('Starting inference...')
+    print('Starting inference, max captions/sentence length: {}'.format(args.max_seq_length))
     show_progress = sys.stderr.isatty() and not args.verbose
     for i, (images, ref_captions, lengths, image_ids,
             features) in enumerate(tqdm(data_loader, disable=not show_progress)):
