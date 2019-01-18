@@ -713,7 +713,10 @@ class HierarchicalDecoderRNN(nn.Module):
         self.max_sentences = p.max_sentences
 
     def _get_global_topic(self, topics):
+        # Topics size: (bs, num_sentences, embed_size)
+        # Vector norms size: (bs, num_sentences)
         topic_vector_norms = torch.norm(topics, dim=2)
+        # topic sums size: (bs)
         topic_sums = torch.sum(topic_vector_norms, dim=1)
         topic_sums = topic_sums.unsqueeze(1).expand(-1, self.max_sentences)
         # alphas denote topic weights:
@@ -994,6 +997,7 @@ class HierarchicalCoupling(nn.Module):
         # RNN wants inputs of dim (bs x input_size x n_layers_in_rnn):
         T_prime = self.gate(T_fused_C.unsqueeze(1), G.unsqueeze(0))
 
+        # Return RNN hidden value
         return T_prime[0].squeeze(1)
 
 
