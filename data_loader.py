@@ -1085,7 +1085,7 @@ def collate_fn(data):
     # If we are doing inference, captions are None, and we skip the sort
     if data[0][1] is not None:
         data.sort(key=lambda x: len(x[1]), reverse=True)
-    images, captions, indices, feature_sets = zip(*data)
+    images, captions, image_ids, feature_sets = zip(*data)
 
     # Merge images (from tuple of 3D tensor to 4D tensor).
     images = torch.stack(images, 0)
@@ -1110,7 +1110,7 @@ def collate_fn(data):
 
     features = _collate_features(feature_sets)
 
-    return images, targets, lengths, indices, features
+    return images, targets, lengths, image_ids, features
 
 
 def collate_fn_vist(data):
