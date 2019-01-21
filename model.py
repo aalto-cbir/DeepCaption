@@ -875,8 +875,11 @@ class HierarchicalDecoderRNN(nn.Module):
                     # last element with actual value for each sequence
                     _hiddens_w, _seq_lengths = pad_packed_sequence(hiddens_w, batch_first=True)
 
-                    # Convert lengths to indices:
-                    seq_end_idxs = (_seq_lengths - 1).to(device)
+                    # Convert lengths to indices
+                    # In addition we take the output at the second last
+                    # token (because hidden value at <EOS> might be quite similar
+                    # across sentences).
+                    seq_end_idxs = (_seq_lengths - 2).to(device)
 
                     # Select hidden layer values at end of sequence indices for each sequence
                     # TODO? rewrite below line by merging 2 first dimensions of the _hiddens
@@ -999,7 +1002,8 @@ class HierarchicalDecoderRNN(nn.Module):
                 # of the "sentence" tensor.
                 _, eos_indices = torch.max((sentence == end_token_id).t(), 0)
 
-                hiddens_w = torch.stack([hiddens_w[i, j] for i, j in enumerate(eos_indices)])
+                hiddens_w = torch.stack(
+                    [hiddens_w[i, j] for i, j in enumerate(eos_indices)])
             else:
                 sentence = self.word_decoder.sample(topic, images, external_features,
                                                     max_seq_length=max_seq_length)
