@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import os
-import glob
-import re
+import math
 import sys
 import json
 
@@ -341,6 +340,64 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
     return val_loss
 
 
+def cyclical_lr(step_sz, min_lr=0.001, max_lr=1, mode='triangular', scale_func=None,
+                scale_md='cycles', gamma=1.):
+    """implements a cyclical learning rate policy (CLR).
+    Notes: the learning rate of optimizer should be 1
+
+    Parameters:
+    ----------
+    mode : str, optional
+        one of {triangular, triangular2, exp_range}.
+    scale_md : str, optional
+        {'cycles', 'iterations'}.
+    gamma : float, optional
+        constant in 'exp_range' scaling function: gamma**(cycle iterations)
+
+    Examples:
+    --------
+    >>> # the learning rate of optimizer should be 1
+    >>> optimizer = optim.SGD(model.parameters(), lr=1.)
+    >>> step_size = 2*len(train_loader)
+    >>> clr = cyclical_lr(step_size, min_lr=0.001, max_lr=0.005)
+    >>> scheduler = lr_scheduler.LambdaLR(optimizer, [clr])
+    >>> # some other operations
+    >>> scheduler.step()
+    >>> optimizer.step()
+
+    Source: https://github.com/pytorch/pytorch/pull/2016#issuecomment-387755710
+    """
+    if scale_func is None:
+        if mode == 'triangular':
+            scale_fn = lambda x: 1.
+            scale_mode = 'cycles'
+        elif mode == 'triangular2':
+            scale_fn = lambda x: 1 / (2.**(x - 1))
+            scale_mode = 'cycles'
+        elif mode == 'exp_range':
+            scale_fn = lambda x: gamma**(x)
+            scale_mode = 'iterations'
+        else:
+            raise ValueError(f'The {mode} is not valid value!')
+    else:
+        scale_fn = scale_func
+        scale_mode = scale_md
+
+    lr_lambda = lambda iters: min_lr + (max_lr - min_lr) * rel_val(iters, step_sz, scale_mode)
+
+    def rel_val(iteration, stepsize, mode):
+        cycle = math.floor(1 + iteration / (2 * stepsize))
+        x = abs(iteration / stepsize - 2 * cycle + 1)
+        if mode == 'cycles':
+            return max(0, (1 - x)) * scale_fn(cycle)
+        elif mode == 'iterations':
+            return max(0, (1 - x)) * scale_fn(iteration)
+        else:
+            raise ValueError(f'The {scale_mode} is not valid value!')
+
+    return lr_lambda
+
+
 def prepare_hierarchical_targets(last_sentence_indicator, max_sentences, lengths, captions):
     """Prepares the training targets used by hierarchical model"""
     # Validate that the last sentence indicator is outputting correct data:
@@ -613,13 +670,21 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
-    default_lr = 0.001
+    # When using CyclicalLR, default learning rate should be always 1.0
+    if args.lr_scheduler == 'CyclicalLR':
+        default_lr = 1.
+    else:
+        default_lr = 0.001
+
     if args.optimizer == 'adam':
         optimizer = torch.optim.Adam(opt_params, lr=default_lr,
                                      weight_decay=args.weight_decay)
     elif args.optimizer == 'rmsprop':
         optimizer = torch.optim.RMSprop(opt_params, lr=default_lr,
                                         weight_decay=args.weight_decay)
+    elif args.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(opt_params, lr=default_lr,
+                                    weight_decay=args.weight_decay)
     else:
         print('ERROR: unknown optimizer:', args.optimizer)
         sys.exit(1)
@@ -663,12 +728,22 @@ def main(args):
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', verbose=True,
                                                                patience=2)
     elif args.lr_scheduler == 'StepLR':
-        print('Using StepLR learning rate scheduler')
+        print('Using StepLR learning rate scheduler with step_size {}'.format(
+            args.lr_step_size))
         # Decrease the learning rate by the factor of gamme at every
         # step_size epochs (for example every 5 or 10 epochs):
         step_size = args.lr_step_size
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size,
                                                     gamma=0.5, last_epoch=-1)
+    elif args.lr_scheduler == 'CyclicalLR':
+        print("Using Cyclical learning rate scheduler, lr range: [{},{}]".format(
+            args.lr_cyclical_min, args.lr_cyclical_max))
+
+        step_size = len(data_loader)
+        clr = cyclical_lr(step_size, min_lr=args.lr_cyclical_min,
+                          max_lr=args.lr_cyclical_max)
+        n_groups = len(optimizer.param_groups)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, [clr] * n_groups)
     elif args.lr_scheduler is not None:
         print('ERROR: Invalid learing rate scheduler specified: {}'.format(args.lr_scheduler))
         sys.exit(1)
@@ -830,6 +905,10 @@ def main(args):
 
                 # Update weights:
                 optimizer.step()
+
+                # CyclicalLR requires us to update LR at every minibatch:
+                if args.lr_scheduler == 'CyclicalLR':
+                    scheduler.step()
 
                 total_loss += loss.item()
 
@@ -1045,7 +1124,15 @@ if __name__ == '__main__':
     parser.add_argument('--lr_scheduler', nargs='?', const='ReduceLROnPlateau', type=str,
                         help='Use learning rate scheduler. Supported scheduler types: \n'
                              'ReduceLROnPlateau (used by default) .i.e plain --lr_scheduler\n'
-                             'StepLR - use --lr_scheduler StepLR to enable')
+                             'Other options: \n'
+                             'StepLR - reduce learning rate by a factor of 0.5 every'
+                             'lr_step_size steps\n'
+                             'CyclicalLR - alternate learning rate between '
+                             'lr_cyclical_max and lr_cyclical_min')
+    parser.add_argument('--lr_cyclical_min', type=float, default=1e-5,
+                        help='minimum learning rate for cyclical lr scheduler')
+    parser.add_argument('--lr_cyclical_max', type=float, default=1e-3,
+                        help='maximum learning rate for cyclical lr scheduler')
     parser.add_argument('--lr_step_size', type=int, default=5,
                         help='Default step size for StepLR lr scheduler')
     parser.add_argument('--share_embedding_weights', action='store_true',
