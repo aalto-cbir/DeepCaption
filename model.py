@@ -424,6 +424,7 @@ class DecoderRNN(nn.Module):
         # Return concatenated features, empty tensor if none
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
+    # DecoderRNN forward
     def forward(self, features, captions, lengths, images, external_features=None,
                 teacher_p=1.0, teacher_forcing='always', output_hiddens=False):
         """Decode image feature vectors and generates captions.
@@ -529,7 +530,9 @@ class DecoderRNN(nn.Module):
             # for all models):
             outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
 
-        # Some variants of hierarchical model require final RNN hidden layer value:
+        # Some variants of hierarchical model require final RNN hidden layer value
+        # which the calling function can extract from the "packedpaddedsequence" object
+        # that hiddens is packed into:
         if output_hiddens:
             return (outputs, hiddens)
         else:
