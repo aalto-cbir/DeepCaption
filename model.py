@@ -667,7 +667,7 @@ class EncoderDecoder(nn.Module):
             # TODO: Make the hierarchical and regular decoder take the same arguments
             # if possible:
             outputs = self.decoder(features, captions, lengths, images, sorting_order,
-                                   writer_data=writer_data)
+                                   external_features=persist_features, writer_data=writer_data)
         else:
             outputs = self.decoder(features, captions, lengths, images, persist_features,
                                    teacher_p, teacher_forcing)
@@ -758,8 +758,9 @@ class HierarchicalDecoderRNN(nn.Module):
 
         return G
 
+    # HierarchicalDecoderRNN forward
     def forward(self, features, captions, lengths, images, sorting_order,
-                use_teacher_forcing=True, writer_data=None):
+                external_features=None, use_teacher_forcing=True, writer_data=None):
         """Decode image feature vectors and generates captions.
         features: image features
         captions: paragraph captions, regular captions treated as paragraphs
@@ -913,6 +914,7 @@ class HierarchicalDecoderRNN(nn.Module):
                 output, hiddens_w = self.word_decoder(topic, captions[:, t][non_zero_idxs],
                                                       lengths[:, t][non_zero_idxs],
                                                       images[sorting_order[:, t]],
+                                                      external_features=external_features,
                                                       output_hiddens=True)
                 word_rnn_out.append(output)
         # Otherwise do the "regular" hierarchical model (Krause et al 2017):
@@ -922,7 +924,8 @@ class HierarchicalDecoderRNN(nn.Module):
                 topic = topics[:, t][sorting_order[:, t]][non_zero_idxs]
                 word_rnn_out.append(self.word_decoder(topic, captions[:, t][non_zero_idxs],
                                                       lengths[:, t][non_zero_idxs],
-                                                      images[sorting_order[:, t]]))
+                                                      images[sorting_order[:, t]],
+                                                      external_features=external_features))
 
         return sentence_stopping, word_rnn_out
 
