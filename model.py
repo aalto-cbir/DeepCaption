@@ -903,7 +903,7 @@ class HierarchicalDecoderRNN(nn.Module):
 
                 topic = self.coupling_unit(hiddens_w,
                                            G[sorting_order[:, t]][non_zero_idxs],
-                                           topic)
+                                           topic, writer_data=writer_data)
 
                 if log_values:
                     _writer.add_histogram('values/topics_post_coherence_' + str(t),
@@ -1019,7 +1019,7 @@ class HierarchicalCoupling(nn.Module):
         super(HierarchicalCoupling, self).__init__()
         self.linear1 = nn.Linear(hidden_size, embed_size)
         self.linear2 = nn.Linear(embed_size, embed_size)
-        self.non_lin = nn.SELU()
+        self.non_lin = nn.ReLU()
         self.gate = nn.GRU(embed_size, embed_size, 1, batch_first=True)
         self.alpha = alpha
         self.beta = beta
