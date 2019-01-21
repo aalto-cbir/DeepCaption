@@ -162,9 +162,11 @@ def log_model_data(params, model, n_iter, writer):
 
     if params.hierarchical_model:
         word_decoder = model.decoder.word_decoder
-        sentence_decoder = model.decoder
+        sent_decoder = model.decoder
+
+        # Log Coherent model data:
         if params.coherent_sentences:
-            cu = sentence_decoder.coupling_unit
+            cu = sent_decoder.coupling_unit
             writer.add_histogram('weights/coupling/linear_1',
                                  _get_weights(cu.linear1.weight),
                                  n_iter)
@@ -178,13 +180,36 @@ def log_model_data(params, model, n_iter, writer):
                                  _get_weights(cu.gate.weight_ih_l0),
                                  n_iter)
 
+        # Log SentenceRNN data
+        writer.add_histogram('weights/sentence_RNN/linear_1',
+                             _get_weights(sent_decoder.linear1.weight),
+                             n_iter)
+        writer.add_histogram('weights/sentence_RNN/linear_2',
+                             _get_weights(sent_decoder.linear2.weight),
+                             n_iter)
+        writer.add_histogram('weights/sentence_RNN/rnn_hh_l0',
+                             _get_weights(sent_decoder.sentence_rnn.weight_hh_l0),
+                             n_iter)
+        writer.add_histogram('weights/sentence_RNN/rnn_ih_l0',
+                             _get_weights(sent_decoder.sentence_rnn.weight_ih_l0),
+                             n_iter)
     else:
         word_decoder = model.decoder
-        sentence_decoder = None
+
+    # Log WordRNN data:
+    writer.add_histogram('weights/word_RNN/embed',
+                         _get_weights(word_decoder.embed.weight),
+                         n_iter)
+    writer.add_histogram('weights/word_RNN/rnn_hh_l0',
+                         _get_weights(word_decoder.rnn.weight_hh_l0),
+                         n_iter)
+    writer.add_histogram('weights/word_RNN/rnn_ih_l0',
+                         _get_weights(word_decoder.rnn.weight_ih_l0),
+                         n_iter)
 
     if params.share_embedding_weights:
 
-        writer.add_histogram('weights/embedding_projection',
+        writer.add_histogram('weights/word_RNN/embedding_projection',
                              _get_weights(word_decoder.projection.weight),
                              n_iter)
 
@@ -865,7 +890,7 @@ def main(args):
 
                 # Allow model to log values at the last batch of the epoch
                 writer_data = None
-                if writer and (i == args.batch_size - 1 or i == args.num_batches - 1):
+                if writer and (i == len(data_loader) - 1 or i == args.num_batches - 1):
                     writer_data = {'writer': writer, 'epoch': epoch + 1}
 
                 outputs = model(images, init_features, captions, lengths, persist_features,

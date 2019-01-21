@@ -841,8 +841,8 @@ class HierarchicalDecoderRNN(nn.Module):
             topics[:, t] = fc2
 
             if log_values:
-                _writer.add_histogram('values/topics_pre_coherence' + str(t),
-                                      topics[:, t].clone().cpu().detach().numpy(),
+                _writer.add_histogram('values/topics_pre_coherence_' + str(t),
+                                      topics[:,t].clone().cpu().mean(dim=0).detach().numpy(),
                                       _epoch)
 
         word_rnn_out = []
@@ -854,7 +854,7 @@ class HierarchicalDecoderRNN(nn.Module):
 
             if log_values:
                 _writer.add_histogram('values/global_topic_G',
-                                      G.clone().cpu().detach().numpy(),
+                                      G.clone().cpu().mean(dim=0).detach().numpy(),
                                       _epoch)
 
             # Hidden layer output of WordRNN for previous sentence, initialize to None
@@ -899,12 +899,12 @@ class HierarchicalDecoderRNN(nn.Module):
                                            topic)
 
                 if log_values:
-                    _writer.add_histogram('values/topics_post_coherence' + str(t),
-                                          topic.clone().cpu().detach().numpy(),
+                    _writer.add_histogram('values/topics_post_coherence_' + str(t),
+                                          topic.clone().cpu().mean(dim=0).detach().numpy(),
                                           _epoch)
                     if hiddens_w is not None:
-                        _writer.add_histogram('values/hiddens_w' + str(t),
-                                              hiddens_w.clone().cpu().detach().numpy(),
+                        _writer.add_histogram('values/hiddens_w_' + str(t),
+                                              hiddens_w.clone().cpu().mean(dim=0).detach().numpy(),
                                               _epoch)
 
                 output, hiddens_w = self.word_decoder(topic, captions[:, t][non_zero_idxs],
@@ -1014,16 +1014,39 @@ class HierarchicalCoupling(nn.Module):
         self.alpha = alpha
         self.beta = beta
 
-    def forward(self, hiddens, G, T):
+    def forward(self, hiddens, G, T, writer_data=None):
+        log_values = False
+        if writer_data is not None:
+            _writer = writer_data['writer']
+            _epoch = writer_data['epoch']
+            log_values = True
+
         if hiddens is not None:
             x = self.non_lin(self.linear1(hiddens.squeeze(1)))
             C = self.linear2(x)
+            if log_values:
+                _writer.add_histogram('values/coupling/C',
+                                      C.clone().cpu().mean(dim=0).detach().numpy(),
+                                      _epoch)
         else:
             C = 0
 
         T_fused_C = (self.alpha * T + self.beta * C) / (self.alpha + self.beta)
         # RNN wants inputs of dim (bs x input_size x n_layers_in_rnn):
         T_prime = self.gate(T_fused_C.unsqueeze(1), G.unsqueeze(0))
+
+        if log_values:
+            _writer.add_histogram('values/coupling/T',
+                                  T.clone().cpu().mean(dim=0).detach().numpy(),
+                                  _epoch)
+
+            _writer.add_histogram('values/coupling/T_fused_C',
+                                  T_fused_C.clone().cpu().mean(dim=0).detach().numpy(),
+                                  _epoch)
+
+            _writer.add_histogram('values/coupling/T_prime',
+                                  T_prime[0].clone().cpu().mean(dim=0).detach().numpy(),
+                                  _epoch)
 
         # Return RNN hidden value
         return T_prime[0].squeeze(1)
