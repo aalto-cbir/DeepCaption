@@ -377,10 +377,11 @@ class DecoderRNN(nn.Module):
                 self.init_h.append(nn.Linear(enc_features_dim, p.hidden_size))
                 self.init_c.append(nn.Linear(enc_features_dim, p.hidden_size))
 
-        if p.rnn_arch == 'LSTM':
+        self.rnn_arch = p.rnn_arch
+        if self.rnn_arch == 'LSTM':
             self.rnn = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
                                p.num_layers, dropout=p.dropout, batch_first=True)
-        elif p.rnn_arch == 'GRU':
+        elif self.rnn_arch == 'GRU':
             self.rnn = nn.GRU(p.embed_size + total_feat_dim, p.hidden_size,
                               p.num_layers, dropout=p.dropout, batch_first=True)
         else:
@@ -719,11 +720,25 @@ class HierarchicalDecoderRNN(nn.Module):
         self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
         self.dropout_fc = nn.Dropout(p=p.dropout_fc)
         self.linear2 = nn.Linear(p.fc_size, p.embed_size)
-        self.non_lin = nn.SELU()
+        self.non_lin = nn.ReLU()
         # Word LSTM:
         self.word_decoder = DecoderRNN(p, vocab_size)
 
         self.max_sentences = p.max_sentences
+
+    # hack to be able to load old state files which used the ".lstm." prefix instead of
+    # a more generic ".rnn." one
+    def load_state_dict(self, state_dict, strict=True):
+        fixed_states = []
+        for key, value in state_dict.items():
+            if key.startswith('sentence_lstm.'):
+                key = 'sentence_rnn.' + key[14:]
+            elif key.startswith('word_decoder.lstm.'):
+                key = 'word_decoder.rnn.' + key[18:]
+            fixed_states.append((key, value))
+
+        fixed_state_dict = OrderedDict(fixed_states)
+        super(HierarchicalDecoderRNN, self).load_state_dict(fixed_state_dict, strict)
 
     def _get_global_topic(self, topics):
         # Topics size: (bs, num_sentences, embed_size)
