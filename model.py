@@ -48,6 +48,8 @@ class ModelParams:
         self.rnn_hidden_init = self._get_param(d, 'rnn_hidden_init', None)
         # Use the same embedding matrix for input and output word embeddings:
         self.share_embedding_weights = self._get_param(d, 'share_embedding_weights', False)
+        # Whether to use non-linearity for encoder output:
+        self.encoder_non_lin = self._get_param(d, 'encoder_non_lin', False)
         self.rnn_arch = self._get_param(d, 'rnn_arch', 'LSTM').upper()
 
         # Below parameters used only by the Hierarchical model:
@@ -267,6 +269,13 @@ class EncoderCNN(nn.Module):
         self.linear = nn.Linear(total_feat_dim, p.pooling_size)
         self.dropout = nn.Dropout(p=p.encoder_dropout)
         self.bn = nn.BatchNorm1d(p.pooling_size, momentum=0.01)
+        # SELU non-linearity used by topic vectors in hierarchical model,
+        # it is added here to make the feature vectors compatible with topic
+        # vectors:
+        self.encoder_non_lin = False
+        if p.encoder_non_lin:
+            self.encoder_non_lin = True
+            self.non_lin = nn.SELU()
 
     def forward(self, images, external_features=None):
         """Extract feature vectors from input images."""
@@ -285,7 +294,11 @@ class EncoderCNN(nn.Module):
         # initializing the RNN hidden and state vectors from features.
         if self.rnn_hidden_init is None:
             # Apply FC layer, dropout and batch normalization
-            features = self.bn(self.dropout(self.linear(features)))
+            features = self.linear(features)
+            if self.encoder_non_lin:
+                features = self.non_lin(features)
+
+            features = self.bn(self.dropout(features))
 
         return features
 

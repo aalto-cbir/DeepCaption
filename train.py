@@ -89,6 +89,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         'learning_rate': params.learning_rate,
         'dropout': params.dropout,
         'encoder_dropout': params.encoder_dropout,
+        'encoder_non_lin': params.encoder_non_lin,
         'features': params.features,
         'persist_features': params.persist_features,
         'attention': params.attention,
@@ -984,6 +985,9 @@ if __name__ == '__main__':
                         help='dropout for the LSTM')
     parser.add_argument('--encoder_dropout', type=float, default=0.0,
                         help='dropout for the encoder FC layer')
+    parser.add_argument('--encoder_non_lin', action="store_true",
+                        help='set this flag if you want EncoderRNN output to be passed '
+                        'through a non-linearity (currently SELU non-linearity is used')
     parser.add_argument('--rnn_arch', type=str, default='LSTM',
                         help='RNN architecture to use in the decoder. Supported options: '
                         'GRU, LSTM. Default option: LSTM')
