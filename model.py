@@ -1,5 +1,5 @@
 import os
-
+import sys
 import torch
 import torch.nn as nn
 import torchvision.models as models
@@ -48,6 +48,9 @@ class ModelParams:
         self.rnn_hidden_init = self._get_param(d, 'rnn_hidden_init', None)
         # Use the same embedding matrix for input and output word embeddings:
         self.share_embedding_weights = self._get_param(d, 'share_embedding_weights', False)
+        # Whether to use non-linearity for encoder output:
+        self.encoder_non_lin = self._get_param(d, 'encoder_non_lin', False)
+        self.rnn_arch = self._get_param(d, 'rnn_arch', 'LSTM').upper()
 
         # Below parameters used only by the Hierarchical model:
         if self.hierarchical_model:
@@ -266,6 +269,13 @@ class EncoderCNN(nn.Module):
         self.linear = nn.Linear(total_feat_dim, p.pooling_size)
         self.dropout = nn.Dropout(p=p.encoder_dropout)
         self.bn = nn.BatchNorm1d(p.pooling_size, momentum=0.01)
+        # SELU non-linearity used by topic vectors in hierarchical model,
+        # it is added here to make the feature vectors compatible with topic
+        # vectors:
+        self.encoder_non_lin = False
+        if p.encoder_non_lin:
+            self.encoder_non_lin = True
+            self.non_lin = nn.SELU()
 
     def forward(self, images, external_features=None):
         """Extract feature vectors from input images."""
@@ -284,7 +294,11 @@ class EncoderCNN(nn.Module):
         # initializing the RNN hidden and state vectors from features.
         if self.rnn_hidden_init is None:
             # Apply FC layer, dropout and batch normalization
-            features = self.bn(self.dropout(self.linear(features)))
+            features = self.linear(features)
+            if self.encoder_non_lin:
+                features = self.non_lin(features)
+
+            features = self.bn(self.dropout(features))
 
         return features
 
@@ -363,8 +377,16 @@ class DecoderRNN(nn.Module):
                 self.init_h.append(nn.Linear(enc_features_dim, p.hidden_size))
                 self.init_c.append(nn.Linear(enc_features_dim, p.hidden_size))
 
-        self.lstm = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
-                            p.num_layers, dropout=p.dropout, batch_first=True)
+        self.rnn_arch = p.rnn_arch
+        if self.rnn_arch == 'LSTM':
+            self.rnn = nn.LSTM(p.embed_size + total_feat_dim, p.hidden_size,
+                               p.num_layers, dropout=p.dropout, batch_first=True)
+        elif self.rnn_arch == 'GRU':
+            self.rnn = nn.GRU(p.embed_size + total_feat_dim, p.hidden_size,
+                              p.num_layers, dropout=p.dropout, batch_first=True)
+        else:
+            print("Invalid RNN architecture specified: {}".format(p.rnn_arch))
+            sys.exit(1)
 
         if self.share_embedding_weights:
             print("DecoderRNN: Sharing input and output embeddings for the RNN...")
@@ -378,6 +400,18 @@ class DecoderRNN(nn.Module):
         else:
             self.linear = nn.Linear(p.hidden_size, vocab_size)
 
+    # hack to be able to load old state files which used the "lstm." prefix instead of
+    # a more generic "rnn." one
+    def load_state_dict(self, state_dict, strict=True):
+        fixed_states = []
+        for key, value in state_dict.items():
+            if key.startswith('lstm.'):
+                key = 'rnn.' + key[5:]
+            fixed_states.append((key, value))
+
+        fixed_state_dict = OrderedDict(fixed_states)
+        super(DecoderRNN, self).load_state_dict(fixed_state_dict, strict)
+
     def _cat_features(self, images, external_features):
         """Concatenate internal and external features"""
         feat_outputs = []
@@ -390,6 +424,7 @@ class DecoderRNN(nn.Module):
         # Return concatenated features, empty tensor if none
         return torch.cat(feat_outputs, 1) if feat_outputs else None
 
+    # DecoderRNN forward
     def forward(self, features, captions, lengths, images, external_features=None,
                 teacher_p=1.0, teacher_forcing='always', output_hiddens=False):
         """Decode image feature vectors and generates captions.
@@ -423,7 +458,7 @@ class DecoderRNN(nn.Module):
             # Feed ground truth as next input at each time-step when training:
             inputs = torch.cat([embeddings, persist_features], 2)
             packed = pack_padded_sequence(inputs, lengths, batch_first=True)
-            hiddens, _ = self.lstm(packed, states)
+            hiddens, _ = self.rnn(packed, states)
             if self.share_embedding_weights:
                 hiddens_p = self.projection(hiddens[0])
                 output_embeddings = self.hidden_to_embeddings(hiddens_p)
@@ -439,7 +474,7 @@ class DecoderRNN(nn.Module):
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
             for t in range(seq_length - 1):
-                hiddens, states = self.lstm(inputs, states)
+                hiddens, states = self.rnn(inputs, states)
                 step_output = self.linear(hiddens.squeeze(1))
                 outputs[:, t, :] = step_output
 
@@ -495,7 +530,9 @@ class DecoderRNN(nn.Module):
             # for all models):
             outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
 
-        # Some variants of hierarchical model require final RNN hidden layer value:
+        # Some variants of hierarchical model require final RNN hidden layer value
+        # which the calling function can extract from the "packedpaddedsequence" object
+        # that hiddens is packed into:
         if output_hiddens:
             return (outputs, hiddens)
         else:
@@ -516,7 +553,7 @@ class DecoderRNN(nn.Module):
 
         if output_hiddens:
             all_hiddens = torch.zeros(batch_size,
-                                      max_seq_length, self.lstm.hidden_size).to(device)
+                                      max_seq_length, self.rnn.hidden_size).to(device)
 
         # Initialize the rnn from input features, instead of setting the hidden
         # state to zeros (as done by default):
@@ -536,7 +573,7 @@ class DecoderRNN(nn.Module):
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
         for i in range(max_seq_length):
-            hiddens, states = self.lstm(inputs, states)
+            hiddens, states = self.rnn(inputs, states)
 
             # If we are sharing embedding weights before and after the RNN processing:
             if self.share_embedding_weights:
@@ -630,7 +667,7 @@ class EncoderDecoder(nn.Module):
             # TODO: Make the hierarchical and regular decoder take the same arguments
             # if possible:
             outputs = self.decoder(features, captions, lengths, images, sorting_order,
-                                   writer_data=writer_data)
+                                   external_features=persist_features, writer_data=writer_data)
         else:
             outputs = self.decoder(features, captions, lengths, images, persist_features,
                                    teacher_p, teacher_forcing)
@@ -664,8 +701,13 @@ class HierarchicalDecoderRNN(nn.Module):
     def __init__(self, p, vocab_size, ext_features_dim=0, enc_features_dim=0):
         """Set the hyper-parameters and build the layers."""
         super(HierarchicalDecoderRNN, self).__init__()
-        self.sentence_lstm = nn.LSTM(p.pooling_size, p.hidden_size,
-                                     dropout=p.dropout, batch_first=True)
+
+        if p.rnn_arch == 'LSTM':
+            self.sentence_rnn = nn.LSTM(p.pooling_size, p.hidden_size,
+                                        dropout=p.dropout, batch_first=True)
+        elif p.rnn_arch == 'GRU':
+            self.sentence_rnn = nn.GRU(p.pooling_size, p.hidden_size,
+                                       dropout=p.dropout, batch_first=True)
 
         self.coherent_sentences = p.coherent_sentences
         if self.coherent_sentences:
@@ -681,13 +723,31 @@ class HierarchicalDecoderRNN(nn.Module):
         self.linear1 = nn.Linear(p.hidden_size, p.fc_size)
         self.dropout_fc = nn.Dropout(p=p.dropout_fc)
         self.linear2 = nn.Linear(p.fc_size, p.embed_size)
+        self.non_lin = nn.ReLU()
         # Word LSTM:
         self.word_decoder = DecoderRNN(p, vocab_size)
 
         self.max_sentences = p.max_sentences
 
+    # hack to be able to load old state files which used the ".lstm." prefix instead of
+    # a more generic ".rnn." one
+    def load_state_dict(self, state_dict, strict=True):
+        fixed_states = []
+        for key, value in state_dict.items():
+            if key.startswith('sentence_lstm.'):
+                key = 'sentence_rnn.' + key[14:]
+            elif key.startswith('word_decoder.lstm.'):
+                key = 'word_decoder.rnn.' + key[18:]
+            fixed_states.append((key, value))
+
+        fixed_state_dict = OrderedDict(fixed_states)
+        super(HierarchicalDecoderRNN, self).load_state_dict(fixed_state_dict, strict)
+
     def _get_global_topic(self, topics):
+        # Topics size: (bs, num_sentences, embed_size)
+        # Vector norms size: (bs, num_sentences)
         topic_vector_norms = torch.norm(topics, dim=2)
+        # topic sums size: (bs)
         topic_sums = torch.sum(topic_vector_norms, dim=1)
         topic_sums = topic_sums.unsqueeze(1).expand(-1, self.max_sentences)
         # alphas denote topic weights:
@@ -698,8 +758,9 @@ class HierarchicalDecoderRNN(nn.Module):
 
         return G
 
+    # HierarchicalDecoderRNN forward
     def forward(self, features, captions, lengths, images, sorting_order,
-                use_teacher_forcing=True, writer_data=None):
+                external_features=None, use_teacher_forcing=True, writer_data=None):
         """Decode image feature vectors and generates captions.
         features: image features
         captions: paragraph captions, regular captions treated as paragraphs
@@ -719,12 +780,11 @@ class HierarchicalDecoderRNN(nn.Module):
             _epoch = writer_data['epoch']
             log_values = True
 
-
         batch_size = lengths.size()[0]
         n_sentences = lengths.size()[1]
 
         features_repeated = features.unsqueeze(1).expand(-1, n_sentences, -1)
-        hiddens, _ = self.sentence_lstm(features_repeated)
+        hiddens, _ = self.sentence_rnn(features_repeated)
 
         # Dims: (batch_size X max_sentences X 2)
         sentence_stopping = torch.zeros(batch_size, n_sentences, 2).to(device)
@@ -763,7 +823,7 @@ class HierarchicalDecoderRNN(nn.Module):
             #h_t = h_t[sorting_order[t]][non_zero_idxs]
 
             # Fully connected layer 1 with ReLU activation:
-            fc1 = self.linear1(h_t).clamp(min=0)
+            fc1 = self.non_lin(self.linear1(h_t))
             # Output from the following layer is our context vector:
             fc2 = self.dropout_fc(self.linear2(fc1))
 
@@ -785,8 +845,8 @@ class HierarchicalDecoderRNN(nn.Module):
             topics[:, t] = fc2
 
             if log_values:
-                _writer.add_histogram('values/topics_pre_coherence' + str(t),
-                                      topics[:, t].clone().cpu().detach().numpy(),
+                _writer.add_histogram('values/topics_pre_coherence_' + str(t),
+                                      topics[:,t].clone().cpu().mean(dim=0).detach().numpy(),
                                       _epoch)
 
         word_rnn_out = []
@@ -798,7 +858,7 @@ class HierarchicalDecoderRNN(nn.Module):
 
             if log_values:
                 _writer.add_histogram('values/global_topic_G',
-                                      G.clone().cpu().detach().numpy(),
+                                      G.clone().cpu().mean(dim=0).detach().numpy(),
                                       _epoch)
 
             # Hidden layer output of WordRNN for previous sentence, initialize to None
@@ -815,8 +875,11 @@ class HierarchicalDecoderRNN(nn.Module):
                     # last element with actual value for each sequence
                     _hiddens_w, _seq_lengths = pad_packed_sequence(hiddens_w, batch_first=True)
 
-                    # Convert lengths to indices:
-                    seq_end_idxs = (_seq_lengths - 1).to(device)
+                    # Convert lengths to indices
+                    # In addition we take the output at the second last
+                    # token (because hidden value at <EOS> might be quite similar
+                    # across sentences).
+                    seq_end_idxs = (_seq_lengths - 2).to(device)
 
                     # Select hidden layer values at end of sequence indices for each sequence
                     # TODO? rewrite below line by merging 2 first dimensions of the _hiddens
@@ -840,20 +903,21 @@ class HierarchicalDecoderRNN(nn.Module):
 
                 topic = self.coupling_unit(hiddens_w,
                                            G[sorting_order[:, t]][non_zero_idxs],
-                                           topic)
+                                           topic, writer_data=writer_data)
 
                 if log_values:
-                    _writer.add_histogram('values/topics_post_coherence' + str(t),
-                                          topic.clone().cpu().detach().numpy(),
+                    _writer.add_histogram('values/topics_post_coherence_' + str(t),
+                                          topic.clone().cpu().mean(dim=0).detach().numpy(),
                                           _epoch)
                     if hiddens_w is not None:
-                        _writer.add_histogram('values/hiddens_w' + str(t),
-                                              hiddens_w.clone().cpu().detach().numpy(),
+                        _writer.add_histogram('values/hiddens_w_' + str(t),
+                                              hiddens_w.clone().cpu().mean(dim=0).detach().numpy(),
                                               _epoch)
 
                 output, hiddens_w = self.word_decoder(topic, captions[:, t][non_zero_idxs],
                                                       lengths[:, t][non_zero_idxs],
                                                       images[sorting_order[:, t]],
+                                                      external_features=external_features,
                                                       output_hiddens=True)
                 word_rnn_out.append(output)
         # Otherwise do the "regular" hierarchical model (Krause et al 2017):
@@ -863,7 +927,8 @@ class HierarchicalDecoderRNN(nn.Module):
                 topic = topics[:, t][sorting_order[:, t]][non_zero_idxs]
                 word_rnn_out.append(self.word_decoder(topic, captions[:, t][non_zero_idxs],
                                                       lengths[:, t][non_zero_idxs],
-                                                      images[sorting_order[:, t]]))
+                                                      images[sorting_order[:, t]],
+                                                      external_features=external_features))
 
         return sentence_stopping, word_rnn_out
 
@@ -884,13 +949,13 @@ class HierarchicalDecoderRNN(nn.Module):
 
         # Tensor storing raw hidden layer output from Sentence RNN:
         hiddens_s = torch.zeros(batch_size, self.max_sentences, 1,
-                                self.sentence_lstm.hidden_size).to(device)
+                                self.sentence_rnn.hidden_size).to(device)
 
         # Get stopping indicators for sentences each position t:
         for t in range(self.max_sentences):
             # Output a sentence state
             # hiddens: (batch_size, 1, hidden_size)
-            hiddens_s[:, t], states = self.sentence_lstm(inputs, states)
+            hiddens_s[:, t], states = self.sentence_rnn(inputs, states)
             # (1 x 2)
             stopping = nn.Sigmoid()(self.linear_stopping(hiddens_s[:, t].squeeze(1)))
 
@@ -907,7 +972,7 @@ class HierarchicalDecoderRNN(nn.Module):
         # Generate sentence topics:
         hiddens_s = hiddens_s.squeeze(2)
         for t in range(self.max_sentences):
-            fc = self.linear1(hiddens_s[:, t]).clamp(min=0)
+            fc = self.non_lin(self.linear1(hiddens_s[:, t]))
             topics[:, t] = self.linear2(fc).squeeze(1)
 
         if self.coherent_sentences:
@@ -937,7 +1002,8 @@ class HierarchicalDecoderRNN(nn.Module):
                 # of the "sentence" tensor.
                 _, eos_indices = torch.max((sentence == end_token_id).t(), 0)
 
-                hiddens_w = torch.stack([hiddens_w[i, j] for i, j in enumerate(eos_indices)])
+                hiddens_w = torch.stack(
+                    [hiddens_w[i, j] for i, j in enumerate(eos_indices)])
             else:
                 sentence = self.word_decoder.sample(topic, images, external_features,
                                                     max_seq_length=max_seq_length)
@@ -953,14 +1019,25 @@ class HierarchicalCoupling(nn.Module):
         super(HierarchicalCoupling, self).__init__()
         self.linear1 = nn.Linear(hidden_size, embed_size)
         self.linear2 = nn.Linear(embed_size, embed_size)
+        self.non_lin = nn.ReLU()
         self.gate = nn.GRU(embed_size, embed_size, 1, batch_first=True)
         self.alpha = alpha
         self.beta = beta
 
-    def forward(self, hiddens, G, T):
+    def forward(self, hiddens, G, T, writer_data=None):
+        log_values = False
+        if writer_data is not None:
+            _writer = writer_data['writer']
+            _epoch = writer_data['epoch']
+            log_values = True
+
         if hiddens is not None:
-            x = self.linear1(hiddens.squeeze(1)).clamp(min=0)
+            x = self.non_lin(self.linear1(hiddens.squeeze(1)))
             C = self.linear2(x)
+            if log_values:
+                _writer.add_histogram('values/coupling/C',
+                                      C.clone().cpu().mean(dim=0).detach().numpy(),
+                                      _epoch)
         else:
             C = 0
 
@@ -968,6 +1045,20 @@ class HierarchicalCoupling(nn.Module):
         # RNN wants inputs of dim (bs x input_size x n_layers_in_rnn):
         T_prime = self.gate(T_fused_C.unsqueeze(1), G.unsqueeze(0))
 
+        if log_values:
+            _writer.add_histogram('values/coupling/T',
+                                  T.clone().cpu().mean(dim=0).detach().numpy(),
+                                  _epoch)
+
+            _writer.add_histogram('values/coupling/T_fused_C',
+                                  T_fused_C.clone().cpu().mean(dim=0).detach().numpy(),
+                                  _epoch)
+
+            _writer.add_histogram('values/coupling/T_prime',
+                                  T_prime[0].clone().cpu().mean(dim=0).detach().numpy(),
+                                  _epoch)
+
+        # Return RNN hidden value
         return T_prime[0].squeeze(1)
 
 

@@ -83,6 +83,8 @@ def main(args):
             print('Batch [{}/{}]'.format(i + 1, len(data_loader)))
             sys.stdout.flush()
 
+    print("Written paths to {} image files".format(len(data_loader.dataset)))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -98,7 +100,7 @@ if __name__ == '__main__':
                         help='file for saving file_list, if no name specified it '
                              'defaults to "file_list-dataset_name_X_of_Y.txt"')
     parser.add_argument('--environment', type=str,
-                        help='Opetionally specify the environment where the paths are valid '
+                        help='Optionally specify the environment where the paths are valid '
                         'by default value of $HOSTNAME environment variable will be used')
     parser.add_argument('--log_step', type=int, default=10,
                         help='How often do we want to log output')

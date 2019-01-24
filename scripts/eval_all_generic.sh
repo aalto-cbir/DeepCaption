@@ -13,7 +13,7 @@ for RESULTS_FILE in ${RESULTS_FILE_PREFIX}*.json; do
         echo "Processing $RESULTS_FILE"
         OUTPUT_FILE="${RESULTS_FILE%.json}.eval"
         OUTPUT_PATH=$(dirname "${OUTPUT_FILE}")
-        if [ -f $OUTPUT_FILE ]; then
+        if [ -s $OUTPUT_FILE ]; then
             echo "$OUTPUT_FILE already exists, proceeding to next file"
             continue
         fi

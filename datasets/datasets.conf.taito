@@ -46,6 +46,28 @@ subset = /proj/mediaind/picsom/databases/visualgenome/download/im2p/val_split.js
 [vgim2p:test]
 subset = /proj/mediaind/picsom/databases/visualgenome/download/im2p/test_split.json
 
+[vgregions]
+# Visual Genome region descriptions
+dataset_class = VisualGenomeRegionsDataset
+root_dir = /proj/mediaind/picsom/databases/visualgenome
+image_dir = download/1.2/VG/1.2/images 
+# Currently using *.feather file to load regions data, as it is much faster to filter and split:
+#caption_path = download/1.2/VG/1.2/region_descriptions.json
+caption_path = download/1.2/VG/1.2/region_descriptions.feather
+features_path = features
+
+[vgregions:no_resize]
+image_dir = download/1.2/VG/1.2/images
+
+[vgregions:train]
+subset = download/densecap_splits.json:train
+
+[vgregions:val]
+subset = download/densecap_splits.json:val
+
+[vgregions:test]
+subset = download/densecap_splits.json:test
+
 [msrvtt]
 dataset_class = MSRVTTDataset
 root_dir = /proj/mediaind/picsom/databases/MSR-VTT
