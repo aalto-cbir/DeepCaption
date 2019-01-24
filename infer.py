@@ -17,7 +17,6 @@ from torchvision import transforms
 from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
 from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
 from model import ModelParams, EncoderDecoder
-from model import SoftAttentionEncoderDecoder, SpatialAttentionEncoderDecoder
 
 try:
     from tqdm import tqdm
