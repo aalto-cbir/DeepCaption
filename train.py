@@ -19,7 +19,7 @@ from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder
 from model import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
-from infer import caption_ids_to_words, paragraph_ids_to_words
+from vocabulary import caption_ids_to_words, paragraph_ids_to_words
 
 try:
     from tensorboardX import SummaryWriter
@@ -334,11 +334,9 @@ def main(args):
             print("WARNING: SummaryWriter object not available. "
                   "Hint: Please install TensorBoardX using pip install tensorboardx")
 
-    ####################
-    # Build the models #
-    ####################
-
-    _Model = EncoderDecoder
+    ######################
+    # Build the model(s) #
+    ######################
 
     # Set per parameter learning rate here, if supplied by the user:
 
@@ -351,7 +349,7 @@ def main(args):
     else:
         lr_dict = {}
 
-    model = _Model(params, device, len(vocab), state, ef_dims, lr_dict=lr_dict)
+    model = EncoderDecoder(params, device, len(vocab), state, ef_dims, lr_dict=lr_dict)
 
     ######################
     # Optimizer and loss #

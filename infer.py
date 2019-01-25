@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 
 import argparse
-import glob
 import json
 import os
-import re
 import sys
-import numpy as np
 
 from datetime import datetime
-from PIL import Image
 
 import torch
 from torchvision import transforms
 
-from vocabulary import Vocabulary, get_vocab  # (Needed to handle Vocabulary pickle)
-from data_loader import get_loader, ExternalFeature, DatasetConfig, DatasetParams
+from vocabulary import paragraph_ids_to_words, caption_ids_to_words, remove_duplicate_sentences, \
+    remove_incomplete_sentences, get_vocab  # (Needed to handle Vocabulary pickle)
+from data_loader import get_loader, DatasetParams
 from model import ModelParams, EncoderDecoder
+from utils import basename
 
 try:
     from tqdm import tqdm
@@ -29,92 +27,7 @@ except ImportError as e:
 device = None
 
 
-def basename(fname):
-    return os.path.splitext(os.path.basename(fname))[0]
-
-
-def fix_caption(caption, skip_start_token=False):
-    if skip_start_token:
-        m = re.match(r'^(.*?)( <end>)?$', caption)
-    else:
-        m = re.match(r'^<start> (.*?)( <end>)?$', caption)
-    if m is None:
-        print('ERROR: unexpected caption format: "{}"'.format(caption))
-        return caption.capitalize()
-
-    ret = m.group(1)
-    ret = re.sub(r'\s([.,])(\s|$)', r'\1\2', ret)
-    return ret.capitalize()
-
-
-def caption_ids_to_words(sampled_ids, vocab):
-    sampled_caption = []
-    for word_id in sampled_ids.cpu().numpy():
-        word = vocab.idx2word[word_id]
-        sampled_caption.append(word)
-        if word == '<end>':
-            break
-    return fix_caption(' '.join(sampled_caption))
-
-
-def paragraph_ids_to_words(sampled_ids, vocab):
-    paragraph = ''
-    for sentence in sampled_ids:
-        if sentence[0] == vocab("<pad>"):
-            break
-        paragraph += caption_ids_to_words(sentence, vocab) + '. '
-
-    paragraph = paragraph.replace(" .", ".")
-
-    return paragraph
-
-
-def path_from_id(image_dir, image_id):
-    """Return image path based on image directory, image id and
-    glob matching for extension"""
-    return glob.glob(os.path.join(image_dir, image_id) + '.*')[0]
-
-
-def load_image(image_path, transform=None):
-    image = Image.open(image_path)
-    image = image.resize([224, 224], Image.LANCZOS)
-    if image.mode != 'RGB':
-        print('WARNING: converting {} from {} to RGB'.
-              format(image_path, image.mode))
-        image = image.convert('RGB')
-
-    if transform is not None:
-        image = transform(image).unsqueeze(0)
-
-    return image
-
-
-def remove_duplicate_sentences(caption):
-    """Removes consecutively repeating sentences from the caption"""
-    sentences = caption.split('.')
-
-    no_dupes = [sentences[0].strip()]
-
-    for i, _ in enumerate(sentences):
-        if sentences[i].strip() != no_dupes[-1].strip():
-            no_dupes.append(sentences[i].strip())
-
-    return '. '.join(no_dupes)
-
-
-def remove_incomplete_sentences(caption):
-    """Removes sentences that don't end with a period (truncated or incomplete)"""
-    sentences = caption.split('.')
-    if sentences[-1] != '':
-        sentences[-1] = ''
-        return '.'.join(sentences)
-    else:
-        return caption
-
-
-def infer(ext_args=None):
-    args = parse_args(ext_args)
-
+def infer(args):
     global device
     device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
 
@@ -198,28 +111,10 @@ def infer(ext_args=None):
                                       skip_images=not params.has_internal_features(),
                                       iter_over_images=True)
 
-    # Build the models
-    if params.attention is None:
-        _Model = EncoderDecoder
-    elif params.attention == 'spatial':
-        _Model = SpatialAttentionEncoderDecoder
-    elif params.attention == 'soft':
-        _Model = SoftAttentionEncoderDecoder
-    else:
-        print("ERROR: Invalid attention model specified")
-        sys.exit(1)
-
-    model = _Model(params, device, len(vocab), state, ef_dims).eval()
+    model = EncoderDecoder(params, device, len(vocab), state, ef_dims).eval()
 
     # Store captions here:
     output_data = []
-
-    if params.attention is not None:
-        # Store attention weights here:
-        # DIM: ( #images, words/sentence, flattened convolutional image grid)
-        output_alphas = np.zeros((len(data_loader.dataset),
-                                  args.max_seq_length,
-                                  model.decoder.num_attention_locs))
 
     gts = {}
     res = {}
@@ -253,17 +148,7 @@ def infer(ext_args=None):
                                      start_token_id=vocab('<start>'),
                                      end_token_id=vocab('<end>'))
 
-        if params.attention is None:
-            sampled_ids_batch = sampled_batch
-        else:
-            # When sampling from attention models we also get an attention
-            # distribution stored in alphas (can be used for visualization):
-            sampled_ids_batch, alphas = sampled_batch
-            if params.attention is not None:
-                alphas_numpy = alphas.detach().cpu().numpy()
-                offset_begin = i * args.batch_size
-                offset_end = offset_begin + alphas_numpy.shape[0]
-                output_alphas[offset_begin: offset_end, :] = alphas_numpy
+        sampled_ids_batch = sampled_batch
 
         for i in range(sampled_ids_batch.shape[0]):
             sampled_ids = sampled_ids_batch[i]
@@ -318,12 +203,6 @@ def infer(ext_args=None):
 
         print('Wrote generated captions to {} as {}'.format(output_path, args.output_format))
 
-        if params.attention is not None:
-            # Store attention weights:
-            output_path_alphas = os.path.splitext(output_path)[0] + '_alphas.npy'
-            np.save(output_path_alphas, output_alphas)
-            print("Wrote attention weights to {}".format(output_path_alphas))
-
     if args.print_results:
         for d in output_data:
             print('{}: {}'.format(d['image_id'], d['caption']))
@@ -377,10 +256,12 @@ def parse_args(ext_args=None):
 
 
 if __name__ == '__main__':
+    args = parse_args()
+
     begin = datetime.now()
     print('Started inference at {}.'.format(begin))
 
-    infer()
+    infer(args=args)
 
     end = datetime.now()
     print('Inference ended at {}. Total time: {}.'.format(end, end - begin))

@@ -1,9 +1,15 @@
 import os
+import glob
 import json
 import math
 import numpy as np
+from PIL import Image
 import torch
 from torch.nn.utils.rnn import pack_padded_sequence
+
+
+def basename(fname):
+    return os.path.splitext(os.path.basename(fname))[0]
 
 
 def feats_to_str(feats):
@@ -295,3 +301,23 @@ def cyclical_lr(step_sz, min_lr=0.001, max_lr=1, mode='triangular', scale_func=N
             raise ValueError(f'The {scale_mode} is not valid value!')
 
     return lr_lambda
+
+
+def path_from_id(image_dir, image_id):
+    """Return image path based on image directory, image id and
+    glob matching for extension"""
+    return glob.glob(os.path.join(image_dir, image_id) + '.*')[0]
+
+
+def load_image(image_path, transform=None):
+    image = Image.open(image_path)
+    image = image.resize([224, 224], Image.LANCZOS)
+    if image.mode != 'RGB':
+        print('WARNING: converting {} from {} to RGB'.
+              format(image_path, image.mode))
+        image = image.convert('RGB')
+
+    if transform is not None:
+        image = transform(image).unsqueeze(0)
+
+    return image
