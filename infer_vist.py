@@ -4,11 +4,9 @@ import argparse
 import json
 import os
 import pickle
-import re
 import sys
 
 from datetime import datetime
-from PIL import Image
 
 import torch
 
@@ -16,48 +14,10 @@ from model_vist import ModelParams, EncoderCNN, EncoderRNN, DecoderRNN
 from torchvision import transforms
 from data_loader import get_loader, collate_fn_vist
 
-from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
+from utils import basename, fix_caption, torchify_sequence
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-
-def basename(fname):
-    fname.split(':')
-    return os.path.splitext(os.path.basename(fname))[0]
-
-
-def fix_caption(caption):
-    m = re.match(r'^<start> (.*?)( <end>)?$', caption)
-    if m is None:
-        print('ERROR: unexpected caption format: "{}"'.format(caption))
-        return caption.capitalize()
-
-    ret = m.group(1)
-    ret = re.sub(r'\s([.,])(\s|$)', r'\1\2', ret)
-    return ret.capitalize()
-
-
-def load_image(image_path, transform=None):
-    image = Image.open(image_path)
-    image = image.resize([224, 224], Image.LANCZOS)
-    if image.mode != 'RGB':
-        print('WARNING: converting {} from {} to RGB'.format(image_path, image.mode))
-        image = image.convert('RGB')
-
-    if transform is not None:
-        image = transform(image).unsqueeze(0)
-
-    return image
-
-
-def torchify_sequence(batch):
-    final_tensor = torch.tensor([])
-    for image in batch:
-        image = image.unsqueeze(0)
-        final_tensor = torch.cat([final_tensor, image])
-
-    return final_tensor.to(device)
 
 
 def main(args):
@@ -107,7 +67,7 @@ def main(args):
     print('processing {} sequences.'.format(total_step))
     for i, (images, captions, lengths, story_id) in enumerate(data_loader):
         # forward pass
-        sequence_data = torchify_sequence(images[0])
+        sequence_data = torchify_sequence(images[0]).to(device)
         sequence_features = encoder_cnn(sequence_data)
         input_sequence_features = sequence_features.unsqueeze(0)
         input_sequence_features = input_sequence_features.view(1, 1, -1)
@@ -131,7 +91,7 @@ def main(args):
 
     output_file = args.output_file
     if not args.output_file and not args.print_results:
-        output_file = basename(args.model) + '.json'
+        output_file = basename(args.model, split=':') + '.json'
 
     if output_file:
         json.dump(output_data, open(os.path.join(args.results_path, output_file), 'w'))
@@ -177,7 +137,7 @@ if __name__ == '__main__':
         print('[args] {}={}'.format(k, v))
     sys.stdout.flush()
 
-    main(args)
+    main(args=args)
 
     end = datetime.now()
     print('Inference ended at {}. Total time: {}.'.format(end, end - begin))

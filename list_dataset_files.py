@@ -109,5 +109,4 @@ if __name__ == '__main__':
     parser.add_argument('--output_path', type=str, default='file_lists',
                         help='Path where to save generated file lists')
 
-    args = parser.parse_args()
-    main(args=args)
+    main(args=parser.parse_args())

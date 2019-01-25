@@ -1,5 +1,6 @@
 import os
 import glob
+import re
 import json
 import math
 import numpy as np
@@ -8,7 +9,9 @@ import torch
 from torch.nn.utils.rnn import pack_padded_sequence
 
 
-def basename(fname):
+def basename(fname, split=None):
+    if split is not None:
+        fname.split(split)
     return os.path.splitext(os.path.basename(fname))[0]
 
 
@@ -321,3 +324,23 @@ def load_image(image_path, transform=None):
         image = transform(image).unsqueeze(0)
 
     return image
+
+
+def fix_caption(caption):
+    m = re.match(r'^<start> (.*?)( <end>)?$', caption)
+    if m is None:
+        print('ERROR: unexpected caption format: "{}"'.format(caption))
+        return caption.capitalize()
+
+    ret = m.group(1)
+    ret = re.sub(r'\s([.,])(\s|$)', r'\1\2', ret)
+    return ret.capitalize()
+
+
+def torchify_sequence(batch):
+    final_tensor = torch.tensor([])
+    for image in batch:
+        image = image.unsqueeze(0)
+        final_tensor = torch.cat([final_tensor, image])
+
+    return final_tensor
