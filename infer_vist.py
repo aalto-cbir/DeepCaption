@@ -94,7 +94,7 @@ def main(args):
         output_file = basename(args.model, split=':') + '.json'
 
     if output_file:
-        json.dump(output_data, open(os.path.join(args.results_path, output_file), 'w'))
+        json.dump(output_data, open(os.path.join(args.output_root, args.results_path, output_file), 'w'))
 
     if args.print_results:
         for d in output_data:
@@ -123,6 +123,8 @@ if __name__ == '__main__':
                         help='path for output JSON, default: model_name.json',
                         default='results.json')
     parser.add_argument('--verbose', help='verbose output', action='store_true')
+    parser.add_argument('--output_root', type=str, default='output',
+                        help='Default directory for model output')
     parser.add_argument('--results_path', type=str, default='results/',
                         help='path for saving results')
     parser.add_argument('--print_results', action='store_true')

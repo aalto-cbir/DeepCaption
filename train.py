@@ -327,7 +327,7 @@ def main(args):
         if SummaryWriter is not None:
             model_name = get_model_name(args, params)
             timestamp = datetime.now().strftime('%Y-%m-%d@%H:%M:%S')
-            log_dir = 'runs/{}_{}'.format(model_name, timestamp)
+            log_dir = os.path.join(args.output_root, 'log_tb/{}_{}'.format(model_name, timestamp))
             writer = SummaryWriter(log_dir=log_dir)
             print("INFO: Logging TensorBoardX events to {}".format(log_dir))
         else:

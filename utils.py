@@ -89,7 +89,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
 
     file_name = 'ep{}.model'.format(epoch + 1)
 
-    model_path = os.path.join(args.model_path, model_name, file_name)
+    model_path = os.path.join(args.output_root, args.model_path, model_name, file_name)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
     torch.save(state, model_path)
@@ -100,7 +100,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
 
 def stats_filename(args, params, postfix):
     model_name = get_model_name(args, params)
-    model_dir = os.path.join(args.model_path, model_name)
+    model_dir = os.path.join(args.output_root, args.model_path, model_name)
 
     if postfix is None:
         json_name = 'train_stats.json'

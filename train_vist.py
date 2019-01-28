@@ -33,7 +33,7 @@ def save_models(args, params, encoder_cnn, encoder_rnn, decoder, optimizer, epoc
         'dropout': params.dropout
     }
 
-    torch.save(state, os.path.join(args.model_path, file_name))
+    torch.save(state, os.path.join(args.output_root, args.model_path, file_name))
 
 
 def main(args):
@@ -139,6 +139,8 @@ if __name__ == '__main__':
                         help='which dataset to use')
     parser.add_argument('--load_model', type=str,
                         help='existing model, for continuing training')
+    parser.add_argument('--output_root', type=str, default='output',
+                        help='Default directory for model output')
     parser.add_argument('--model_basename', type=str, default='model',
                         help='base name for model snapshot filenames')
     parser.add_argument('--model_path', type=str, default='models/',

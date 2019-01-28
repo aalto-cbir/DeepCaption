@@ -12,6 +12,8 @@ def parse_args():
                         help='location of dataset configuration file')
     parser.add_argument('--load_model', type=str, nargs='+',
                         help='existing model, for continuing training')
+    parser.add_argument('--output_root', type=str, default='output',
+                        help='Default directory for model output')
     parser.add_argument('--optimizer_reset', action="store_true",
                         help='reset optimizer parameters for loaded model')
     parser.add_argument('--model_name', type=str)
