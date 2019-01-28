@@ -10,7 +10,7 @@ from datetime import datetime
 
 import torch
 
-from model_vist import ModelParams, EncoderCNN, EncoderRNN, DecoderRNN
+from model.vist import ModelParams, EncoderCNN, EncoderRNN, DecoderRNN
 from torchvision import transforms
 from data_loader import get_loader, collate_fn_vist
 

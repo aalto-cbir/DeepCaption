@@ -4,11 +4,10 @@ import pickle
 from glob import glob
 
 import torch
-import torch.nn as nn
 from PIL import Image
-from torchvision import transforms, models
+from torchvision import transforms
 
-from model import ModelParams, EncoderCNN, FeatureExtractor
+from model.encoder_decoder import FeatureExtractor
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

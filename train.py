@@ -17,8 +17,8 @@ from utils import prepare_hierarchical_targets, get_model_name, save_model, init
 # (Needed to handle Vocabulary pickle)
 from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
-from model import ModelParams, EncoderDecoder
-from model import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
+from model.encoder_decoder import ModelParams, EncoderDecoder
+from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
 from vocabulary import caption_ids_to_words, paragraph_ids_to_words
 
 try:

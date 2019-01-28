@@ -9,7 +9,7 @@ import numpy as np
 import torch
 from torchvision import transforms
 
-from model import FeatureExtractor
+from model.encoder_decoder import FeatureExtractor
 from data_loader import get_loader, DatasetParams
 
 try:

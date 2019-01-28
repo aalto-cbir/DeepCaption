@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 import pickle
 from torchvision import transforms
-from model import EncoderCNN, DecoderRNN
+from model.encoder_decoder import EncoderCNN, DecoderRNN
 from PIL import Image
 from utils import load_image
 

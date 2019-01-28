@@ -9,7 +9,7 @@ import numpy as np
 from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
-import external_models as ext_models
+from . import external as ext_models
 
 Features = namedtuple('Features', 'external, internal')
 

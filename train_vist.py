@@ -12,7 +12,7 @@ from data_loader import get_loader, collate_fn_vist
 from utils import torchify_sequence
 
 # Device configuration
-from model_vist import DecoderRNN, ModelParams, EncoderCNN, EncoderRNN
+from model.vist import DecoderRNN, ModelParams, EncoderCNN, EncoderRNN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
