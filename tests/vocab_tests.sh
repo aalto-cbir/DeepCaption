@@ -6,7 +6,7 @@
 DIR=`dirname "$0"`
 . $DIR/functions.sh
 
-VOCAB_PATH="vocab_tests"
+VOCAB_PATH="output/vocab_tests"
 
 if [ -f $VOCAB_PATH ]; then
      echo "!!! $VOCAB_PATH exists please delete it to make sure all tests are run correctly"
@@ -46,7 +46,7 @@ append_command_to_log
 
 # If vocab parameter is not set the script should terminate gracefully:
 ./train.py --dataset coco:train2014
-append_command_to_log
+append_command_to_log 1
 
 # Train COCO with generated vocab file / pkl
 ./train.py --dataset coco:train2014 --vocab ${OUTPUT_PKL_1} \
@@ -63,15 +63,15 @@ append_command_to_log
 
 # Second time should fail because the file exists already
 ./train.py --dataset coco:train2014 --vocab REGEN \
-          --model_name "test/vocab_pkl_${DATASET_1}_REGEN" --num_epochs 1 --num_batches 1
-append_command_to_log
+          --model_name "test/vocab_pkl_${DATASET_1}_REGEN" --num_epochs 1 --num_batches 1 --replace
+append_command_to_log 1
 
 ./train.py --dataset coco:train2014 --vocab AUTO \
           --model_name "test/vocab_pkl_${DATASET_1}_AUTO" --num_epochs 1 --num_batches 1
 append_command_to_log
 
 # Resume training a model:
-./train.py --load_model "models/test/vocab_pkl_${DATASET_1}/ep1.model" --num_epochs 2 --num_batches 1
+./train.py --load_model "output/models/test/vocab_pkl_${DATASET_1}/ep1.model" --num_epochs 2 --num_batches 1 --replace
 append_command_to_log
 
 # Train COCO + MSRVTT with generated vocab file / pkl
@@ -89,19 +89,19 @@ append_command_to_log
 
 # Second time should fail because the file exists already
 ./train.py --dataset coco:train2014+msrvtt:train --vocab REGEN \
-          --model_name "test/vocab_pkl_${DATASET_2}_REGEN" --num_epochs 1 --num_batches 1
-append_command_to_log
+          --model_name "test/vocab_pkl_${DATASET_2}_REGEN" --num_epochs 1 --num_batches 1 --replace
+append_command_to_log 1
 
 ./train.py --dataset coco:train2014+msrvtt:train --vocab AUTO \
           --model_name "test/vocab_pkl_${DATASET_2}_AUTO" --num_epochs 1 --num_batches 1
 append_command_to_log
 
 # Infer COCO with in-model vocab file
-./infer.py --model models/test/vocab_pkl_${DATASET_1}_AUTO/ep1.model --dataset coco:val2014
+./infer.py --model output/models/test/vocab_pkl_${DATASET_1}_AUTO/ep1.model --dataset coco:val2014
 append_command_to_log
 
 # Infer COCO with supplied vocab file
-./infer.py --model models/test/vocab_pkl_${DATASET_1}_AUTO/ep1.model \
+./infer.py --model output/models/test/vocab_pkl_${DATASET_1}_AUTO/ep1.model \
                   --dataset coco:val2014 --vocab ${OUTPUT_PKL_1}
 append_command_to_log
 
