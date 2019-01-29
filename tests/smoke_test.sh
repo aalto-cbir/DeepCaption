@@ -26,21 +26,21 @@ load_python3
 
 # Expected result: training script starts training on MS COCO Train 2014 dataset, 
 # each epoch only uses the first 10 batches for training.
-# The model is using internal ResNet-152 features, and trains for 5 epochs:
+# The model is using internal ResNet-152 features, and trains for 1 epoch:
 ./train.py --dataset coco:train2014 --vocab AUTO \
                   --num_batches 10 --model_name __test/simple --num_epochs 1 
 append_command_to_log
 
 # Expected result FAILURE: no vocab specified
 # If the expected result for the command is different from 0, give it as a parameter to the following line:
-./train.py --dataset coco:train2014 --num_batches 10 --model_name __test/simple --num_epochs 1 
+./train.py --dataset coco:train2014 --num_batches 10 --model_name __test/simple --num_epochs 1 --replace
 append_command_to_log 1
 
-# Expected result FAILURE: no dataset specified
-./train.py --vocab AUTO --num_batches 10 --model_name __test/simple --num_epochs 1 
+# Expected result FAILURE: no dataset selected
+./train.py --vocab AUTO --num_batches 10 --model_name __test/simple --num_epochs 1 --replace
 append_command_to_log 1
 
-# Expected result: same as above, but validation loss and validation score 
+# Expected result: same as first, but validation loss and validation score
 # are also calculated for each epoch:
 ./train.py --dataset coco:train2014 --validate coco:val2014 --vocab AUTO \
                   --num_batches 10 --model_name __test/validation --num_epochs 1 \
@@ -69,7 +69,7 @@ else
   echo "Skipping long running command..."
 fi
 
-MODEL=models/__test/coco_full/ep11.model
+MODEL=output/models/__test/coco_full/ep11.model
 
 # Inference: Expected result after evaluating the resultant json file: 
 # METEOR: 0.240, CIDEr: 0.851
@@ -85,7 +85,7 @@ append_command_to_log
            --validate_only --validation_scoring cider
 append_command_to_log
 
-RESULTS_FILE=results/coco_full-ep11.json
+RESULTS_FILE=output/results/coco_full-ep11.json
 
 echo "We are on hostname: $HOSTNAME"
 

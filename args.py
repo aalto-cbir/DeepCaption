@@ -117,6 +117,8 @@ def parse_args():
                         help="Enable coherence between sentences")
 
     # Training parameters
+    parser.add_argument('--replace', action='store_true',
+                        help='Replace the saved model with a new one')
     parser.add_argument('--force_epoch', type=int, default=0,
                         help='Force start epoch (for broken model files...)')
     parser.add_argument('--num_epochs', type=int, default=5)

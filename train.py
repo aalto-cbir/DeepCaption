@@ -227,8 +227,13 @@ def main(args):
         params.coupling_alpha = arg_params.coupling_alpha
         params.coupling_beta = arg_params.coupling_beta
 
-    assert not os.path.isdir(os.path.join(args.output_root, args.model_path, get_model_name(args, params))), \
-        'Model already exists. Please expecify a different model name using --model_name flag.'
+    assert args.replace or \
+        not os.path.isdir(os.path.join(args.output_root, args.model_path, get_model_name(args, params))) or \
+        not (args.load_model and not args.validate_only), \
+        '{} already exists. If you want to replace it or resume training please use --replace flag. ' \
+        'If you want to validate a loaded model without training it, use --validate_only flag.'  \
+        'Otherwise specify a different model name using --model_name flag.'\
+        .format(os.path.join(args.output_root, args.model_path, get_model_name(args, params)))
 
     if args.load_model:
         print("Final model parameters (loaded model + command arguments): ")
