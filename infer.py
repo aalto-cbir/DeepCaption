@@ -193,7 +193,7 @@ def infer(args):
         output_file = args.output_file
 
     if output_file:
-        output_path = os.path.join(args.output_root, args.results_path, output_file)
+        output_path = os.path.join(args.results_path, output_file)
         if output_format == 'json':
             json.dump(output_data, open(output_path, 'w'))
         else:
@@ -217,8 +217,6 @@ def parse_args(ext_args=None):
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
                         help='location of dataset configuration file')
-    parser.add_argument('--output_root', type=str, default='output',
-                        help='Default directory for model output')
     parser.add_argument('--resize', type=int, default=224,
                         help='resize input image to this size')
     parser.add_argument('--batch_size', type=int, default=128)
@@ -242,7 +240,7 @@ def parse_args(ext_args=None):
     parser.add_argument('--output_format', type=str, help='format of the output file')
     parser.add_argument('--verbose', help='verbose output',
                         action='store_true')
-    parser.add_argument('--results_path', type=str, default='results/',
+    parser.add_argument('--results_path', type=str, default='output/results/',
                         help='path for saving results')
     parser.add_argument('--print_results', action='store_true')
     parser.add_argument('--scoring', type=str)
