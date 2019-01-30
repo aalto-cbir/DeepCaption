@@ -403,7 +403,7 @@ def cyclical_lr(step_sz, min_lr=0.001, max_lr=1, mode='triangular', scale_func=N
             scale_fn = lambda x: gamma**(x)
             scale_mode = 'iterations'
         else:
-            raise ValueError(f'The {mode} is not valid value!')
+            raise ValueError('The {mode} is not valid value!')
     else:
         scale_fn = scale_func
         scale_mode = scale_md
@@ -418,7 +418,7 @@ def cyclical_lr(step_sz, min_lr=0.001, max_lr=1, mode='triangular', scale_func=N
         elif mode == 'iterations':
             return max(0, (1 - x)) * scale_fn(iteration)
         else:
-            raise ValueError(f'The {scale_mode} is not valid value!')
+            raise ValueError('The {scale_mode} is not valid value!')
 
     return lr_lambda
 
@@ -644,7 +644,7 @@ def main(args):
     if args.tensorboard:
         if SummaryWriter is not None:
             model_name = get_model_name(args, params)
-            timestamp = datetime.now().strftime('%Y-%m-%d@%H:%M:%S')
+            timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
             log_dir = 'runs/{}_{}'.format(model_name, timestamp)
             writer = SummaryWriter(log_dir=log_dir)
             print("INFO: Logging TensorBoardX events to {}".format(log_dir))
