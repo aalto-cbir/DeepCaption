@@ -71,7 +71,8 @@ append_command_to_log 1
 append_command_to_log
 
 # Resume training a model:
-./train.py --load_model "output/models/test/vocab_pkl_${DATASET_1}/ep1.model" --num_epochs 2 --num_batches 1 --replace
+./train.py --load_model "output/models/test/vocab_pkl_${DATASET_1}/ep1.model" --dataset coco:train2014 \
+                --num_epochs 2 --num_batches 1 --replace
 append_command_to_log
 
 # Train COCO + MSRVTT with generated vocab file / pkl
