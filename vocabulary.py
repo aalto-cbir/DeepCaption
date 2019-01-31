@@ -1,11 +1,10 @@
-import pickle
-import re
 import data_loader as dl
 import sys
 import os
 from collections import Counter
 import nltk
 import pickle
+import re
 
 try:
     from tqdm import tqdm
@@ -76,7 +75,7 @@ class Vocabulary(object):
 
     def update_metadata(self, updated_metadata):
         """Store vocabulary metadata
-        :param metadata dict vocabulary metadata info"""
+        :param updated_metadata dict vocabulary metadata info"""
 
         # Merge existing metadata with supplied:
         self.metadata = {**self.metadata, **updated_metadata}
@@ -132,14 +131,14 @@ def get_vocab_from_pickle(vocab_path):
 
 
 def get_vocab_from_txt(vocab_path):
-    l = []
+    lst = []
     with open(vocab_path) as f:
         print("Extracting vocabulary from {} text file".format(vocab_path))
         for a in f:
             b = a.split()
-            l.extend(b)
+            lst.extend(b)
 
-    return get_vocab_from_list(l, True)
+    return get_vocab_from_list(lst, True)
 
 
 def get_vocab_from_list(l, add_specials):
@@ -156,7 +155,7 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     """Generate vocabulary pickle file
     :param vocab_output_path target path where to save the file
     :param dataset_params dataset configuration parameters supplied to data_loader
-    :paramn ext_args exteranl ArgumentParser arguments supplied by calling script
+    :param ext_args external ArgumentParser arguments supplied by calling script
     """
 
     # Check that we are not overwriting anything
@@ -226,3 +225,64 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     print("Saved the vocabulary to '{}'".format(vocab_output_path))
 
     return vocab
+
+
+# sentence functions now
+
+def fix_caption(caption, skip_start_token=False):
+    if skip_start_token:
+        m = re.match(r'^(.*?)( <end>)?$', caption)
+    else:
+        m = re.match(r'^<start> (.*?)( <end>)?$', caption)
+    if m is None:
+        print('ERROR: unexpected caption format: "{}"'.format(caption))
+        return caption.capitalize()
+
+    ret = m.group(1)
+    ret = re.sub(r'\s([.,])(\s|$)', r'\1\2', ret)
+    return ret.capitalize()
+
+
+def caption_ids_to_words(sampled_ids, vocab):
+    sampled_caption = []
+    for word_id in sampled_ids.cpu().numpy():
+        word = vocab.idx2word[word_id]
+        sampled_caption.append(word)
+        if word == '<end>':
+            break
+    return fix_caption(' '.join(sampled_caption))
+
+
+def paragraph_ids_to_words(sampled_ids, vocab):
+    paragraph = ''
+    for sentence in sampled_ids:
+        if sentence[0] == vocab("<pad>"):
+            break
+        paragraph += caption_ids_to_words(sentence, vocab) + '. '
+
+    paragraph = paragraph.replace(" .", ".")
+
+    return paragraph
+
+
+def remove_duplicate_sentences(caption):
+    """Removes consecutively repeating sentences from the caption"""
+    sentences = caption.split('.')
+
+    no_dupes = [sentences[0].strip()]
+
+    for i, _ in enumerate(sentences):
+        if sentences[i].strip() != no_dupes[-1].strip():
+            no_dupes.append(sentences[i].strip())
+
+    return '. '.join(no_dupes)
+
+
+def remove_incomplete_sentences(caption):
+    """Removes sentences that don't end with a period (truncated or incomplete)"""
+    sentences = caption.split('.')
+    if sentences[-1] != '':
+        sentences[-1] = ''
+        return '.'.join(sentences)
+    else:
+        return caption

@@ -4,15 +4,15 @@ import pickle
 import sys
 import torch
 import numpy as np
-from vocabulary import Vocabulary  # (Needed to handle Vocabulary pickle)
 
 from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from data_loader import get_loader, collate_fn_vist
+from utils import torchify_sequence
 
 # Device configuration
-from model_vist import DecoderRNN, ModelParams, EncoderCNN, EncoderRNN
+from model.vist import DecoderRNN, ModelParams, EncoderCNN, EncoderRNN
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -33,16 +33,7 @@ def save_models(args, params, encoder_cnn, encoder_rnn, decoder, optimizer, epoc
         'dropout': params.dropout
     }
 
-    torch.save(state, os.path.join(args.model_path, file_name))
-
-
-def torchify_sequence(batch):
-    final_tensor = torch.tensor([])
-    for image in batch:
-        image = image.unsqueeze(0)
-        final_tensor = torch.cat([final_tensor, image])
-
-    return final_tensor.to(device)
+    torch.save(state, os.path.join(args.output_root, args.model_path, file_name))
 
 
 def main(args):
@@ -108,7 +99,7 @@ def main(args):
     for epoch in range(start_epoch, args.num_epochs):
         for i, (images, captions, lengths, story_id) in enumerate(data_loader):
             # forward pass
-            sequence_data = torchify_sequence(images[0])
+            sequence_data = torchify_sequence(images[0]).to(device)
             # print('shape of image data: ', sequence_data.shape)
             sequence_features = encoder_cnn(sequence_data)
             # print('shape of image features: ', sequence_features.shape)
@@ -148,6 +139,8 @@ if __name__ == '__main__':
                         help='which dataset to use')
     parser.add_argument('--load_model', type=str,
                         help='existing model, for continuing training')
+    parser.add_argument('--output_root', type=str, default='output',
+                        help='Default directory for model output')
     parser.add_argument('--model_basename', type=str, default='model',
                         help='base name for model snapshot filenames')
     parser.add_argument('--model_path', type=str, default='models/',

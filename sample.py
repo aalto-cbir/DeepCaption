@@ -1,26 +1,17 @@
 import torch
 import matplotlib.pyplot as plt
-import numpy as np 
+import numpy as np
 import argparse
-import pickle 
-import os
-from torchvision import transforms 
-from build_vocab import Vocabulary
-from model import EncoderCNN, DecoderRNN
+import pickle
+from torchvision import transforms
+from model.encoder_decoder import EncoderCNN, DecoderRNN
 from PIL import Image
+from utils import load_image
 
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def load_image(image_path, transform=None):
-    image = Image.open(image_path)
-    image = image.resize([224, 224], Image.LANCZOS)
-    
-    if transform is not None:
-        image = transform(image).unsqueeze(0)
-    
-    return image
 
 def main(args):
     # Image preprocessing
@@ -34,7 +25,7 @@ def main(args):
         vocab = pickle.load(f)
 
     # Build models
-    encoder = EncoderCNN(args.embed_size).eval()  # eval mode (batchnorm uses moving mean/variance)
+    encoder = EncoderCNN(args.embed_size).eval()  # eval mode (batch norm uses moving mean/variance)
     decoder = DecoderRNN(args.embed_size, args.hidden_size, len(vocab), args.num_layers)
     encoder = encoder.to(device)
     decoder = decoder.to(device)
@@ -50,7 +41,7 @@ def main(args):
     # Generate an caption from the image
     feature = encoder(image_tensor)
     sampled_ids = decoder.sample(feature)
-    sampled_ids = sampled_ids[0].cpu().numpy()          # (1, max_seq_length) -> (max_seq_length)
+    sampled_ids = sampled_ids[0].cpu().numpy()  # (1, max_seq_length) -> (max_seq_length)
     
     # Convert word_ids to words
     sampled_caption = []
@@ -62,10 +53,11 @@ def main(args):
     sentence = ' '.join(sampled_caption)
     
     # Print out the image and the generated caption
-    print (sentence)
+    print(sentence)
     image = Image.open(args.image)
     plt.imshow(np.asarray(image))
-    
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--image', type=str, required=True, help='input image for generating caption')
@@ -77,5 +69,5 @@ if __name__ == '__main__':
     parser.add_argument('--embed_size', type=int , default=256, help='dimension of word embedding vectors')
     parser.add_argument('--hidden_size', type=int , default=512, help='dimension of lstm hidden states')
     parser.add_argument('--num_layers', type=int , default=1, help='number of layers in lstm')
-    args = parser.parse_args()
-    main(args)
+
+    main(args=parser.parse_args())

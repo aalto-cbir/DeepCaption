@@ -7,7 +7,7 @@ from collections import OrderedDict
 import numbers
 
 from vocabulary import Vocabulary
-from model import Features
+from model.encoder_decoder import Features
 
 verbose = False
 
