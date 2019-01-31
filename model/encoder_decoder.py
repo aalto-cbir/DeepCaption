@@ -11,6 +11,9 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from . import external as ext_models
 
+from reward import get_self_critical_reward
+from utils import RewardCriterion
+
 Features = namedtuple('Features', 'external, internal')
 
 # Device configuration
@@ -661,7 +664,7 @@ class EncoderDecoder(nn.Module):
 
     def forward(self, images, init_features, captions, lengths, persist_features,
                 teacher_p=1.0, teacher_forcing='always', sorting_order=None,
-                writer_data=None):
+                writer_data=None, output_decoder_hiddens=False):
         features = self.encoder(images, init_features)
         if self.model_type == 'hierarchical_model':
             # TODO: Make the hierarchical and regular decoder take the same arguments
@@ -670,16 +673,17 @@ class EncoderDecoder(nn.Module):
                                    external_features=persist_features, writer_data=writer_data)
         else:
             outputs = self.decoder(features, captions, lengths, images, persist_features,
-                                   teacher_p, teacher_forcing)
+                                   teacher_p, teacher_forcing, output_hiddens=output_decoder_hiddens)
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20, start_token_id=None, end_token_id=None):
+               max_seq_length=20, start_token_id=None, end_token_id=None, output_decoder_hiddens=False):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
                                           max_seq_length=max_seq_length,
                                           start_token_id=start_token_id,
-                                          end_token_id=end_token_id)
+                                          end_token_id=end_token_id,
+                                          output_hiddens=output_decoder_hiddens)
 
         return sampled_ids
 
@@ -1105,3 +1109,22 @@ class HierarchicalXEntropyLoss(nn.Module):
 
     def item_terms(self):
         return self.weight_sent, self.loss_s, self.weight_word, self.loss_w
+
+
+class RewardLoss(nn.Module):
+    # from https://github.com/ruotianluo/self-critical.pytorch
+    def __init__(self):
+        super(RewardLoss, self).__init__()
+        self.rl_criterion = RewardCriterion()
+
+    def forward(self, sample, greedy_sample, targets):
+        # hiddens[1] == pack_padded_sequence(inputs, lengths, batch_first=True)[1]
+        sample, hiddens = sample
+        sample_padded = pad_packed_sequence(torch.nn.utils.rnn.PackedSequence(sample, hiddens[1]), batch_first=True)[0]
+        sample_logprobs = torch.nn.functional.log_softmax(sample_padded, dim=2)
+        # gen_result, sample_logprobs = dp_model(fc_feats, att_feats, att_masks, opt={'sample_max': 0},
+        #                                       mode='sample')
+        reward = get_self_critical_reward(greedy_sample, data, gen_result, args)
+        loss = self.rl_criterion(sample_logprobs, sample.data, torch.from_numpy(reward).float().to(device))
+
+        return loss

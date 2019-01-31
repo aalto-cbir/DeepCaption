@@ -18,7 +18,7 @@ from utils import prepare_hierarchical_targets, get_model_name, save_model, init
 from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
 from model.encoder_decoder import ModelParams, EncoderDecoder
-from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
+from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss, RewardLoss
 from vocabulary import caption_ids_to_words, paragraph_ids_to_words
 
 try:
@@ -169,7 +169,7 @@ def main(args):
                              (0.229, 0.224, 0.225))])
 
     scorers = {}
-    if args.validation_scoring is not None:
+    if args.validation_scoring is not None or args.self_critical_after != -1:
         for s in args.validation_scoring.split(','):
             s = s.lower().strip()
             if s == 'cider':
@@ -374,6 +374,9 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
+    if args.self_critical_after != -1:
+        rl_criterion = RewardLoss()
+
     # When using CyclicalLR, default learning rate should be always 1.0
     if args.lr_scheduler == 'CyclicalLR':
         default_lr = 1.
@@ -488,6 +491,7 @@ def main(args):
             stats = {}
             begin = datetime.now()
 
+            sc_activated = False
             total_loss = 0
 
             if params.hierarchical_model:
@@ -497,6 +501,12 @@ def main(args):
             num_batches = 0
             vocab_counts = {'cnt': 0, 'max': 0, 'min': 9999,
                             'sum': 0, 'unk_cnt': 0, 'unk_sum': 0}
+
+            # If start self critical training
+            if not sc_activated and args.self_critical_after != -1 and epoch >= args.self_critical_after:
+                sc_activated = True
+                criterion = rl_criterion
+
             for i, data in enumerate(data_loader):
 
                 if params.hierarchical_model:
@@ -557,13 +567,23 @@ def main(args):
                     writer_data = {'writer': writer, 'epoch': epoch + 1}
 
                 outputs = model(images, init_features, captions, lengths, persist_features, teacher_p,
-                                args.teacher_forcing, sorting_order, writer_data=writer_data)
+                                args.teacher_forcing, sorting_order, writer_data=writer_data,
+                                output_decoder_hiddens=sc_activated)
 
                 if args.share_embedding_weights:
                     # Weights of (HxH) projection matrix used for regularizing
                     # models that share embedding weights
                     projection = model.decoder.projection.weight
                     loss = criterion(projection, outputs, targets)
+                elif sc_activated:
+                    # get greedy decoding baseline
+                    model.eval()
+                    with torch.no_grad():
+                        greedy_outputs = model.sample(images, init_features, persist_features,
+                                                      max_seq_length=20, start_token_id=vocab('<start>'))
+                    model.train()
+
+                    loss = criterion(outputs, greedy_outputs, targets)
                 else:
                     loss = criterion(outputs, targets)
 

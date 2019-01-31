@@ -154,6 +154,9 @@ def parse_args():
                         help='Default step size for StepLR lr scheduler')
     parser.add_argument('--share_embedding_weights', action='store_true',
                         help='Share weights for language model input and output embeddings')
+    parser.add_argument('--self_critical_after', type=int, default=-1,
+                        help='After what epoch do we start finetuning the model? '
+                             '(-1 = disable; never finetune, 0 = finetune from start)')
 
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
     parser.add_argument('--teacher_forcing', type=str, default='always',

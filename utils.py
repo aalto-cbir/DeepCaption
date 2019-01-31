@@ -344,3 +344,10 @@ def torchify_sequence(batch):
         final_tensor = torch.cat([final_tensor, image])
 
     return final_tensor
+
+
+def to_contiguous(tensor):
+    if tensor.is_contiguous():
+        return tensor
+    else:
+        return tensor.contiguous()
