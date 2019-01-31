@@ -286,7 +286,7 @@ def cyclical_lr(step_sz, min_lr=0.001, max_lr=1, mode='triangular', scale_func=N
             scale_fn = lambda x: gamma ** (x)
             scale_mode = 'iterations'
         else:
-            raise ValueError(f'The {mode} is not valid value!')
+            raise ValueError('The {} is not valid value!'.format(mode))
     else:
         scale_fn = scale_func
         scale_mode = scale_md
@@ -301,7 +301,7 @@ def cyclical_lr(step_sz, min_lr=0.001, max_lr=1, mode='triangular', scale_func=N
         elif mode == 'iterations':
             return max(0, (1 - x)) * scale_fn(iteration)
         else:
-            raise ValueError(f'The {scale_mode} is not valid value!')
+            raise ValueError('The {} is not valid value!'.format(scale_mode))
 
     return lr_lambda
 
