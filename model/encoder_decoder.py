@@ -8,6 +8,7 @@ import numpy as np
 
 from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+import torch.nn.functional as F
 
 from . import external as ext_models
 
@@ -542,9 +543,10 @@ class DecoderRNN(nn.Module):
 
     def sample(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None,
-               output_hiddens=False):
+               greedy=True, output_logprobs=False, output_hiddens=False):
         """Generate captions for given image features using greedy search."""
         sampled_ids = []
+        seq_logprobs = []
 
         batch_size = len(images)
 
@@ -584,21 +586,33 @@ class DecoderRNN(nn.Module):
                 outputs = torch.matmul(output_embeddings, self.embed_output.weight)
             else:
                 outputs = self.linear(hiddens.squeeze(1))
-            _, predicted = outputs.max(1)
-            sampled_ids.append(predicted)
+
+            logprobs = F.log_softmax(outputs, dim=1)
+
+            if greedy:
+                predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
+            else:
+                predicted = F.softmax(outputs, 1).multinomial(num_samples=1).view(-1)  # torch.multinomial(logprobs, 1) doesn't work with logits
+                if output_logprobs:
+                    predicted_logprobs = logprobs.gather(1, predicted.unsqueeze(1)).view(-1)  # gather the logprobs at sampled positions
 
             # inputs: (batch_size, 1, embed_size + len(external_features))
             embeddings = self.embed(predicted)
             inputs = torch.cat([embeddings, persist_features], 1).unsqueeze(1)
 
+            sampled_ids.append(predicted)
+            if output_logprobs:
+                seq_logprobs.append(predicted_logprobs)
             if output_hiddens:
                 all_hiddens[:, i] = hiddens.squeeze(1)
 
         # sampled_ids: (batch_size, max_seq_length)
-        sampled_ids = torch.stack(sampled_ids, 1)
+        sampled_ids = torch.stack(sampled_ids, dim=1)
 
         if output_hiddens:
             return sampled_ids, all_hiddens,
+        elif output_logprobs:
+            return sampled_ids, torch.stack(seq_logprobs, dim=1)
         else:
             return sampled_ids
 
@@ -676,13 +690,16 @@ class EncoderDecoder(nn.Module):
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20, start_token_id=None, end_token_id=None, output_decoder_hiddens=False):
+               max_seq_length=20, start_token_id=None, end_token_id=None, output_decoder_hiddens=False,
+               greedy_decoding=True, output_logprobs=False):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
                                           max_seq_length=max_seq_length,
                                           start_token_id=start_token_id,
                                           end_token_id=end_token_id,
-                                          output_hiddens=output_decoder_hiddens)
+                                          output_hiddens=output_decoder_hiddens,
+                                          greedy=greedy_decoding,
+                                          output_logprobs=output_logprobs)
 
         return sampled_ids
 
@@ -1116,20 +1133,10 @@ class RewardLoss(nn.Module):
         super(RewardLoss, self).__init__()
         self.rl_criterion = RewardCriterion()
 
-    def forward(self, sample, greedy_sample, target, scorers, vocab, image_ids):
-        # hiddens[1] == pack_padded_sequence(inputs, lengths, batch_first=True)[1]
-        sample, hidden = sample
+    def forward(self, sample, sample_log_probs, greedy_sample, target, lengths, scorers, vocab, image_ids):
+        target_padded = pad_packed_sequence(torch.nn.utils.rnn.PackedSequence(target, lengths), batch_first=True)[0]
 
-        # no need to pad it if coming from model.sample(), like the greedy_sample
-        greedy_sample_padded = greedy_sample
-        sample_padded = pad_packed_sequence(torch.nn.utils.rnn.PackedSequence(sample, hidden[1]), batch_first=True)[0]
-        target_padded = pad_packed_sequence(torch.nn.utils.rnn.PackedSequence(target, hidden[1]), batch_first=True)[0]
-        # gen_result, sample_logprobs = dp_model(fc_feats, att_feats, att_masks, opt={'sample_max': 0},
-        #                                       mode='sample')
-
-        reward = get_self_critical_reward(greedy_sample_padded, sample_padded, target_padded, scorers, vocab, image_ids)
-
-        sample_logprobs = torch.nn.functional.log_softmax(sample_padded, dim=2)
-        loss = self.rl_criterion(sample_logprobs, sample_padded.data, torch.from_numpy(reward).float().to(device))
+        reward = get_self_critical_reward(greedy_sample, sample, target_padded, scorers, vocab, image_ids)
+        loss = self.rl_criterion(sample_log_probs, sample, torch.from_numpy(reward).float().to(device))
 
         return loss

@@ -53,19 +53,19 @@ def get_self_critical_reward(greedy_sample, sample, target, scorers, vocab, imag
         # else:
         gts[jid].append(caption_ids_to_words(target[j, :], vocab).lower())
 
-    for j in range(greedy_sample.shape[0]):
-        jid = image_ids[j]
-        # if params.hierarchical_model:
-        #     res_greedy[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
-        # else:
-        res_greedy[jid] = [caption_ids_to_words(greedy_sample[j], vocab).lower()]
-
     for j in range(sample.shape[0]):
         jid = image_ids[j]
         # if params.hierarchical_model:
         #     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
         # else:
         res[jid] = [caption_ids_to_words(sample[j], vocab).lower()]
+
+    for j in range(greedy_sample.shape[0]):
+        jid = image_ids[j]
+        # if params.hierarchical_model:
+        #     res_greedy[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+        # else:
+        res_greedy[jid] = [caption_ids_to_words(greedy_sample[j], vocab).lower()]
 
     _, score = scorer.compute_score(gts, res)
     _, score_baseline = scorer.compute_score(gts, res_greedy)

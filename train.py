@@ -566,9 +566,13 @@ def main(args):
                 if writer and (i == len(data_loader) - 1 or i == args.num_batches - 1):
                     writer_data = {'writer': writer, 'epoch': epoch + 1}
 
-                outputs = model(images, init_features, captions, lengths, persist_features, teacher_p,
-                                args.teacher_forcing, sorting_order, writer_data=writer_data,
-                                output_decoder_hiddens=sc_activated)
+                if sc_activated:
+                    outputs, log_probs = model.sample(images, init_features, persist_features,
+                                                      max_seq_length=20, start_token_id=vocab('<start>'),
+                                                      greedy_decoding=False, output_logprobs=True)
+                else:
+                    outputs = model(images, init_features, captions, lengths, persist_features, teacher_p,
+                                    args.teacher_forcing, sorting_order, writer_data=writer_data)
 
                 if args.share_embedding_weights:
                     # Weights of (HxH) projection matrix used for regularizing
@@ -580,10 +584,11 @@ def main(args):
                     model.eval()
                     with torch.no_grad():
                         greedy_outputs = model.sample(images, init_features, persist_features,
-                                                      max_seq_length=20, start_token_id=vocab('<start>'))
+                                                      max_seq_length=20, start_token_id=vocab('<start>'),
+                                                      greedy_decoding=True)
                     model.train()
 
-                    loss = criterion(outputs, greedy_outputs, targets, scorers, vocab, image_ids)
+                    loss = criterion(outputs, log_probs, greedy_outputs, targets, lengths, scorers, vocab, image_ids)
                 else:
                     loss = criterion(outputs, targets)
 
