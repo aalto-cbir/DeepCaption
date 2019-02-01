@@ -11,8 +11,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 
 from . import external as ext_models
 
-from reward import get_self_critical_reward
-from utils import RewardCriterion
+from reward import get_self_critical_reward, RewardCriterion
 
 Features = namedtuple('Features', 'external, internal')
 
@@ -1117,14 +1116,20 @@ class RewardLoss(nn.Module):
         super(RewardLoss, self).__init__()
         self.rl_criterion = RewardCriterion()
 
-    def forward(self, sample, greedy_sample, targets):
+    def forward(self, sample, greedy_sample, target, scorers, vocab, image_ids):
         # hiddens[1] == pack_padded_sequence(inputs, lengths, batch_first=True)[1]
-        sample, hiddens = sample
-        sample_padded = pad_packed_sequence(torch.nn.utils.rnn.PackedSequence(sample, hiddens[1]), batch_first=True)[0]
-        sample_logprobs = torch.nn.functional.log_softmax(sample_padded, dim=2)
+        sample, hidden = sample
+
+        # no need to pad it if coming from model.sample(), like the greedy_sample
+        greedy_sample_padded = greedy_sample
+        sample_padded = pad_packed_sequence(torch.nn.utils.rnn.PackedSequence(sample, hidden[1]), batch_first=True)[0]
+        target_padded = pad_packed_sequence(torch.nn.utils.rnn.PackedSequence(target, hidden[1]), batch_first=True)[0]
         # gen_result, sample_logprobs = dp_model(fc_feats, att_feats, att_masks, opt={'sample_max': 0},
         #                                       mode='sample')
-        reward = get_self_critical_reward(greedy_sample, data, gen_result, args)
-        loss = self.rl_criterion(sample_logprobs, sample.data, torch.from_numpy(reward).float().to(device))
+
+        reward = get_self_critical_reward(greedy_sample_padded, sample_padded, target_padded, scorers, vocab, image_ids)
+
+        sample_logprobs = torch.nn.functional.log_softmax(sample_padded, dim=2)
+        loss = self.rl_criterion(sample_logprobs, sample_padded.data, torch.from_numpy(reward).float().to(device))
 
         return loss

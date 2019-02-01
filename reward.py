@@ -1,18 +1,17 @@
 import numpy as np
-import time
-import misc.utils as utils
 from collections import OrderedDict
 import torch
 from torch import nn
 from utils import to_contiguous
+from vocabulary import caption_ids_to_words
 
 import sys
 
-sys.path.append("cider")
-from pyciderevalcap.ciderD.ciderD import CiderD
+#sys.path.append("cider")
+#from pyciderevalcap.ciderD.ciderD import CiderD
 
-sys.path.append("coco-caption")
-from pycocoevalcap.bleu.bleu import Bleu
+#sys.path.append("coco-caption")
+#from pycocoevalcap.bleu.bleu import Bleu
 
 CiderD_scorer = None
 Bleu_scorer = None
@@ -36,44 +35,83 @@ def array_to_str(arr):
     return out.strip()
 
 
-def get_self_critical_reward(greedy_res, data, gen_result, opt):
-    batch_size = gen_result.size(0)  # batch_size = sample_size * seq_per_img
-    seq_per_img = batch_size // len(data['gts'])
+def get_self_critical_reward(greedy_sample, sample, target, scorers, vocab, image_ids):#(greedy_res, gen_result, data, opt):
+    batch_size = sample.size(0)  # batch_size = sample_size * seq_per_img
+    #seq_per_img = batch_size // len(data['gts'])
 
-    res = OrderedDict()
+    scorer = scorers['CIDEr']
+    gts = {}
+    res = {}
+    res_greedy = {}
 
-    gen_result = gen_result.data.cpu().numpy()
-    greedy_res = greedy_res.data.cpu().numpy()
-    for i in range(batch_size):
-        res[i] = [array_to_str(gen_result[i])]
-    for i in range(batch_size):
-        res[batch_size + i] = [array_to_str(greedy_res[i])]
+    for j in range(target.shape[0]):
+        jid = image_ids[j]
+        if jid not in gts:
+            gts[jid] = []
+        # if params.hierarchical_model:
+        #     gts[jid].append(paragraph_ids_to_words(captions[j, :], vocab).lower())
+        # else:
+        gts[jid].append(caption_ids_to_words(target[j, :], vocab).lower())
 
-    gts = OrderedDict()
-    for i in range(len(data['gts'])):
-        gts[i] = [array_to_str(data['gts'][i][j]) for j in range(len(data['gts'][i]))]
+    for j in range(greedy_sample.shape[0]):
+        jid = image_ids[j]
+        # if params.hierarchical_model:
+        #     res_greedy[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+        # else:
+        res_greedy[jid] = [caption_ids_to_words(greedy_sample[j], vocab).lower()]
 
-    res_ = [{'image_id': i, 'caption': res[i]} for i in range(2 * batch_size)]
-    res__ = {i: res[i] for i in range(2 * batch_size)}
-    gts = {i: gts[i % batch_size // seq_per_img] for i in range(2 * batch_size)}
-    if opt.cider_reward_weight > 0:
-        _, cider_scores = CiderD_scorer.compute_score(gts, res_)
-        print('Cider scores:', _)
-    else:
-        cider_scores = 0
-    if opt.bleu_reward_weight > 0:
-        _, bleu_scores = Bleu_scorer.compute_score(gts, res__)
-        bleu_scores = np.array(bleu_scores[3])
-        print('Bleu scores:', _[3])
-    else:
-        bleu_scores = 0
-    scores = opt.cider_reward_weight * cider_scores + opt.bleu_reward_weight * bleu_scores
+    for j in range(sample.shape[0]):
+        jid = image_ids[j]
+        # if params.hierarchical_model:
+        #     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+        # else:
+        res[jid] = [caption_ids_to_words(sample[j], vocab).lower()]
 
-    scores = scores[:batch_size] - scores[batch_size:]
+    _, score = scorer.compute_score(gts, res)
+    _, score_baseline = scorer.compute_score(gts, res_greedy)
 
-    rewards = np.repeat(scores[:, np.newaxis], gen_result.shape[1], 1)
+    scores = score - score_baseline
+
+    rewards = np.repeat(scores[:, np.newaxis], sample.size(1), 1)
 
     return rewards
+
+    # ----------------------------------------
+
+    # res = OrderedDict()
+    #
+    # gen_result = gen_result.data.cpu().numpy()
+    # greedy_res = greedy_res.data.cpu().numpy()
+    # for i in range(batch_size):
+    #     res[i] = [array_to_str(gen_result[i])]
+    # for i in range(batch_size):
+    #     res[batch_size + i] = [array_to_str(greedy_res[i])]
+    #
+    # gts = OrderedDict()
+    # for i in range(len(data['gts'])):
+    #     gts[i] = [array_to_str(data['gts'][i][j]) for j in range(len(data['gts'][i]))]
+    #
+    # res_ = [{'image_id': i, 'caption': res[i]} for i in range(2 * batch_size)]
+    # res__ = {i: res[i] for i in range(2 * batch_size)}
+    # gts = {i: gts[i % batch_size // seq_per_img] for i in range(2 * batch_size)}
+    # if opt.cider_reward_weight > 0:
+    #     _, cider_scores = CiderD_scorer.compute_score(gts, res_)
+    #     print('Cider scores:', _)
+    # else:
+    #     cider_scores = 0
+    # if opt.bleu_reward_weight > 0:
+    #     _, bleu_scores = Bleu_scorer.compute_score(gts, res__)
+    #     bleu_scores = np.array(bleu_scores[3])
+    #     print('Bleu scores:', _[3])
+    # else:
+    #     bleu_scores = 0
+    # scores = opt.cider_reward_weight * cider_scores + opt.bleu_reward_weight * bleu_scores
+    #
+    # scores = scores[:batch_size] - scores[batch_size:]
+    #
+    # rewards = np.repeat(scores[:, np.newaxis], gen_result.shape[1], 1)
+    #
+    # return rewards
 
 
 class RewardCriterion(nn.Module):

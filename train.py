@@ -514,7 +514,7 @@ def main(args):
                      last_sentence_indicator) = data
                     sorting_order = sorting_order.to(device)
                 else:
-                    (images, captions, lengths, _, features) = data
+                    (images, captions, lengths, image_ids, features) = data
 
                 if epoch == 0:
                     unk = vocab('<unk>')
@@ -583,7 +583,7 @@ def main(args):
                                                       max_seq_length=20, start_token_id=vocab('<start>'))
                     model.train()
 
-                    loss = criterion(outputs, greedy_outputs, targets)
+                    loss = criterion(outputs, greedy_outputs, targets, scorers, vocab, image_ids)
                 else:
                     loss = criterion(outputs, targets)
 
