@@ -1133,10 +1133,9 @@ class RewardLoss(nn.Module):
         super(RewardLoss, self).__init__()
         self.rl_criterion = RewardCriterion()
 
-    def forward(self, sample, sample_log_probs, greedy_sample, target, lengths, scorers, vocab, image_ids):
-        target_padded = pad_packed_sequence(torch.nn.utils.rnn.PackedSequence(target, lengths), batch_first=True)[0]
+    def forward(self, sample, sample_log_probs, greedy_sample, captions, scorers, vocab, image_ids):
 
-        reward = get_self_critical_reward(greedy_sample, sample, target_padded, scorers, vocab, image_ids)
-        loss = self.rl_criterion(sample_log_probs, sample, torch.from_numpy(reward).float().to(device))
+        reward = get_self_critical_reward(greedy_sample, sample, captions, scorers, vocab, image_ids)
+        loss = self.rl_criterion(sample_log_probs, sample, torch.from_numpy(reward).to(device))
 
         return loss

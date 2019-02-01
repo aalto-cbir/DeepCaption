@@ -588,7 +588,8 @@ def main(args):
                                                       greedy_decoding=True)
                     model.train()
 
-                    loss = criterion(outputs, log_probs, greedy_outputs, targets, lengths, scorers, vocab, image_ids)
+                    captions_target = captions[:, 1:] if params.rnn_hidden_init == 'from_features' and not params.hierarchical_model else captions
+                    loss = criterion(outputs, log_probs, greedy_outputs, captions_target, scorers, vocab, image_ids)
                 else:
                     loss = criterion(outputs, targets)
 
