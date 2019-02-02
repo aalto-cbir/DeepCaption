@@ -49,9 +49,9 @@ def get_self_critical_reward(greedy_sample, sample, target, scorers, vocab, imag
         if jid not in gts:
             gts[jid] = []
         # if params.hierarchical_model:
-        #     gts[jid].append(paragraph_ids_to_words(captions[j, :], vocab).lower())
+        #     gts[jid].append(paragraph_ids_to_words(captions[j], vocab).lower())
         # else:
-        gts[jid].append(caption_ids_to_words(target[j, :], vocab).lower())
+        gts[jid].append(caption_ids_to_words(target[j], vocab).lower())
 
     for j in range(sample.shape[0]):
         jid = image_ids[j]
@@ -118,14 +118,18 @@ class RewardCriterion(nn.Module):
     def __init__(self):
         super(RewardCriterion, self).__init__()
 
-    def forward(self, input, seq, reward):
-        input = to_contiguous(input).view(-1)
-        reward = to_contiguous(reward).view(-1)
-        mask = (seq > 0).float()
-        mask = to_contiguous(torch.cat([mask.new(mask.size(0), 1).fill_(1), mask[:, :-1]], 1)).view(-1)
-        if reward.dtype != input.dtype:
-            reward = reward.float()
-        output = - input * reward * mask
-        output = torch.sum(output) / torch.sum(mask)
+    def forward(self, sequence_logprobs, reward):
+        # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted.
+        # Can be done with something like mask = (sample > 0).float() (would not work here bc our tokens are positive)
+        #sequence_logprobs = to_contiguous(sequence_logprobs).view(-1)
+        #reward = to_contiguous(reward).view(-1)
+        #mask = (sequence > 0).float()  # select all words, but tokens like eos (would not work here bc our tokens are positive)
+        # set the first entry at 1
+        #mask = to_contiguous(torch.cat([mask.new(mask.size(0), 1).fill_(1), mask[:, :-1]], 1)).view(-1)
+        if reward.dtype != sequence_logprobs.dtype:
+            reward = reward.type(sequence_logprobs.type())
 
-        return output
+        #output = - sequence_logprobs * reward * mask
+        #output = torch.sum(output) / torch.sum(mask) #word-wise instead of caption-wise. This is inherited from original neuraltalk2
+
+        return torch.mean(- sequence_logprobs * reward)
