@@ -18,7 +18,7 @@ from utils import prepare_hierarchical_targets, get_model_name, save_model, init
 from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
 from model.encoder_decoder import ModelParams, EncoderDecoder
-from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss, RewardLoss
+from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss, SelfCriticalLoss
 from vocabulary import caption_ids_to_words, paragraph_ids_to_words
 
 try:
@@ -375,7 +375,7 @@ def main(args):
         criterion = nn.CrossEntropyLoss()
 
     if args.self_critical_after != -1:
-        rl_criterion = RewardLoss()
+        rl_criterion = SelfCriticalLoss()
 
     # When using CyclicalLR, default learning rate should be always 1.0
     if args.lr_scheduler == 'CyclicalLR':

@@ -11,8 +11,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as F
 
 from . import external as ext_models
-
-from reward import get_self_critical_reward, RewardCriterion
+from vocabulary import caption_ids_to_words
 
 Features = namedtuple('Features', 'external, internal')
 
@@ -1127,15 +1126,61 @@ class HierarchicalXEntropyLoss(nn.Module):
         return self.weight_sent, self.loss_s, self.weight_word, self.loss_w
 
 
-class RewardLoss(nn.Module):
-    # from https://github.com/ruotianluo/self-critical.pytorch
+class SelfCriticalLoss(nn.Module):
+    # https://arxiv.org/abs/1612.00563
+    # code from https://github.com/ruotianluo/self-critical.pytorch
     def __init__(self):
-        super(RewardLoss, self).__init__()
-        self.rl_criterion = RewardCriterion()
+        super(SelfCriticalLoss, self).__init__()
 
     def forward(self, sample, sample_log_probs, greedy_sample, captions, scorers, vocab, image_ids):
 
-        reward = get_self_critical_reward(greedy_sample, sample, captions, scorers, vocab, image_ids)
-        loss = self.rl_criterion(sample_log_probs, sample, torch.from_numpy(reward).to(device))
+        reward = self.get_self_critical_reward(greedy_sample, sample, captions, scorers, vocab, image_ids)
+        reward = torch.from_numpy(reward).to(device)
 
-        return loss
+        if reward.dtype != sample_log_probs.dtype:
+            reward = reward.type(sample_log_probs.type())
+
+        # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
+        # so no loss would be needed for it. Can be done with something like:
+        # mask = (sample > 0).float() (would not work here bc our tokens are positive also)
+
+        return torch.mean(- sample_log_probs * reward)
+
+    @staticmethod
+    def get_self_critical_reward(greedy_sample, sample, target, scorers, vocab, image_ids):
+        scorer = scorers['CIDEr']
+        gts = {}
+        res = {}
+        res_greedy = {}
+
+        for j in range(target.shape[0]):
+            jid = image_ids[j]
+            if jid not in gts:
+                gts[jid] = []
+            # if params.hierarchical_model:
+            #     gts[jid].append(paragraph_ids_to_words(captions[j], vocab).lower())
+            # else:
+            gts[jid].append(caption_ids_to_words(target[j], vocab).lower())
+
+        for j in range(sample.shape[0]):
+            jid = image_ids[j]
+            # if params.hierarchical_model:
+            #     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+            # else:
+            res[jid] = [caption_ids_to_words(sample[j], vocab).lower()]
+
+        for j in range(greedy_sample.shape[0]):
+            jid = image_ids[j]
+            # if params.hierarchical_model:
+            #     res_greedy[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+            # else:
+            res_greedy[jid] = [caption_ids_to_words(greedy_sample[j], vocab).lower()]
+
+        _, score = scorer.compute_score(gts, res)
+        _, score_baseline = scorer.compute_score(gts, res_greedy)
+
+        scores = score - score_baseline
+
+        rewards = np.repeat(scores[:, np.newaxis], sample.size(1), 1)
+
+        return rewards
