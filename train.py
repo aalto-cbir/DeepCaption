@@ -101,6 +101,19 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             # models that share embedding weights
             projection = model.decoder.projection.weight
             loss = criterion(projection, outputs, targets)
+        elif args.self_critical_after != -1 and epoch >= args.self_critical_after:
+            outputs, log_probs = model.sample(images, init_features, persist_features,
+                                              max_seq_length=20, start_token_id=vocab('<start>'),
+                                              greedy_decoding=False, output_logprobs=True)
+
+            with torch.no_grad():
+                greedy_outputs = model.sample(images, init_features, persist_features,
+                                              max_seq_length=20, start_token_id=vocab('<start>'),
+                                              greedy_decoding=True)
+
+            captions_target = captions[:, 1:] if params.rnn_hidden_init == 'from_features' and not params.hierarchical_model else captions
+
+            loss = criterion(outputs, log_probs, greedy_outputs, captions_target, scorers, vocab, image_ids)
         else:
             loss = criterion(outputs, targets)
 
@@ -506,6 +519,7 @@ def main(args):
             if not sc_activated and args.self_critical_after != -1 and epoch >= args.self_critical_after:
                 sc_activated = True
                 criterion = rl_criterion
+                print('Changing loss function to Self Critical')
 
             for i, data in enumerate(data_loader):
 

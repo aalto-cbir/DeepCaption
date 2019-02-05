@@ -1154,27 +1154,27 @@ class SelfCriticalLoss(nn.Module):
         res_greedy = {}
 
         for j in range(target.shape[0]):
-            jid = image_ids[j]
-            if jid not in gts:
-                gts[jid] = []
+            #jid = image_ids[j]
+            #if jid not in gts:
+            gts[j] = []
             # if params.hierarchical_model:
             #     gts[jid].append(paragraph_ids_to_words(captions[j], vocab).lower())
             # else:
-            gts[jid].append(caption_ids_to_words(target[j], vocab).lower())
+            gts[j].append(caption_ids_to_words(target[j], vocab).lower())
 
         for j in range(sample.shape[0]):
-            jid = image_ids[j]
+            #jid = image_ids[j]
             # if params.hierarchical_model:
             #     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
             # else:
-            res[jid] = [caption_ids_to_words(sample[j], vocab).lower()]
+            res[j] = [caption_ids_to_words(sample[j], vocab).lower()]
 
         for j in range(greedy_sample.shape[0]):
-            jid = image_ids[j]
+            #jid = image_ids[j]
             # if params.hierarchical_model:
             #     res_greedy[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
             # else:
-            res_greedy[jid] = [caption_ids_to_words(greedy_sample[j], vocab).lower()]
+            res_greedy[j] = [caption_ids_to_words(greedy_sample[j], vocab).lower()]
 
         _, score = scorer.compute_score(gts, res)
         _, score_baseline = scorer.compute_score(gts, res_greedy)
