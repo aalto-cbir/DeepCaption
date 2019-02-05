@@ -102,11 +102,10 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             projection = model.decoder.projection.weight
             loss = criterion(projection, outputs, targets)
         elif args.self_critical_after != -1 and epoch >= args.self_critical_after:
-            outputs, log_probs = model.sample(images, init_features, persist_features,
-                                              max_seq_length=20, start_token_id=vocab('<start>'),
-                                              greedy_decoding=False, output_logprobs=True)
-
             with torch.no_grad():
+                outputs, log_probs = model.sample(images, init_features, persist_features,
+                                                  max_seq_length=20, start_token_id=vocab('<start>'),
+                                                  greedy_decoding=False, output_logprobs=True)
                 greedy_outputs = model.sample(images, init_features, persist_features,
                                               max_seq_length=20, start_token_id=vocab('<start>'),
                                               greedy_decoding=True)
@@ -518,6 +517,7 @@ def main(args):
             # If start self critical training
             if not sc_activated and args.self_critical_after != -1 and epoch >= args.self_critical_after:
                 sc_activated = True
+                optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
                 criterion = rl_criterion
                 print('Changing loss function to Self Critical')
 
