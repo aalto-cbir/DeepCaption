@@ -129,7 +129,7 @@ def save_stats(args, params, all_stats, postfix=None, writer=None):
 
     # Write events to tensorboardx if available:
     if writer is not None:
-        epoch = int(max(list(all_stats.keys())))
+        epoch = max([int(k) for k in all_stats.keys()])
         writer.add_scalars('train_stats', all_stats[str(epoch)], epoch)
 
 

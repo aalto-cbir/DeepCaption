@@ -125,3 +125,12 @@ subset        = test16g
 [picsom:trecvid2018:testall]
 subset        = testall
 
+[picsom:tgif]
+root_dir      = /proj/mediaind/picsom/databases/tgif
+features_path = features
+caption_path  = textdumps/gt-cooked.txt
+label_map     = label-map.txt
+image_dir     =
+
+[picsom:tgif:imageset]
+subset        = imageset

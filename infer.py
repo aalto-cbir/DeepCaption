@@ -69,7 +69,7 @@ def infer(args):
     if args.ext_persist_features:
         params.update_ext_persist_features(args.ext_persist_features)
 
-    print("Loaded model parameters:")
+    print('Loaded model parameters from <{}>:'.format(args.model))
     print(params)
 
     # Load the vocabulary:
