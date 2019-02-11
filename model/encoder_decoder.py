@@ -5,6 +5,8 @@ import torch.nn as nn
 import torchvision.models as models
 
 import numpy as np
+import gensim
+from gensim.scripts.glove2word2vec import glove2word2vec
 
 from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -241,6 +243,32 @@ class FeatureExtractor(nn.Module):
             el.append(e)
             total_dim += e.output_dim
         return el, total_dim
+
+
+class EmbedSentence(nn.Module):
+    def __init__(self, embedding_type, path_to_weights, vocab_size=None, embed_size=None):
+        super(EmbedSentence, self).__init__()
+
+        if 'word2vec' in embedding_type:
+            model = gensim.models.KeyedVectors.load_word2vec_format(path_to_weights, binary=True)
+        elif 'glove' in embedding_type:
+            glove2word2vec(path_to_weights, './processed_glove.txt')
+            model = gensim.models.KeyedVectors.load_word2vec_format('./processed_glove.txt', binary=False)
+            os.remove('./processed_glove.txt')
+        elif 'fasttext' in embedding_type:
+            model = str
+        elif 'default' in embedding_type:
+            self.embed = nn.Embedding(vocab_size, embed_size)
+            return
+        else:
+            model = str
+
+        weights = torch.FloatTensor(model.syn0)
+        print('shape of text embedding weights: ', weights.shape)
+        self.embed = nn.Embedding.from_pretrained(weights)
+
+    def forward(self, sentence):
+        return self.embed(sentence)
 
 
 class EncoderCNN(nn.Module):
