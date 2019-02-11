@@ -250,18 +250,25 @@ class EmbedSentence(nn.Module):
         super(EmbedSentence, self).__init__()
 
         if 'word2vec' in embedding_type:
+            if path_to_weights is None:
+                print('ERROR: specify path to weight vectors!')
+                sys.exit(1)
             model = gensim.models.KeyedVectors.load_word2vec_format(path_to_weights, binary=True)
         elif 'glove' in embedding_type:
+            if path_to_weights is None:
+                print('ERROR: specify path to weight vectors!')
+                sys.exit(1)
             glove2word2vec(path_to_weights, './processed_glove.txt')
             model = gensim.models.KeyedVectors.load_word2vec_format('./processed_glove.txt', binary=False)
             os.remove('./processed_glove.txt')
-        elif 'fasttext' in embedding_type:
-            model = str
-        elif 'default' in embedding_type:
+        elif None not in (vocab_size, embed_size):
+            print('using PyTorch text embedding layer')
             self.embed = nn.Embedding(vocab_size, embed_size)
             return
         else:
-            model = str
+            print('ERROR: creating embedding layer!'
+                  'provide vocab_size, embed_size values or use embedding_type = word2vec|glove')
+            sys.exit(1)
 
         weights = torch.FloatTensor(model.syn0)
         print('shape of text embedding weights: ', weights.shape)
