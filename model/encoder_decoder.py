@@ -13,7 +13,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as F
 
 from . import external as ext_models
-from vocabulary import caption_ids_to_words
+from vocabulary import output_to_human
 
 Features = namedtuple('Features', 'external, internal')
 
@@ -1169,7 +1169,7 @@ class SelfCriticalLoss(nn.Module):
 
     def forward(self, sample, sample_log_probs, greedy_sample, captions, scorers, vocab, image_ids):
 
-        reward = self.get_self_critical_reward(greedy_sample, sample, captions, scorers, vocab, image_ids)
+        reward = self.get_self_critical_reward(greedy_sample, sample, captions, scorers, vocab, keep_tokens=True)
         reward = torch.from_numpy(reward).to(device)
 
         if reward.dtype != sample_log_probs.dtype:
@@ -1182,34 +1182,11 @@ class SelfCriticalLoss(nn.Module):
         return torch.mean(- sample_log_probs * reward)
 
     @staticmethod
-    def get_self_critical_reward(greedy_sample, sample, target, scorers, vocab, image_ids):
+    def get_self_critical_reward(greedy_sample, sample, target, scorers, vocab, keep_tokens=False):
         scorer = scorers['CIDEr']
-        gts = {}
-        res = {}
-        res_greedy = {}
-
-        for j in range(target.shape[0]):
-            #jid = image_ids[j]
-            #if jid not in gts:
-            gts[j] = []
-            # if params.hierarchical_model:
-            #     gts[jid].append(paragraph_ids_to_words(captions[j], vocab).lower())
-            # else:
-            gts[j].append(caption_ids_to_words(target[j], vocab).lower())
-
-        for j in range(sample.shape[0]):
-            #jid = image_ids[j]
-            # if params.hierarchical_model:
-            #     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
-            # else:
-            res[j] = [caption_ids_to_words(sample[j], vocab).lower()]
-
-        for j in range(greedy_sample.shape[0]):
-            #jid = image_ids[j]
-            # if params.hierarchical_model:
-            #     res_greedy[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
-            # else:
-            res_greedy[j] = [caption_ids_to_words(greedy_sample[j], vocab).lower()]
+        gts = output_to_human(target, vocab, keep_tokens=keep_tokens)
+        res = output_to_human(sample, vocab, keep_tokens=keep_tokens)
+        res_greedy = output_to_human(greedy_sample, vocab, keep_tokens=keep_tokens)
 
         _, score = scorer.compute_score(gts, res)
         _, score_baseline = scorer.compute_score(gts, res_greedy)
