@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from utils import prepare_hierarchical_targets, get_model_name, save_model, init_stats, log_model_data, save_stats, \
-    get_teacher_prob, clip_gradients, cyclical_lr
+    get_teacher_prob, clip_gradients, cyclical_lr, get_model_path
 
 # (Needed to handle Vocabulary pickle)
 from vocabulary import get_vocab
@@ -516,10 +516,18 @@ def main(args):
 
             # If start self critical training
             if not sc_activated and args.self_critical_after != -1 and epoch >= args.self_critical_after:
-                sc_activated = True
+                if all_stats:
+                    best_ep, best_cider = max([(ep, all_stats[ep]['validation_cider']) for ep in all_stats],
+                                              key=lambda x: x[1])
+                    print('Loading model from epoch', best_ep, 'which has the better score with', best_cider)
+                    state = torch.load(get_model_path(args, params, int(best_ep)))
+                    model = EncoderDecoder(params, device, len(vocab), state, ef_dims, lr_dict=lr_dict)
+                    opt_params = model.get_opt_params()
+
                 optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
                 criterion = rl_criterion
                 print('Changing loss function to Self Critical')
+                sc_activated = True
 
             for i, data in enumerate(data_loader):
 

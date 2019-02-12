@@ -49,10 +49,15 @@ def get_model_name(args, params):
     return model_name
 
 
+def get_model_path(args, params, epoch):
+    model_name = get_model_name(args, params)
+    file_name = 'ep{}.model'.format(epoch)
+    model_path = os.path.join(args.output_root, args.model_path, model_name, file_name)
+    return model_path
+
+
 # TODO: convert parameters to **kwargs
 def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
-    model_name = get_model_name(args, params)
-
     state = {
         'hierarchical_model': params.hierarchical_model,
         'epoch': epoch + 1,
@@ -87,9 +92,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         state['coupling_alpha'] = params.coupling_alpha
         state['coupling_beta'] = params.coupling_beta
 
-    file_name = 'ep{}.model'.format(epoch + 1)
-
-    model_path = os.path.join(args.output_root, args.model_path, model_name, file_name)
+    model_path = get_model_path(args, params, epoch + 1)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
     torch.save(state, model_path)
