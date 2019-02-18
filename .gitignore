@@ -1,3 +1,4 @@
+output/
 *.idea/
 resources*
 __pycache__
