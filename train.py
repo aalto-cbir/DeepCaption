@@ -375,6 +375,7 @@ def main(args):
     # Optimizer and loss #
     ######################
 
+    sc_activated = False
     opt_params = model.get_opt_params()
 
     # Loss and optimizer
@@ -386,7 +387,10 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
-    if args.self_critical_after != -1:
+    if args.self_critical_after != -1 and start_epoch >= args.self_critical_after:
+        criterion = SelfCriticalLoss()
+        sc_activated = True
+    elif args.self_critical_after != -1:  # save it for later
         rl_criterion = SelfCriticalLoss()
 
     # When using CyclicalLR, default learning rate should be always 1.0
@@ -395,7 +399,9 @@ def main(args):
     else:
         default_lr = 0.001
 
-    if args.optimizer == 'adam':
+    if sc_activated:
+        optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
+    elif args.optimizer == 'adam':
         optimizer = torch.optim.Adam(opt_params, lr=default_lr, weight_decay=args.weight_decay)
     elif args.optimizer == 'rmsprop':
         optimizer = torch.optim.RMSprop(opt_params, lr=default_lr, weight_decay=args.weight_decay)
@@ -414,9 +420,10 @@ def main(args):
 
     # Set optimizer state to the one found in a loaded model, unless
     # we are doing a transfer learning step from flat to hierarchical model,
+    # or we are using self-critical loss,
     # or the number of unique parameter groups has changed, or the user
     # has explicitly told us *not to* reuse optimizer parameters from before
-    if state and not transfer_language_model and not args.optimizer_reset:
+    if state and not transfer_language_model and not sc_activated and not args.optimizer_reset:
         # Check that number of parameter groups is the same
         if len(optimizer.param_groups) == len(state['optimizer']['param_groups']):
             optimizer.load_state_dict(state['optimizer'])
@@ -503,7 +510,6 @@ def main(args):
             stats = {}
             begin = datetime.now()
 
-            sc_activated = False
             total_loss = 0
 
             if params.hierarchical_model:
