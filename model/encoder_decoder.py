@@ -1169,7 +1169,7 @@ class SelfCriticalLoss(nn.Module):
 
     def forward(self, sample, sample_log_probs, greedy_sample, captions, scorers, vocab, image_ids):
 
-        reward = self.get_self_critical_reward(greedy_sample, sample, captions, scorers, vocab, keep_tokens=True)
+        reward = self.get_self_critical_reward(greedy_sample, sample, captions, scorers, vocab, keep_tokens=False)
         reward = torch.from_numpy(reward).to(device)
 
         if reward.dtype != sample_log_probs.dtype:
