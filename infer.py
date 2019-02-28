@@ -47,11 +47,11 @@ class infer_object:
         print('Bulding models.')
 
         if device.type == 'cpu':
-            state = torch.load(args['model'], map_location=lambda storage, loc: storage)
+            self.state = torch.load(args['model'], map_location=lambda storage, loc: storage)
         else:
-            state = torch.load(args['model'])
+            self.state = torch.load(args['model'])
             
-        self.params = ModelParams(state)
+        self.params = ModelParams(self.state)
         if args['ext_features']:
             self.params.update_ext_features(args['ext_features'])
         if args['ext_persist_features']:
@@ -75,7 +75,16 @@ class infer_object:
             print('Size of the vocabulary is {}'.format(len(self.vocab)))
 
         ef_dims = None
-        self.model = EncoderDecoder(self.params, device, len(self.vocab), state, ef_dims).eval()
+        self.model = EncoderDecoder(self.params, device, len(self.vocab), self.state, ef_dims).eval()
+        # print(self.params.ext_features_dim)
+
+
+    def external_features(self):
+        ef_dims = self.params.ext_features_dim
+        ret = [(self.state['features'].external,         ef_dims[0]),
+               (self.state['persist_features'].external, ef_dims[1])]
+        # print(ret)
+        return ret
 
 
     def infer(self, args):
