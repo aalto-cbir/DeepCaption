@@ -1162,15 +1162,17 @@ class HierarchicalXEntropyLoss(nn.Module):
 
 
 class SelfCriticalLoss(nn.Module):
-    # https://arxiv.org/abs/1612.00563
-    # code from https://github.com/ruotianluo/self-critical.pytorch
+    """Reinforcement Learning Self-critical loss.
+    https://arxiv.org/abs/1612.00563
+    Code from https://github.com/ruotianluo/self-critical.pytorch
+    """
     def __init__(self):
         super(SelfCriticalLoss, self).__init__()
 
-    def forward(self, sample, sample_log_probs, greedy_sample, captions, scorers, vocab, image_ids, gts_sc):
-        assert len(image_ids) == sample.shape[0] == greedy_sample.shape[0]
+    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
+        assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
 
-        reward = self.get_self_critical_reward(greedy_sample, sample, captions, scorers, vocab, image_ids, gts_sc, keep_tokens=False)
+        reward = self.get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False)
         reward = torch.from_numpy(reward).to(device)
 
         if reward.dtype != sample_log_probs.dtype:
@@ -1183,11 +1185,10 @@ class SelfCriticalLoss(nn.Module):
         return torch.mean(- sample_log_probs * reward)
 
     @staticmethod
-    def get_self_critical_reward(greedy_sample, sample, target, scorers, vocab, image_ids, gts_sc, keep_tokens=False):
+    def get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False):
         scorer = scorers['CIDEr']
-        # We construct the dictionaries addressed by index, because if we address them by image_id,
-        # these can be not unique and overlap. Therefore we end up with a reward shape not matching
-        gts = {i: gts_sc[iid] for i, iid in enumerate(image_ids)}
+
+        gts = dict(enumerate(gts_batch))
         res = output_to_human(sample, vocab, keep_tokens=keep_tokens)
         res_greedy = output_to_human(greedy_sample, vocab, keep_tokens=keep_tokens)
 

@@ -110,9 +110,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                               max_seq_length=20, start_token_id=vocab('<start>'),
                                               greedy_decoding=True)
 
-            captions_target = captions[:, 1:] if params.rnn_hidden_init == 'from_features' and not params.hierarchical_model else captions
-
-            loss = criterion(outputs, log_probs, greedy_outputs, captions_target, scorers, vocab, image_ids, gts)
+            loss = criterion(outputs, log_probs, greedy_outputs, [gts[i] for i in image_ids], scorers, vocab)
         else:
             loss = criterion(outputs, targets)
 
@@ -329,6 +327,8 @@ def main(args):
                                           ext_feature_sets=ext_feature_sets,
                                           skip_images=not params.has_internal_features(),
                                           verbose=args.verbose, ensure_unique_label=args.self_critical_after != -1)
+        if args.self_critical_after != -1:
+            gts_sc = get_ground_truth_captions(data_loader.dataset)
 
     if args.validate is not None:
         valid_loader, ef_dims = get_loader(validation_dataset_params, vocab, transform,
@@ -337,8 +337,8 @@ def main(args):
                                            ext_feature_sets=ext_feature_sets,
                                            skip_images=not params.has_internal_features(),
                                            verbose=args.verbose)
-
-    gts_sc = get_ground_truth_captions(data_loader.dataset)
+        if args.self_critical_after != -1:
+            gts_sc_valid = get_ground_truth_captions(valid_loader.dataset)
 
     #########################################
     # Setup (optional) TensorBoardX logging #
@@ -618,8 +618,7 @@ def main(args):
                                                       greedy_decoding=True)
                     model.train()
 
-                    captions_target = captions[:, 1:] if params.rnn_hidden_init == 'from_features' and not params.hierarchical_model else captions
-                    loss = criterion(outputs, log_probs, greedy_outputs, captions_target, scorers, vocab, image_ids, gts_sc)
+                    loss = criterion(outputs, log_probs, greedy_outputs, [gts_sc[i] for i in image_ids], scorers, vocab)
                 else:
                     loss = criterion(outputs, targets)
 
