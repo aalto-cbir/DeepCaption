@@ -998,12 +998,12 @@ class IncoreDataset(data.Dataset):
                  iter_over_images=False, feature_loaders=None, config_dict=None):
         self.feature_loaders = feature_loaders
 
-        print(len(root), len(root[0]), len(root[0][0]))
+        # print(len(root), len(root[0]), len(root[0][0]))
         
         if type(root) is list:
             self.featurelist = root
         else:
-            print('ERROR: root is not a file list!')
+            print('ERROR: root is not a feature list list!')
             sys.exit(1)
 
         print("IncoreDataset: loaded {} features.".format(len(self.featurelist)))
@@ -1012,10 +1012,8 @@ class IncoreDataset(data.Dataset):
         """Returns one testing sample as a tuple (image, caption, image_id)."""
 
         feat = self.featurelist[index]
-        print(index, len(feat))
+        # print(index, len(feat))
         
-        #feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
-
         fs = [ torch.tensor(feat[0]).float() ]
         if feat[1] is not None:
             fs.append(torch.tensor(feat[1]).float())
