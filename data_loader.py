@@ -877,7 +877,7 @@ class TRECVID2018Dataset(data.Dataset):
 
 class PicSOMDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, ensure_unique_label=False):
         from picsom.label_index import picsom_label_index
         from picsom.class_file  import picsom_class
         from picsom.bin_data    import picsom_bin_data
@@ -893,6 +893,7 @@ class PicSOMDataset(data.Dataset):
         self.picsom_label_map = config_dict.get('label_map', None)
         self.no_tokenize      = config_dict.get('no_tokenize', False)
         self.show_tokens      = config_dict.get('show_tokens', False)
+        self.ensure_unique_label = ensure_unique_label
 
         print('PicSOM root={:s} database={:s}'.format(self.picsom_root,
                                                       self.picsom_database))
@@ -958,6 +959,8 @@ class PicSOMDataset(data.Dataset):
                     texts = a.group(3).split(' # ')
                     #if len(texts)!=1:
                     #    print(label, len(texts))
+                    label = label if not self.ensure_unique_label \
+                        else self.picsom_database + ':' + self.subset + ':' + label
                     for text in texts:
                         self.data.append((label, text, idxs))
         
@@ -1307,7 +1310,7 @@ def set_collate_arguments(func, **kwargs):
 
 def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_workers,
                ext_feature_sets=None, skip_images=False, iter_over_images=False,
-               _collate_fn=collate_fn, verbose=False):
+               _collate_fn=collate_fn, verbose=False, ensure_unique_label=False):
     """Returns torch.utils.data.DataLoader for user-specified dataset."""
 
     datasets = []
@@ -1344,7 +1347,7 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
         dataset = dataset_cls(root=root, json_file=json_file, vocab=vocab,
                               subset=subset, transform=transform, skip_images=skip_images,
                               iter_over_images=iter_over_images, feature_loaders=loaders,
-                              config_dict=config_dict)
+                              config_dict=config_dict, ensure_unique_label=ensure_unique_label)
 
         datasets.append(dataset)
 
