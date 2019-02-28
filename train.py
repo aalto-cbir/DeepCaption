@@ -161,6 +161,8 @@ def main(args):
     global device
     device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
 
+    sc_will_happen = args.self_critical_after != -1
+
     if args.validate is None and args.lr_scheduler == 'ReduceLROnPlateau':
         print('ERROR: you need to enable validation in order to use default lr_scheduler (ReduceLROnPlateau)')
         print('Hint: use something like --validate=coco:val2017')
@@ -180,7 +182,7 @@ def main(args):
                              (0.229, 0.224, 0.225))])
 
     scorers = {}
-    if args.validation_scoring is not None or args.self_critical_after != -1:
+    if args.validation_scoring is not None or sc_will_happen:
         for s in args.validation_scoring.split(','):
             s = s.lower().strip()
             if s == 'cider':
@@ -327,8 +329,8 @@ def main(args):
                                           shuffle=True, num_workers=args.num_workers,
                                           ext_feature_sets=ext_feature_sets,
                                           skip_images=not params.has_internal_features(),
-                                          verbose=args.verbose, ensure_unique_label=args.self_critical_after != -1)
-        if args.self_critical_after != -1:
+                                          verbose=args.verbose, ensure_unique_label=sc_will_happen)
+        if sc_will_happen:
             gts_sc = get_ground_truth_captions(data_loader.dataset)
 
     if args.validate is not None:
@@ -338,7 +340,7 @@ def main(args):
                                            ext_feature_sets=ext_feature_sets,
                                            skip_images=not params.has_internal_features(),
                                            verbose=args.verbose)
-        if args.self_critical_after != -1:
+        if sc_will_happen:
             gts_sc_valid = get_ground_truth_captions(valid_loader.dataset)
 
     #########################################
@@ -390,10 +392,10 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
-    if args.self_critical_after != -1 and start_epoch >= args.self_critical_after:
+    if sc_will_happen and start_epoch >= args.self_critical_after:
         criterion = SelfCriticalLoss()
         sc_activated = True
-    elif args.self_critical_after != -1:  # save it for later
+    elif sc_will_happen:  # save it for later
         rl_criterion = SelfCriticalLoss()
 
     # When using CyclicalLR, default learning rate should be always 1.0
@@ -525,7 +527,7 @@ def main(args):
                             'sum': 0, 'unk_cnt': 0, 'unk_sum': 0}
 
             # If start self critical training
-            if not sc_activated and args.self_critical_after != -1 and epoch >= args.self_critical_after:
+            if not sc_activated and sc_will_happen and epoch >= args.self_critical_after:
                 if all_stats:
                     best_ep, best_cider = max([(ep, all_stats[ep]['validation_cider']) for ep in all_stats],
                                               key=lambda x: x[1])
