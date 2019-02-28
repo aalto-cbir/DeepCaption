@@ -37,6 +37,7 @@ class DatasetParams:
 
         # Generic, "fall back" dataset
         self.config['generic'] = {'dataset_class': 'GenericDataset'}
+        self.config['incore']  = {'dataset_class': 'IncoreDataset'}
 
         # If the configuration file is not found, we can still use
         # 'generic' dataset with sensible defaults when infering.
@@ -73,7 +74,8 @@ class DatasetParams:
 
         return config_path
 
-    def get_params(self, args_dataset, image_dir=None, image_files=None):
+    def get_params(self, args_dataset, image_dir=None, image_files=None,
+                   image_features=None):
 
         datasets = args_dataset.split('+')
         configs = []
@@ -103,6 +105,8 @@ class DatasetParams:
                         image_list += glob.glob(image_dir + '/*.jpeg')
                         image_list += glob.glob(image_dir + '/*.png')
                     root = image_list
+                elif dataset == 'incore':
+                    root = image_features
                 else:
                     root = self._cfg_path(cfg, 'image_dir')
 
@@ -187,6 +191,7 @@ class ExternalFeature:
 
         if not os.path.exists(full_path):
             raise FileNotFoundError('ERROR: external feature file not found: ' + full_path)
+
         if filename.endswith('.h5'):
             import h5py
             self.f = h5py.File(full_path, 'r')
@@ -933,7 +938,7 @@ class PicSOMDataset(data.Dataset):
                         ll[label] = 1
                         label_map[label] = a.group(2)
             print('PicSOM {} label map entries loaded from {}'.
-                  format(len(ll), self.picsom_label_map))
+                  format(len(ll), tt))
 
         self.data = []
         tt = json_file
@@ -987,6 +992,39 @@ class PicSOMDataset(data.Dataset):
     def __len__(self):
         return len(self.data)
         
+
+class IncoreDataset(data.Dataset):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
+                 iter_over_images=False, feature_loaders=None, config_dict=None):
+        self.feature_loaders = feature_loaders
+
+        print(len(root), len(root[0]), len(root[0][0]))
+        
+        if type(root) is list:
+            self.featurelist = root
+        else:
+            print('ERROR: root is not a file list!')
+            sys.exit(1)
+
+        print("IncoreDataset: loaded {} features.".format(len(self.featurelist)))
+
+    def __getitem__(self, index):
+        """Returns one testing sample as a tuple (image, caption, image_id)."""
+
+        feat = self.featurelist[index]
+        print(index, len(feat))
+        
+        #feature_sets = ExternalFeature.load_sets(self.feature_loaders, path)
+
+        fs = [ torch.tensor(feat[0]).float() ]
+        if feat[1] is not None:
+            fs.append(torch.tensor(feat[1]).float())
+        
+        return torch.zeros(1, 1), None, None, fs
+
+    def __len__(self):
+        return len(self.featurelist)
+
 
 class GenericDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
@@ -1288,6 +1326,8 @@ def get_dataset_class(cls_name):
         return TRECVID2018Dataset
     elif cls_name == 'PicSOMDataset':
         return PicSOMDataset
+    elif cls_name == 'IncoreDataset':
+        return IncoreDataset
     elif cls_name == 'GenericDataset':
         return GenericDataset
     else:
@@ -1329,6 +1369,9 @@ def get_loader(dataset_configs, vocab, transform, batch_size, shuffle, num_worke
             # List of tuples into two lists...
             loaders, dims = zip(*loaders_and_dims)
 
+        if dataset_config.dataset_class=='IncoreDataset':
+            dims = None
+            
         # Unzip training images to /tmp/data if image_dir argument points to zip file:
         if isinstance(root, str) and zipfile.is_zipfile(root):
             root = unzip_image_dir(root)
