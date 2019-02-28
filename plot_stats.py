@@ -139,6 +139,7 @@ def main(args):
 
 
 if __name__ == '__main__':
+    print('matplotlib.__version__ =',matplotlib.__version__)
     import argparse
 
     parser = argparse.ArgumentParser()
