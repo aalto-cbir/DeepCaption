@@ -3,10 +3,12 @@ import glob
 import re
 import json
 import math
+from collections import defaultdict
 import numpy as np
 from PIL import Image
 import torch
 from torch.nn.utils.rnn import pack_padded_sequence
+from torch.utils.data import Dataset, ConcatDataset
 
 
 def basename(fname, split=None):
@@ -354,3 +356,26 @@ def to_contiguous(tensor):
         return tensor
     else:
         return tensor.contiguous()
+
+
+def get_ground_truth_captions(dataset):
+    """
+    Get the list of captions. If the dataset is a ConcatDataset, these ids must be unique.
+    :param dataset: Dataset or ConcatDataset class
+    :return: List of captions for every id
+    """
+    if isinstance(dataset, ConcatDataset):
+        assert all([d.ensure_unique_label for d in dataset.datasets]), \
+            'All datasets in the concatenation must ensure that the labels are unique to not mix them'
+        gts = defaultdict(list)
+        for d in dataset.datasets:
+            for label, text, idxs in d.data:
+                gts[label].append(text)
+        return gts
+    elif isinstance(dataset, Dataset):
+        gts = defaultdict(list)
+        for label, text, idxs in dataset.data:
+            gts[label].append(text)
+        return gts
+    else:
+        raise NotImplementedError

@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from utils import prepare_hierarchical_targets, get_model_name, save_model, init_stats, log_model_data, save_stats, \
-    get_teacher_prob, clip_gradients, cyclical_lr, get_model_path
+    get_teacher_prob, clip_gradients, cyclical_lr, get_model_path, get_ground_truth_captions
 
 # (Needed to handle Vocabulary pickle)
 from vocabulary import get_vocab
@@ -112,7 +112,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
 
             captions_target = captions[:, 1:] if params.rnn_hidden_init == 'from_features' and not params.hierarchical_model else captions
 
-            loss = criterion(outputs, log_probs, greedy_outputs, captions_target, scorers, vocab, image_ids)
+            loss = criterion(outputs, log_probs, greedy_outputs, captions_target, scorers, vocab, image_ids, gts)
         else:
             loss = criterion(outputs, targets)
 
@@ -207,7 +207,7 @@ def main(args):
     state = None
 
     if args.load_model:
-        state = torch.load(args.load_model)
+        state = torch.load(args.load_model, map_location=device)
         new_external_features = arg_params.features.external
 
         params = ModelParams(state, arg_params=arg_params)
@@ -328,7 +328,7 @@ def main(args):
                                           shuffle=True, num_workers=args.num_workers,
                                           ext_feature_sets=ext_feature_sets,
                                           skip_images=not params.has_internal_features(),
-                                          verbose=args.verbose)
+                                          verbose=args.verbose, ensure_unique_label=args.self_critical_after != -1)
 
     if args.validate is not None:
         valid_loader, ef_dims = get_loader(validation_dataset_params, vocab, transform,
@@ -337,6 +337,8 @@ def main(args):
                                            ext_feature_sets=ext_feature_sets,
                                            skip_images=not params.has_internal_features(),
                                            verbose=args.verbose)
+
+    gts_sc = get_ground_truth_captions(data_loader.dataset)
 
     #########################################
     # Setup (optional) TensorBoardX logging #
@@ -617,7 +619,7 @@ def main(args):
                     model.train()
 
                     captions_target = captions[:, 1:] if params.rnn_hidden_init == 'from_features' and not params.hierarchical_model else captions
-                    loss = criterion(outputs, log_probs, greedy_outputs, captions_target, scorers, vocab, image_ids)
+                    loss = criterion(outputs, log_probs, greedy_outputs, captions_target, scorers, vocab, image_ids, gts_sc)
                 else:
                     loss = criterion(outputs, targets)
 
