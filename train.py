@@ -36,7 +36,8 @@ torch.backends.cudnn.benchmark = False
 device = None
 
 
-def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats, epoch):
+def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats, epoch,
+                sc_activated=False, gts_sc_val=None):
     begin = datetime.now()
     model.eval()
 
@@ -58,7 +59,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             (images, captions, lengths, image_ids, features) = data
             sorting_order = None
 
-        if len(scorers) > 0:
+        if len(scorers) > 0 and not sc_activated:
             for j in range(captions.shape[0]):
                 jid = image_ids[j]
                 if jid not in gts:
@@ -101,7 +102,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             # models that share embedding weights
             projection = model.decoder.projection.weight
             loss = criterion(projection, outputs, targets)
-        elif args.self_critical_after != -1 and epoch >= args.self_critical_after:
+        elif sc_activated:
             with torch.no_grad():
                 outputs, log_probs = model.sample(images, init_features, persist_features,
                                                   max_seq_length=20, start_token_id=vocab('<start>'),
@@ -110,7 +111,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                               max_seq_length=20, start_token_id=vocab('<start>'),
                                               greedy_decoding=True)
 
-            loss = criterion(outputs, log_probs, greedy_outputs, [gts[i] for i in image_ids], scorers, vocab)
+            loss = criterion(outputs, log_probs, greedy_outputs, [gts_sc_val[i] for i in image_ids], scorers, vocab)
         else:
             loss = criterion(outputs, targets)
 
@@ -504,7 +505,8 @@ def main(args):
             print('WARNING: epoch {} already validated, skipping...'.format(epoch + 1))
             return
 
-        val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats, epoch)
+        val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats, epoch,
+                               sc_activated, gts_sc_valid)
         all_stats[str(epoch + 1)] = stats
         save_stats(args, params, all_stats, postfix=stats_postfix)
     else:
@@ -697,7 +699,7 @@ def main(args):
 
             if args.validate is not None and (epoch + 1) % args.validation_step == 0:
                 val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats,
-                                       epoch)
+                                       epoch, sc_activated, gts_sc_valid)
 
                 if args.lr_scheduler == 'ReduceLROnPlateau':
                     scheduler.step(val_loss)
