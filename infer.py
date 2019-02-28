@@ -28,7 +28,7 @@ device = None
 
 class infer_object:
     def __init__(self, args):
-        print('__init__() :', args)
+        # print('__init__() :', args)
 
         if 'cpu' not in args:
             args['cpu'] = False
@@ -88,7 +88,7 @@ class infer_object:
 
 
     def infer(self, args):
-        print('infer() :', args)
+        # print('infer() :', args)
 
         if 'image_features' not in args:
             args['image_features'] = None
