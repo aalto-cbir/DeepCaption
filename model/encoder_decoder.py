@@ -653,14 +653,24 @@ class DecoderRNN(nn.Module):
 
 
 class EncoderDecoder(nn.Module):
-    def __init__(self, params, device, vocab_size, state, ef_dims, lr_dict={}):
+    def __init__(self, params, device, vocab_size, state, ef_dims_x=None, lr_dict=None):
         """Vanilla EncoderDecoder model
-        :param params_lr - optional parameter specifying a dict of parameter groups for which
-        a special learning rate needs to be applied"""
+        :param lr_dict Optional parameter specifying a dict of parameter groups for which
+        a special learning rate needs to be applied.
+        """
         super(EncoderDecoder, self).__init__()
         print('Using device: {}'.format(device.type))
         print('Initializing EncoderDecoder model...')
 
+        if ef_dims_x is not None:
+            ef_dims = ef_dims_x
+        elif 'ext_features_dim' in state:
+            ef_dims = state['ext_features_dim']
+        else:
+            raise ValueError('No external features dimensions found')
+
+        params.ext_features_dim = list(ef_dims)
+            
         if params.hierarchical_model:
             self.model_type = 'hierarchical_model'
             _DecoderRNN = HierarchicalDecoderRNN
@@ -677,6 +687,7 @@ class EncoderDecoder(nn.Module):
 
         # Use separate parameter groups for hierarchical model for more control
         # over the learning rate.
+        lr_dict = {} if lr_dict is None else lr_dict
         if params.hierarchical_model:
             if lr_dict.get('word_decoder'):
                 lr = lr_dict.get('word_decoder')

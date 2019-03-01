@@ -76,6 +76,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         'encoder_dropout': params.encoder_dropout,
         'encoder_non_lin': params.encoder_non_lin,
         'features': params.features,
+        'ext_features_dim': params.ext_features_dim,
         'persist_features': params.persist_features,
         'attention': params.attention,
         'vocab': vocab,
