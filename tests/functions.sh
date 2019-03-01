@@ -57,6 +57,9 @@ if [[ ! -z $ENVIRONMENT ]]; then
   fi
 # Automatic by checking the $HOSTNAME environmental variable:
 else
+  # echo "\$HOSTNAME is \"$HOSTNAME\""
+  HOSTNAME=`hostname -f`
+
   if [[ $HOSTNAME == *"taito"* ]]; then
     ENVIRONMENT="taito"
   elif [[ $HOSTNAME == *"triton"* ]] || [[ $HOSTNAME == *"aalto"* ]]; then
