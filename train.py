@@ -12,13 +12,13 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from utils import prepare_hierarchical_targets, get_model_name, save_model, init_stats, log_model_data, save_stats, \
-    get_teacher_prob, clip_gradients, cyclical_lr
+    get_teacher_prob, clip_gradients, cyclical_lr, get_model_path, get_ground_truth_captions
 
 # (Needed to handle Vocabulary pickle)
 from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
 from model.encoder_decoder import ModelParams, EncoderDecoder
-from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
+from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss, SelfCriticalLoss
 from vocabulary import caption_ids_to_words, paragraph_ids_to_words
 
 try:
@@ -36,7 +36,8 @@ torch.backends.cudnn.benchmark = False
 device = None
 
 
-def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats, epoch):
+def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats, epoch,
+                sc_activated=False, gts_sc_val=None):
     begin = datetime.now()
     model.eval()
 
@@ -58,7 +59,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             (images, captions, lengths, image_ids, features) = data
             sorting_order = None
 
-        if len(scorers) > 0:
+        if len(scorers) > 0 and not sc_activated:
             for j in range(captions.shape[0]):
                 jid = image_ids[j]
                 if jid not in gts:
@@ -101,6 +102,16 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             # models that share embedding weights
             projection = model.decoder.projection.weight
             loss = criterion(projection, outputs, targets)
+        elif sc_activated:
+            with torch.no_grad():
+                outputs, log_probs = model.sample(images, init_features, persist_features,
+                                                  max_seq_length=20, start_token_id=vocab('<start>'),
+                                                  stochastic_sampling=True, output_logprobs=True)
+                greedy_outputs = model.sample(images, init_features, persist_features,
+                                              max_seq_length=20, start_token_id=vocab('<start>'),
+                                              stochastic_sampling=False)
+
+            loss = criterion(outputs, log_probs, greedy_outputs, [gts_sc_val[i] for i in image_ids], scorers, vocab)
         else:
             loss = criterion(outputs, targets)
 
@@ -150,6 +161,8 @@ def main(args):
     global device
     device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
 
+    sc_will_happen = args.self_critical_from_epoch != -1
+
     if args.validate is None and args.lr_scheduler == 'ReduceLROnPlateau':
         print('ERROR: you need to enable validation in order to use default lr_scheduler (ReduceLROnPlateau)')
         print('Hint: use something like --validate=coco:val2017')
@@ -169,7 +182,7 @@ def main(args):
                              (0.229, 0.224, 0.225))])
 
     scorers = {}
-    if args.validation_scoring is not None:
+    if args.validation_scoring is not None or sc_will_happen:
         for s in args.validation_scoring.split(','):
             s = s.lower().strip()
             if s == 'cider':
@@ -195,7 +208,7 @@ def main(args):
     state = None
 
     if args.load_model:
-        state = torch.load(args.load_model)
+        state = torch.load(args.load_model, map_location=device)
         new_external_features = arg_params.features.external
 
         params = ModelParams(state, arg_params=arg_params)
@@ -316,7 +329,9 @@ def main(args):
                                           shuffle=True, num_workers=args.num_workers,
                                           ext_feature_sets=ext_feature_sets,
                                           skip_images=not params.has_internal_features(),
-                                          verbose=args.verbose)
+                                          verbose=args.verbose, unique_ids=sc_will_happen)
+        if sc_will_happen:
+            gts_sc = get_ground_truth_captions(data_loader.dataset)
 
     if args.validate is not None:
         valid_loader, ef_dims = get_loader(validation_dataset_params, vocab, transform,
@@ -325,6 +340,8 @@ def main(args):
                                            ext_feature_sets=ext_feature_sets,
                                            skip_images=not params.has_internal_features(),
                                            verbose=args.verbose)
+        if sc_will_happen:
+            gts_sc_valid = get_ground_truth_captions(valid_loader.dataset)
 
     #########################################
     # Setup (optional) TensorBoardX logging #
@@ -363,6 +380,7 @@ def main(args):
     # Optimizer and loss #
     ######################
 
+    sc_activated = False
     opt_params = model.get_opt_params()
 
     # Loss and optimizer
@@ -374,13 +392,21 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
+    if sc_will_happen and start_epoch >= args.self_critical_from_epoch:
+        criterion = SelfCriticalLoss()
+        sc_activated = True
+    elif sc_will_happen:  # save it for later
+        rl_criterion = SelfCriticalLoss()
+
     # When using CyclicalLR, default learning rate should be always 1.0
     if args.lr_scheduler == 'CyclicalLR':
         default_lr = 1.
     else:
         default_lr = 0.001
 
-    if args.optimizer == 'adam':
+    if sc_activated:
+        optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
+    elif args.optimizer == 'adam':
         optimizer = torch.optim.Adam(opt_params, lr=default_lr, weight_decay=args.weight_decay)
     elif args.optimizer == 'rmsprop':
         optimizer = torch.optim.RMSprop(opt_params, lr=default_lr, weight_decay=args.weight_decay)
@@ -399,9 +425,10 @@ def main(args):
 
     # Set optimizer state to the one found in a loaded model, unless
     # we are doing a transfer learning step from flat to hierarchical model,
+    # or we are using self-critical loss,
     # or the number of unique parameter groups has changed, or the user
     # has explicitly told us *not to* reuse optimizer parameters from before
-    if state and not transfer_language_model and not args.optimizer_reset:
+    if state and not transfer_language_model and not sc_activated and not args.optimizer_reset:
         # Check that number of parameter groups is the same
         if len(optimizer.param_groups) == len(state['optimizer']['param_groups']):
             optimizer.load_state_dict(state['optimizer'])
@@ -480,7 +507,8 @@ def main(args):
             print('WARNING: epoch {} already validated, skipping...'.format(epoch + 1))
             return
 
-        val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats, epoch)
+        val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats, epoch,
+                               sc_activated, gts_sc_valid)
         all_stats[str(epoch + 1)] = stats
         save_stats(args, params, all_stats, postfix=stats_postfix)
     else:
@@ -497,6 +525,22 @@ def main(args):
             num_batches = 0
             vocab_counts = {'cnt': 0, 'max': 0, 'min': 9999,
                             'sum': 0, 'unk_cnt': 0, 'unk_sum': 0}
+
+            # If start self critical training
+            if not sc_activated and sc_will_happen and epoch >= args.self_critical_from_epoch:
+                if all_stats:
+                    best_ep, best_cider = max([(ep, all_stats[ep]['validation_cider']) for ep in all_stats],
+                                              key=lambda x: x[1])
+                    print('Loading model from epoch', best_ep, 'which has the better score with', best_cider)
+                    state = torch.load(get_model_path(args, params, int(best_ep)))
+                    model = EncoderDecoder(params, device, len(vocab), state, ef_dims, lr_dict=lr_dict)
+                    opt_params = model.get_opt_params()
+
+                optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
+                criterion = rl_criterion
+                print('Changing loss function to Self Critical')
+                sc_activated = True
+
             for i, data in enumerate(data_loader):
 
                 if params.hierarchical_model:
@@ -504,7 +548,7 @@ def main(args):
                      last_sentence_indicator) = data
                     sorting_order = sorting_order.to(device)
                 else:
-                    (images, captions, lengths, _, features) = data
+                    (images, captions, lengths, image_ids, features) = data
 
                 if epoch == 0:
                     unk = vocab('<unk>')
@@ -556,14 +600,29 @@ def main(args):
                 if writer and (i == len(data_loader) - 1 or i == args.num_batches - 1):
                     writer_data = {'writer': writer, 'epoch': epoch + 1}
 
-                outputs = model(images, init_features, captions, lengths, persist_features, teacher_p,
-                                args.teacher_forcing, sorting_order, writer_data=writer_data)
+                if sc_activated:
+                    outputs, log_probs = model.sample(images, init_features, persist_features,
+                                                      max_seq_length=20, start_token_id=vocab('<start>'),
+                                                      stochastic_sampling=True, output_logprobs=True)
+                else:
+                    outputs = model(images, init_features, captions, lengths, persist_features, teacher_p,
+                                    args.teacher_forcing, sorting_order, writer_data=writer_data)
 
                 if args.share_embedding_weights:
                     # Weights of (HxH) projection matrix used for regularizing
                     # models that share embedding weights
                     projection = model.decoder.projection.weight
                     loss = criterion(projection, outputs, targets)
+                elif sc_activated:
+                    # get greedy decoding baseline
+                    model.eval()
+                    with torch.no_grad():
+                        greedy_outputs = model.sample(images, init_features, persist_features,
+                                                      max_seq_length=20, start_token_id=vocab('<start>'),
+                                                      stochastic_sampling=False)
+                    model.train()
+
+                    loss = criterion(outputs, log_probs, greedy_outputs, [gts_sc[i] for i in image_ids], scorers, vocab)
                 else:
                     loss = criterion(outputs, targets)
 
@@ -642,7 +701,7 @@ def main(args):
 
             if args.validate is not None and (epoch + 1) % args.validation_step == 0:
                 val_loss = do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args, params, stats,
-                                       epoch)
+                                       epoch, sc_activated, gts_sc_valid)
 
                 if args.lr_scheduler == 'ReduceLROnPlateau':
                     scheduler.step(val_loss)

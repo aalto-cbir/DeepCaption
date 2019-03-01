@@ -3,10 +3,12 @@ import glob
 import re
 import json
 import math
+from collections import defaultdict
 import numpy as np
 from PIL import Image
 import torch
 from torch.nn.utils.rnn import pack_padded_sequence
+from torch.utils.data import Dataset, ConcatDataset
 
 
 def basename(fname, split=None):
@@ -49,10 +51,15 @@ def get_model_name(args, params):
     return model_name
 
 
+def get_model_path(args, params, epoch):
+    model_name = get_model_name(args, params)
+    file_name = 'ep{}.model'.format(epoch)
+    model_path = os.path.join(args.output_root, args.model_path, model_name, file_name)
+    return model_path
+
+
 # TODO: convert parameters to **kwargs
 def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
-    model_name = get_model_name(args, params)
-
     state = {
         'hierarchical_model': params.hierarchical_model,
         'epoch': epoch + 1,
@@ -88,9 +95,7 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         state['coupling_alpha'] = params.coupling_alpha
         state['coupling_beta'] = params.coupling_beta
 
-    file_name = 'ep{}.model'.format(epoch + 1)
-
-    model_path = os.path.join(args.output_root, args.model_path, model_name, file_name)
+    model_path = get_model_path(args, params, epoch + 1)
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
 
     torch.save(state, model_path)
@@ -345,3 +350,33 @@ def torchify_sequence(batch):
         final_tensor = torch.cat([final_tensor, image])
 
     return final_tensor
+
+
+def to_contiguous(tensor):
+    if tensor.is_contiguous():
+        return tensor
+    else:
+        return tensor.contiguous()
+
+
+def get_ground_truth_captions(dataset):
+    """
+    Get the list of captions. If the dataset is a ConcatDataset, these ids must be unique.
+    :param dataset: Dataset or ConcatDataset class
+    :return: List of captions for every id
+    """
+    if isinstance(dataset, ConcatDataset):
+        assert all([d.unique_ids for d in dataset.datasets]), \
+            'All datasets in the concatenation must ensure that the labels are unique to not mix them'
+        gts = defaultdict(list)
+        for d in dataset.datasets:
+            for label, text, idxs in d.data:
+                gts[label].append(text)
+        return gts
+    elif isinstance(dataset, Dataset):
+        gts = defaultdict(list)
+        for label, text, idxs in dataset.data:
+            gts[label].append(text)
+        return gts
+    else:
+        raise NotImplementedError

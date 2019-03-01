@@ -10,8 +10,10 @@ from gensim.scripts.glove2word2vec import glove2word2vec
 
 from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
+import torch.nn.functional as F
 
 from . import external as ext_models
+from vocabulary import word_ids_to_words
 
 Features = namedtuple('Features', 'external, internal')
 
@@ -575,9 +577,10 @@ class DecoderRNN(nn.Module):
 
     def sample(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None,
-               output_hiddens=False):
-        """Generate captions for given image features using greedy search."""
+               stochastic_sampling=False, output_logprobs=False, output_hiddens=False):
+        """Generate captions for given image features using greedy (beam size = 1) search."""
         sampled_ids = []
+        seq_logprobs = []
 
         batch_size = len(images)
 
@@ -617,21 +620,34 @@ class DecoderRNN(nn.Module):
                 outputs = torch.matmul(output_embeddings, self.embed_output.weight)
             else:
                 outputs = self.linear(hiddens.squeeze(1))
-            _, predicted = outputs.max(1)
-            sampled_ids.append(predicted)
+
+            logprobs = F.log_softmax(outputs, dim=1)
+
+            if not stochastic_sampling:
+                # greedy (beam search size = 1)
+                predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
+            else:
+                predicted = F.softmax(outputs, 1).multinomial(num_samples=1).view(-1)  # torch.multinomial(logprobs, 1) doesn't work with logits
+                if output_logprobs:
+                    predicted_logprobs = logprobs.gather(1, predicted.unsqueeze(1)).view(-1)  # gather the logprobs at sampled positions
 
             # inputs: (batch_size, 1, embed_size + len(external_features))
             embeddings = self.embed(predicted)
             inputs = torch.cat([embeddings, persist_features], 1).unsqueeze(1)
 
+            sampled_ids.append(predicted)
+            if output_logprobs:
+                seq_logprobs.append(predicted_logprobs)
             if output_hiddens:
                 all_hiddens[:, i] = hiddens.squeeze(1)
 
         # sampled_ids: (batch_size, max_seq_length)
-        sampled_ids = torch.stack(sampled_ids, 1)
+        sampled_ids = torch.stack(sampled_ids, dim=1)
 
         if output_hiddens:
             return sampled_ids, all_hiddens,
+        elif output_logprobs:
+            return sampled_ids, torch.stack(seq_logprobs, dim=1)
         else:
             return sampled_ids
 
@@ -707,7 +723,7 @@ class EncoderDecoder(nn.Module):
 
     def forward(self, images, init_features, captions, lengths, persist_features,
                 teacher_p=1.0, teacher_forcing='always', sorting_order=None,
-                writer_data=None):
+                writer_data=None, output_decoder_hiddens=False):
         features = self.encoder(images, init_features)
         if self.model_type == 'hierarchical_model':
             # TODO: Make the hierarchical and regular decoder take the same arguments
@@ -716,16 +732,20 @@ class EncoderDecoder(nn.Module):
                                    external_features=persist_features, writer_data=writer_data)
         else:
             outputs = self.decoder(features, captions, lengths, images, persist_features,
-                                   teacher_p, teacher_forcing)
+                                   teacher_p, teacher_forcing, output_hiddens=output_decoder_hiddens)
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20, start_token_id=None, end_token_id=None):
+               max_seq_length=20, start_token_id=None, end_token_id=None, output_decoder_hiddens=False,
+               stochastic_sampling=False, output_logprobs=False):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
                                           max_seq_length=max_seq_length,
                                           start_token_id=start_token_id,
-                                          end_token_id=end_token_id)
+                                          end_token_id=end_token_id,
+                                          output_hiddens=output_decoder_hiddens,
+                                          stochastic_sampling=stochastic_sampling,
+                                          output_logprobs=output_logprobs)
 
         return sampled_ids
 
@@ -1151,3 +1171,44 @@ class HierarchicalXEntropyLoss(nn.Module):
 
     def item_terms(self):
         return self.weight_sent, self.loss_s, self.weight_word, self.loss_w
+
+
+class SelfCriticalLoss(nn.Module):
+    """Reinforcement Learning Self-critical loss.
+    https://arxiv.org/abs/1612.00563
+    Code from https://github.com/ruotianluo/self-critical.pytorch
+    """
+    def __init__(self):
+        super(SelfCriticalLoss, self).__init__()
+
+    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
+        assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
+
+        reward = self.get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False)
+        reward = torch.from_numpy(reward).to(device)
+
+        if reward.dtype != sample_log_probs.dtype:
+            reward = reward.type(sample_log_probs.type())
+
+        # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
+        # so no loss would be needed for it. Can be done with something like:
+        # mask = (sample > 0).float() (would not work here bc our tokens are positive also)
+
+        return torch.mean(- sample_log_probs * reward)
+
+    @staticmethod
+    def get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False):
+        scorer = scorers['CIDEr']
+
+        gts = dict(enumerate(gts_batch))
+        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
+        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
+
+        _, score = scorer.compute_score(gts, res)
+        _, score_baseline = scorer.compute_score(gts, res_greedy)
+
+        scores = score - score_baseline
+
+        rewards = np.repeat(scores[:, np.newaxis], sample.size(1), 1)
+
+        return rewards

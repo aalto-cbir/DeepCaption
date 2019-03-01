@@ -229,28 +229,49 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
 
 # sentence functions now
 
-def fix_caption(caption, skip_start_token=False):
-    if skip_start_token:
-        m = re.match(r'^(.*?)( <end>)?$', caption)
-    else:
-        m = re.match(r'^<start> (.*?)( <end>)?$', caption)
-    if m is None:
-        print('ERROR: unexpected caption format: "{}"'.format(caption))
-        return caption.capitalize()
+def fix_caption(caption, skip_start_token=False, keep_tokens=False):
+    if keep_tokens:
+        if skip_start_token:
+            m = re.match(r'(.*?)( <end>)', caption)
+        else:
+            m = re.match(r'(<start> )(.*?)( <end>)', caption)
+        if m is None:
+            print('ERROR: unexpected caption format: "{}"'.format(caption))
+            return caption.capitalize()
 
-    ret = m.group(1)
+        ret = ''.join(m.groups())
+    else:
+        if skip_start_token:
+            m = re.match(r'^(.*?)( <end>)?$', caption)
+        else:
+            m = re.match(r'^<start> (.*?)( <end>)?$', caption)
+        if m is None:
+            print('ERROR: unexpected caption format: "{}"'.format(caption))
+            return caption.capitalize()
+
+        ret = m.group(1)
+
     ret = re.sub(r'\s([.,])(\s|$)', r'\1\2', ret)
     return ret.capitalize()
 
 
-def caption_ids_to_words(sampled_ids, vocab):
+def caption_ids_to_words(sampled_ids, vocab, keep_tokens=False):
+    """
+    Converts output tensor of ids to sentences.
+    :param sampled_ids: tensor of ids
+    :param vocab: vocabulary object
+    :param keep_tokens: Will keep <start> and <end> if True.
+    :return: Resulting sentence.
+    """
     sampled_caption = []
     for word_id in sampled_ids.cpu().numpy():
         word = vocab.idx2word[word_id]
         sampled_caption.append(word)
         if word == '<end>':
+            if keep_tokens:
+                sampled_caption.append(word)
             break
-    return fix_caption(' '.join(sampled_caption))
+    return fix_caption(' '.join(sampled_caption), keep_tokens=keep_tokens)
 
 
 def paragraph_ids_to_words(sampled_ids, vocab):
@@ -286,3 +307,16 @@ def remove_incomplete_sentences(caption):
         return '.'.join(sentences)
     else:
         return caption
+
+
+def word_ids_to_words(sample, vocab, is_hierarchical=False, keep_tokens=False):
+    """
+    Converts a tensor matrix of ids (model outputs) into a list of sentences.
+    :param sample: Tensor matrix with rows of ids to be converted to sentences.
+    :param vocab: vocabulary object
+    :param is_hierarchical: if the output comes from a hierarchical model
+    :param keep_tokens: Will keep <start> and <end> if True.
+    :return: Dictionary with sentences addressed by the position in which they were placed in the tensor, by shape[0].
+    """
+    ids_to_words_fn = paragraph_ids_to_words if is_hierarchical else caption_ids_to_words
+    return {i: [ids_to_words_fn(sample[i], vocab, keep_tokens=keep_tokens).lower()] for i in range(sample.shape[0])}
