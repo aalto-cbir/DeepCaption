@@ -106,10 +106,10 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             with torch.no_grad():
                 outputs, log_probs = model.sample(images, init_features, persist_features,
                                                   max_seq_length=20, start_token_id=vocab('<start>'),
-                                                  greedy_decoding=False, output_logprobs=True)
+                                                  stochastic_sampling=True, output_logprobs=True)
                 greedy_outputs = model.sample(images, init_features, persist_features,
                                               max_seq_length=20, start_token_id=vocab('<start>'),
-                                              greedy_decoding=True)
+                                              stochastic_sampling=False)
 
             loss = criterion(outputs, log_probs, greedy_outputs, [gts_sc_val[i] for i in image_ids], scorers, vocab)
         else:
@@ -161,7 +161,7 @@ def main(args):
     global device
     device = torch.device('cuda' if torch.cuda.is_available() and not args.cpu else 'cpu')
 
-    sc_will_happen = args.self_critical_after != -1
+    sc_will_happen = args.self_critical_from_epoch != -1
 
     if args.validate is None and args.lr_scheduler == 'ReduceLROnPlateau':
         print('ERROR: you need to enable validation in order to use default lr_scheduler (ReduceLROnPlateau)')
@@ -329,7 +329,7 @@ def main(args):
                                           shuffle=True, num_workers=args.num_workers,
                                           ext_feature_sets=ext_feature_sets,
                                           skip_images=not params.has_internal_features(),
-                                          verbose=args.verbose, ensure_unique_label=sc_will_happen)
+                                          verbose=args.verbose, unique_ids=sc_will_happen)
         if sc_will_happen:
             gts_sc = get_ground_truth_captions(data_loader.dataset)
 
@@ -392,7 +392,7 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
-    if sc_will_happen and start_epoch >= args.self_critical_after:
+    if sc_will_happen and start_epoch >= args.self_critical_from_epoch:
         criterion = SelfCriticalLoss()
         sc_activated = True
     elif sc_will_happen:  # save it for later
@@ -527,7 +527,7 @@ def main(args):
                             'sum': 0, 'unk_cnt': 0, 'unk_sum': 0}
 
             # If start self critical training
-            if not sc_activated and sc_will_happen and epoch >= args.self_critical_after:
+            if not sc_activated and sc_will_happen and epoch >= args.self_critical_from_epoch:
                 if all_stats:
                     best_ep, best_cider = max([(ep, all_stats[ep]['validation_cider']) for ep in all_stats],
                                               key=lambda x: x[1])
@@ -603,7 +603,7 @@ def main(args):
                 if sc_activated:
                     outputs, log_probs = model.sample(images, init_features, persist_features,
                                                       max_seq_length=20, start_token_id=vocab('<start>'),
-                                                      greedy_decoding=False, output_logprobs=True)
+                                                      stochastic_sampling=True, output_logprobs=True)
                 else:
                     outputs = model(images, init_features, captions, lengths, persist_features, teacher_p,
                                     args.teacher_forcing, sorting_order, writer_data=writer_data)
@@ -619,7 +619,7 @@ def main(args):
                     with torch.no_grad():
                         greedy_outputs = model.sample(images, init_features, persist_features,
                                                       max_seq_length=20, start_token_id=vocab('<start>'),
-                                                      greedy_decoding=True)
+                                                      stochastic_sampling=False)
                     model.train()
 
                     loss = criterion(outputs, log_probs, greedy_outputs, [gts_sc[i] for i in image_ids], scorers, vocab)

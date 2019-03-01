@@ -3,7 +3,7 @@
 import argparse
 
 
-def read_file(file):
+def read_results_file(file):
     with open(file) as f:
         lines = f.read()
 
@@ -15,7 +15,7 @@ def read_file(file):
     return file_results
 
 
-def keep_better(scores, file_results, model, epoch, group):
+def update_better_scores(scores, file_results, model, epoch, group):
     metrics = scores.setdefault(model, {}).setdefault(group, {})
 
     for metric, score in file_results.items():
@@ -73,9 +73,9 @@ def main(args):
         model_name, _, b = file.rpartition('/')[2].rpartition('.result')[0].rpartition('_')
         epoch, _, group = b.partition('-')
 
-        file_results = read_file(file)
+        file_results = read_results_file(file)
 
-        keep_better(scores, file_results, model_name, epoch, group)
+        update_better_scores(scores, file_results, model_name, epoch, group)
 
     if args.gdocs:
         print_scores_gdoc(scores, args.gdocs_separator)

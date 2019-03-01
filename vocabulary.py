@@ -309,15 +309,14 @@ def remove_incomplete_sentences(caption):
         return caption
 
 
-def output_to_human(sample, vocab, is_hierarchical=False, keep_tokens=False):
+def word_ids_to_words(sample, vocab, is_hierarchical=False, keep_tokens=False):
     """
-    Converts a tensor matrix of outputs into a list of sentences.
+    Converts a tensor matrix of ids (model outputs) into a list of sentences.
     :param sample: Tensor matrix with rows of ids to be converted to sentences.
     :param vocab: vocabulary object
     :param is_hierarchical: if the output comes from a hierarchical model
     :param keep_tokens: Will keep <start> and <end> if True.
-    :return: Dictionary with sentences addressed by the position in which they were placed in the tensor,
-    by shape[0].
+    :return: Dictionary with sentences addressed by the position in which they were placed in the tensor, by shape[0].
     """
     ids_to_words_fn = paragraph_ids_to_words if is_hierarchical else caption_ids_to_words
     return {i: [ids_to_words_fn(sample[i], vocab, keep_tokens=keep_tokens).lower()] for i in range(sample.shape[0])}

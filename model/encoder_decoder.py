@@ -13,7 +13,7 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import torch.nn.functional as F
 
 from . import external as ext_models
-from vocabulary import output_to_human
+from vocabulary import word_ids_to_words
 
 Features = namedtuple('Features', 'external, internal')
 
@@ -577,8 +577,8 @@ class DecoderRNN(nn.Module):
 
     def sample(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None,
-               greedy=True, output_logprobs=False, output_hiddens=False):
-        """Generate captions for given image features using greedy search."""
+               stochastic_sampling=False, output_logprobs=False, output_hiddens=False):
+        """Generate captions for given image features using greedy (beam size = 1) search."""
         sampled_ids = []
         seq_logprobs = []
 
@@ -623,7 +623,8 @@ class DecoderRNN(nn.Module):
 
             logprobs = F.log_softmax(outputs, dim=1)
 
-            if greedy:
+            if not stochastic_sampling:
+                # greedy (beam search size = 1)
                 predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
             else:
                 predicted = F.softmax(outputs, 1).multinomial(num_samples=1).view(-1)  # torch.multinomial(logprobs, 1) doesn't work with logits
@@ -725,14 +726,14 @@ class EncoderDecoder(nn.Module):
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None, output_decoder_hiddens=False,
-               greedy_decoding=True, output_logprobs=False):
+               stochastic_sampling=False, output_logprobs=False):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
                                           max_seq_length=max_seq_length,
                                           start_token_id=start_token_id,
                                           end_token_id=end_token_id,
                                           output_hiddens=output_decoder_hiddens,
-                                          greedy=greedy_decoding,
+                                          stochastic_sampling=stochastic_sampling,
                                           output_logprobs=output_logprobs)
 
         return sampled_ids
@@ -1189,8 +1190,8 @@ class SelfCriticalLoss(nn.Module):
         scorer = scorers['CIDEr']
 
         gts = dict(enumerate(gts_batch))
-        res = output_to_human(sample, vocab, keep_tokens=keep_tokens)
-        res_greedy = output_to_human(greedy_sample, vocab, keep_tokens=keep_tokens)
+        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
+        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
 
         _, score = scorer.compute_score(gts, res)
         _, score_baseline = scorer.compute_score(gts, res_greedy)

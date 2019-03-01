@@ -365,7 +365,7 @@ def get_ground_truth_captions(dataset):
     :return: List of captions for every id
     """
     if isinstance(dataset, ConcatDataset):
-        assert all([d.ensure_unique_label for d in dataset.datasets]), \
+        assert all([d.unique_ids for d in dataset.datasets]), \
             'All datasets in the concatenation must ensure that the labels are unique to not mix them'
         gts = defaultdict(list)
         for d in dataset.datasets:
