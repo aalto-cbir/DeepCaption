@@ -70,13 +70,16 @@ else
 fi
 
 MODEL=output/models/__test/coco_full/ep11.model
+RESULTS_PATH=output/results/captions/__test/coco_full/
+RESULTS_FILENAME=ep11.json
 
 # Inference: Expected result after evaluating the resultant json file: 
 # METEOR: 0.240, CIDEr: 0.851
 # 
 # Script output for test CIDEr 0.7403850771265595
 ./infer.py --model $MODEL --dataset coco:val2014 --num_workers 4 \
-                  --output_format json --scoring cider
+                  --results_path $RESULTS_PATH \
+                  --output_file $RESULTS_FILENAME --scoring cider
 append_command_to_log
 
 # Training with validation only:
@@ -85,7 +88,7 @@ append_command_to_log
            --validate_only --validation_scoring cider
 append_command_to_log
 
-RESULTS_FILE=output/results/coco_full-ep11.json
+RESULTS_FILE=$RESULTS_PATH/$RESULTS_FILENAME
 
 echo "We are on hostname: $HOSTNAME"
 
