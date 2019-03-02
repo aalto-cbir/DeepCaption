@@ -340,8 +340,7 @@ def main(args):
                                            ext_feature_sets=ext_feature_sets,
                                            skip_images=not params.has_internal_features(),
                                            verbose=args.verbose)
-        if sc_will_happen:
-            gts_sc_valid = get_ground_truth_captions(valid_loader.dataset)
+        gts_sc_valid = get_ground_truth_captions(valid_loader.dataset) if sc_will_happen else None
 
     #########################################
     # Setup (optional) TensorBoardX logging #
