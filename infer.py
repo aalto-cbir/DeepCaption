@@ -44,7 +44,7 @@ class infer_object:
                               not args['cpu'] else 'cpu')
 
         # Build models
-        print('Bulding models.')
+        print('Bulding model for device {}'.format(device.type))
 
         if device.type == 'cpu':
             self.state = torch.load(args['model'], map_location=lambda storage, loc: storage)
@@ -154,7 +154,8 @@ class infer_object:
         gts = {}
         res = {}
 
-        print('Starting inference, max captions/sentence length: {}'.format(args['max_seq_length']))
+        print('Starting inference, max sentence length: {} num_workers: {}'.\
+              format(args['max_seq_length'], args['num_workers']))
         show_progress = sys.stderr.isatty() and not args['verbose']
         for i, (images, ref_captions, lengths, image_ids,
                 features) in enumerate(tqdm(self.data_loader, disable=not show_progress)):
