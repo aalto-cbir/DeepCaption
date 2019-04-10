@@ -333,6 +333,7 @@ def main(args):
         if sc_will_happen:
             gts_sc = get_ground_truth_captions(data_loader.dataset)
 
+    gts_sc_valid = None
     if args.validate is not None:
         valid_loader, ef_dims = get_loader(validation_dataset_params, vocab, transform,
                                            args.batch_size, shuffle=True,
