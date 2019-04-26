@@ -41,7 +41,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
     begin = datetime.now()
     model.eval()
 
-    gts = {}
+    gts = gts_sc_val if sc_activated and gts_sc_val is not None else {}
     res = {}
 
     total_loss = 0
@@ -111,7 +111,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                               max_seq_length=20, start_token_id=vocab('<start>'),
                                               stochastic_sampling=False)
 
-            loss = criterion(outputs, log_probs, greedy_outputs, [gts_sc_val[i] for i in image_ids], scorers, vocab)
+            loss = criterion(outputs, log_probs, greedy_outputs, [gts[i] for i in image_ids], scorers, vocab)
         else:
             loss = criterion(outputs, targets)
 
