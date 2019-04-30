@@ -391,7 +391,7 @@ class CocoDataset(data.Dataset):
     """COCO Custom Dataset compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -400,6 +400,7 @@ class CocoDataset(data.Dataset):
             vocab: vocabulary wrapper.
             subset: file defining a further subset of the dataset to be used
             transform: image transformer.
+            unique_ids: Unique image id dataset-wise and subset-wise.
         """
         from pycocotools.coco import COCO
         self.root = root
@@ -414,6 +415,7 @@ class CocoDataset(data.Dataset):
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
         self.config_dict = config_dict
+        self.unique_ids = unique_ids
 
         # We are in training mode if vocab is not None, otherwise we might
         # be in vocabulary generation mode, where we don't need to care about
@@ -470,6 +472,7 @@ class CocoDataset(data.Dataset):
         elif self.config_dict.get('return_image_file_name'):
             img_id = path
 
+        img_id = img_id if not self.unique_ids else self.config_dict['dataset_name'] + ':' + str(img_id)
         return image, target, img_id, feature_sets
 
     def __len__(self):
@@ -481,7 +484,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
         """Set the path for images, captions and vocabulary wrapper.
         Args:
             root: image directory.
@@ -489,6 +492,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
             vocab: vocabulary wrapper.
             subset: file defining a further subset of the dataset to be used
             transform: image transformer.
+            unique_ids: Unique image id dataset-wise and subset-wise.
         """
         self.root = root
         self.vocab = vocab
@@ -496,6 +500,7 @@ class VisualGenomeIM2PDataset(data.Dataset):
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
         self.config_dict = config_dict
+        assert unique_ids is False, 'Unimplemented option. Please check COCO or PicSOM datasets implementation.'
 
         # We are in training mode if vocab is not None, otherwise we might
         # be in vocabulary generation mode, where we don't need to care about
@@ -582,7 +587,7 @@ class VisualGenomeRegionsDataset(data.Dataset):
     """Visual Genome Regions Dataset"""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
         """Set the path for images, captions and vocabulary wrapper.
         Args:
             root: image directory.
@@ -590,6 +595,7 @@ class VisualGenomeRegionsDataset(data.Dataset):
             vocab: vocabulary wrapper.
             subset: file defining a further subset of the dataset to be used
             transform: image transformer.
+            unique_ids: Unique image id dataset-wise and subset-wise.
         """
         import pandas as pd
         self.root = root
@@ -599,6 +605,7 @@ class VisualGenomeRegionsDataset(data.Dataset):
         self.iter_over_images = iter_over_images
         self.feature_loaders = feature_loaders
         self.config_dict = config_dict
+        assert unique_ids is False, 'Unimplemented option. Please check COCO or PicSOM datasets implementation.'
 
         # We are in training mode if vocab is not None, otherwise we might
         # be in vocabulary generation mode, where we don't need to care about
@@ -685,7 +692,7 @@ class VistDataset(data.Dataset):
 
     # FIXME: skip_images, feature_loaders not implemented
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -694,10 +701,12 @@ class VistDataset(data.Dataset):
             vocab: vocabulary wrapper.
             subset: file defining a further subset of the dataset to be used
             transform: image transformer.
+            unique_ids: Unique image id dataset-wise and subset-wise.
         """
         self.root = root
         self.vocab = vocab
         self.transform = transform
+        assert unique_ids is False, 'Unimplemented option. Please check COCO or PicSOM datasets implementation.'
 
         # Get the list of available images:
         images = [str(file).split('.')[0] for file in os.listdir(root)]
@@ -767,7 +776,7 @@ class MSRVTTDataset(data.Dataset):
     """MSR-VTT Custom Dataset compatible with torch.utils.data.DataLoader."""
 
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
         """Set the path for images, captions and vocabulary wrapper.
 
         Args:
@@ -775,6 +784,7 @@ class MSRVTTDataset(data.Dataset):
             json_file: path to train_val_videodatainfo.json.
             vocab: vocabulary wrapper.
             transform: image transformer.
+            unique_ids: Unique image id dataset-wise and subset-wise.
         """
         self.root = root
         self.vocab = vocab
@@ -782,6 +792,7 @@ class MSRVTTDataset(data.Dataset):
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
         self.subset = subset if subset else 'train'
+        assert unique_ids is False, 'Unimplemented option. Please check COCO or PicSOM datasets implementation.'
 
         self.captions = []
         subset_vids = set()
@@ -832,12 +843,13 @@ class MSRVTTDataset(data.Dataset):
 
 class TRECVID2018Dataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
         self.root = root
         self.vocab = vocab
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        assert unique_ids is False, 'Unimplemented option. Please check COCO or PicSOM datasets implementation.'
 
         self.id_to_filename = {}
         for filename in glob.glob(self.root + '/*.jpeg'):
@@ -998,8 +1010,9 @@ class PicSOMDataset(data.Dataset):
 
 class IncoreDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
         self.feature_loaders = feature_loaders
+        assert unique_ids is False, 'Unimplemented option. Please check COCO or PicSOM datasets implementation.'
 
         # print(len(root), len(root[0]), len(root[0][0]))
         
@@ -1029,11 +1042,12 @@ class IncoreDataset(data.Dataset):
 
 class GenericDataset(data.Dataset):
     def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None):
+                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
         self.vocab = vocab
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        assert unique_ids is False, 'Unimplemented option. Please check COCO or PicSOM datasets implementation.'
 
         if type(root) is list:
             self.filelist = root
