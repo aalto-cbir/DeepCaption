@@ -37,7 +37,18 @@ def dump_dict(d, prefix=''):
 
 
 def model_info(filename):
-    state = torch.load(filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
+    try:
+        state = torch.load(filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
+    except AttributeError:
+        print('WARNING: Old model found. Trying an import trick to load Features properly. '
+              'Please use model_update.py to fix the model.')
+        model = __import__('model.encoder_decoder')
+        model.Features = model.encoder_decoder.Features
+        # one can also create a file __init__.py in model/ with `from model.encoder_decoder import Features`
+        # and do `import model`
+
+        state = torch.load(filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
+
     dump_dict(state)
 
 
