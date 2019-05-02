@@ -23,6 +23,12 @@ except ImportError as e:
 
     def tqdm(x, disable=False): return x
 
+
+class AttributeDict(dict):
+    __getattr__ = dict.__getitem__
+    __setattr__ = dict.__setitem__
+
+
 # Device configuration now in infer()
 device = None
 
@@ -63,7 +69,8 @@ class infer_object:
         # Load the vocabulary:
         if args['vocab'] is not None:
             # Loading vocabulary from file path supplied by the user:
-            self.vocab = get_vocab(args) # this will fail...
+            args_attr = AttributeDict(args)
+            self.vocab = get_vocab(args_attr)
         elif self.params.vocab is not None:
             print('Loading vocabulary stored in the model file.')
             self.vocab = self.params.vocab

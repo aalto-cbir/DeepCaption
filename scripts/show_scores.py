@@ -59,7 +59,7 @@ def print_scores_gdoc(scores, separator):
         model_str = model \
                     + metric_strs(groups['2016'], ['METEOR', 'CIDER', 'BLEU-4'], separator) + separator \
                     + metric_strs(groups['2017-G2'], ['METEOR', 'CIDER', 'BLEU-4'], separator) + separator \
-                    + metric_strs(groups['2018'], ['METEOR', '<space>', 'CIDER', '<space>'], separator)
+                    + metric_strs(groups['2018'], ['METEOR', '<space>', 'CIDER', '<space>', 'BLEU-4'], separator)
         print(model_str)
 
 
