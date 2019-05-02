@@ -208,7 +208,11 @@ def main(args):
     state = None
 
     if args.load_model:
-        state = torch.load(args.load_model, map_location=device)
+        try:
+            state = torch.load(args.load_model, map_location=device)
+        except AttributeError:
+            print('WARNING: Old model found. Please use model_update.py in the model before executing this script.')
+            exit(1)
         new_external_features = arg_params.features.external
 
         params = ModelParams(state, arg_params=arg_params)

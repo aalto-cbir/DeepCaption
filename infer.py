@@ -52,10 +52,11 @@ class infer_object:
         # Build models
         print('Bulding model for device {}'.format(device.type))
 
-        if device.type == 'cpu':
-            self.state = torch.load(args['model'], map_location=lambda storage, loc: storage)
-        else:
-            self.state = torch.load(args['model'])
+        try:
+            self.state = torch.load(args['model'], map_location=device)
+        except AttributeError:
+            print('WARNING: Old model found. Please use model_update.py in the model before executing this script.')
+            exit(1)
             
         self.params = ModelParams(self.state)
         if args['ext_features']:
