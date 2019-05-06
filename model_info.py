@@ -52,10 +52,7 @@ def model_info(filename, vocab_filename=None):
     dump_dict(state)
 
     if vocab_filename is not None:
-        import pickle
-
-        with open(vocab_filename, 'wb') as f:
-            pickle.dump(state['vocab'], f)
+        state['vocab'].save(vocab_filename)
 
         print()
         print('Model vocabulary saved as', vocab_filename)
