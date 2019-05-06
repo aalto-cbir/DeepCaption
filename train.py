@@ -224,7 +224,7 @@ def main(args):
         print('Loaded model {} at epoch {}'.format(args.load_model, start_epoch))
     else:
         params = arg_params
-        params['command_history'] = []
+        params.command_history = []
 
     if params.rnn_hidden_init == 'from_features' and params.skip_start_token:
         print("ERROR: Please remove --skip_start_token if you want to use image features "
