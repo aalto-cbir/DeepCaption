@@ -611,9 +611,10 @@ class DecoderRNN(nn.Module):
             # inputs: (batch_size, 1, embed_size + len(external features))
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
-        trigrams = []  # will be a list of batch_size dictionaries
-        block_trigrams = True
-        trigrams_alpha = 2.0  # = 4
+        block_trigrams = False
+        if block_trigrams:
+            trigrams = []  # will be a list of batch_size dictionaries
+            trigrams_alpha = 2.0  # = 4.0
 
         for i in range(max_seq_length):
             hiddens, states = self.rnn(inputs, states)
