@@ -36,7 +36,7 @@ def dump_dict(d, prefix=''):
             print(type(value))
 
 
-def model_info(filename):
+def model_info(filename, vocab_filename=None):
     try:
         state = torch.load(filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
     except AttributeError:
@@ -51,13 +51,24 @@ def model_info(filename):
 
     dump_dict(state)
 
+    if vocab_filename is not None:
+        import pickle
+
+        with open(vocab_filename, 'wb') as f:
+            pickle.dump(state['vocab'], f)
+
+        print()
+        print('Model vocabulary saved as', vocab_filename)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('model_filename')
     parser.add_argument('--verbose', action='store_true')
+    parser.add_argument('--dump_vocabulary', type=str, default=None,
+                        help='File name where to save the vocabulary used in the model, as pickle.')
 
     args = parser.parse_args()
 
     verbose = args.verbose
-    model_info(args.model_filename)
+    model_info(filename=args.model_filename, vocab_filename=args.dump_vocabulary)
