@@ -55,6 +55,7 @@ class ModelParams:
         # Whether to use non-linearity for encoder output:
         self.encoder_non_lin = self._get_param(d, 'encoder_non_lin', False)
         self.rnn_arch = self._get_param(d, 'rnn_arch', 'LSTM').upper()
+        self.command_history = self._get_param(d, 'command_history', [])
 
         # Below parameters used only by the Hierarchical model:
         if self.hierarchical_model:

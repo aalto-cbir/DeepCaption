@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import re
 import json
@@ -83,7 +84,8 @@ def save_model(args, params, encoder, decoder, optimizer, epoch, vocab):
         'skip_start_token': params.skip_start_token,
         'rnn_arch': params.rnn_arch,
         'rnn_hidden_init': params.rnn_hidden_init,
-        'share_embedding_weights': params.share_embedding_weights
+        'share_embedding_weights': params.share_embedding_weights,
+        'command_history': params.command_history + [' '.join(sys.argv)]
     }
 
     if params.hierarchical_model:
