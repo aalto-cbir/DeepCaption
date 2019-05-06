@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import argparse
 import torch
 from data_loader import ExternalFeature, DatasetParams
@@ -19,13 +20,22 @@ def get_feature_dims(state, args):
 
 
 def model_update(args):
-    model = __import__('model.encoder_decoder')
-    model.Features = model.encoder_decoder.Features
+    try:
+        state = torch.load(args.model_filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
+    except AttributeError:
+        model = __import__('model.encoder_decoder')
+        model.Features = model.encoder_decoder.Features
 
-    state = torch.load(args.model_filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
+        state = torch.load(args.model_filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
 
     if args.create_ext_features_dim:
         state['ext_features_dim'] = get_feature_dims(state, args=args)
+
+    # update history
+    if 'command_history' not in state:
+        state['command_history'] = []
+
+    state['command_history'].append(' '.join(sys.argv))
 
     print('New model saved as', args.fixed_model_filename)
     torch.save(state, args.fixed_model_filename)
