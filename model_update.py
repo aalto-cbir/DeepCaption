@@ -20,6 +20,8 @@ def get_feature_dims(state, args):
 
 
 def model_update(args):
+    if args.dataset is None:
+        raise ValueError('Please specify with --dataset the dataset to compute the external features dimensions with.')
     try:
         state = torch.load(args.model_filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
     except AttributeError:
@@ -28,8 +30,7 @@ def model_update(args):
 
         state = torch.load(args.model_filename, map_location='cuda' if torch.cuda.is_available() else 'cpu')
 
-    if args.create_ext_features_dim:
-        state['ext_features_dim'] = get_feature_dims(state, args=args)
+    state['ext_features_dim'] = get_feature_dims(state, args=args)
 
     # update history
     if 'command_history' not in state:
@@ -45,8 +46,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('model_filename', help='Model to update saved paths to.')
     parser.add_argument('fixed_model_filename', help='Fixed model to be saved.')
-    parser.add_argument('--create_ext_features_dim', action='store_true')
-    parser.add_argument('--dataset', type=str, default='generic',
+    parser.add_argument('--dataset', type=str, default=None,
                         help='which dataset to use')
     parser.add_argument('--dataset_config_file', type=str,
                         default='datasets/datasets.conf',
