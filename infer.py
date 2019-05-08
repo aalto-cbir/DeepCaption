@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 from datetime import datetime
 
@@ -230,9 +231,14 @@ class infer_object:
         # Create a sensible default output path for results:
         output_file = None
         if not args['output_file'] and not args['print_results']:
-            model_name = args['model'].split(os.sep)[-2]
-            model_epoch = basename(args['model'])
-            output_file = '{}-{}.{}'.format(model_name, model_epoch, output_format)
+            model_name_path = Path(args['model'])
+            is_in_same_folder = len(model_name_path.parents) == 1
+            if not is_in_same_folder:
+                model_name = args['model'].split(os.sep)[-2]
+                model_epoch = basename(args['model'])
+                output_file = '{}-{}.{}'.format(model_name, model_epoch, output_format)
+            else:
+                output_file = model_name_path.stem + '.' + output_format
         else:
             output_file = args['output_file']
 
