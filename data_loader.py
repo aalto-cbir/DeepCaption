@@ -905,18 +905,25 @@ class PicSOMDataset(data.Dataset):
         self.transform = transform
         self.skip_images = skip_images
         self.feature_loaders = feature_loaders
+        self.unique_ids       = unique_ids
         self.picsom_root      = config_dict['picsom_root']
         self.picsom_database  = config_dict['dataset_name'].split(':')[1]
         self.picsom_label_map = config_dict.get('label_map', None)
         self.no_tokenize      = config_dict.get('no_tokenize', False)
         self.show_tokens      = config_dict.get('show_tokens', False)
-        self.unique_ids = unique_ids
 
-        print('PicSOM root={:s} database={:s}'.format(self.picsom_root,
-                                                      self.picsom_database))
+        if vocab is not None:
+            self.hierarchical_model = config_dict.get('hierarchical_model', False)
+            self.max_sentences = config_dict.get('max_sentences')
+        else:
+            self.hierarchical_model = False
+
+        #self.db_root = self.picsom_root+'/databases/'+self.picsom_database
+        self.db_root = config_dict['root_dir']
         
-        self.db_root = self.picsom_root+'/databases/'+self.picsom_database
-
+        print('PicSOM root={:s} database={:s} dir={:s}'.\
+              format(self.picsom_root, self.picsom_database, self.db_root))
+        
         self.labels = picsom_label_index(self.db_root+'/labels.txt')
         print('PicSOM database {:s} contains {:d} objects'.format(self.picsom_database, 
                                                                   self.labels.nobjects()))
@@ -995,8 +1002,14 @@ class PicSOMDataset(data.Dataset):
             print('PicSOMDataset.getitem() {:d} {:s} {!s:s}'.
                   format(index, label, label_or_idx))
 
-        target  = tokenize_caption(label_text_index[1], self.vocab,
-                                   no_tokenize=self.no_tokenize, show_tokens=self.show_tokens)
+        caption = label_text_index[1]
+        
+        if self.hierarchical_model:
+            target = tokenize_paragraph_caption(caption, self.vocab)
+        else:
+            target = tokenize_caption(caption, self.vocab,
+                                      no_tokenize=self.no_tokenize,
+                                      show_tokens=self.show_tokens)
     
         feature_sets = ExternalFeature.load_sets(self.feature_loaders, label_or_idx)
 
