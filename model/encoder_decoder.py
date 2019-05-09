@@ -1000,8 +1000,12 @@ class HierarchicalDecoderRNN(nn.Module):
         return sentence_stopping, word_rnn_out
 
     def sample(self, features, images, external_features, states=None,
-               max_seq_length=50, start_token_id=None, end_token_id=None):
+               max_seq_length=50, start_token_id=None, end_token_id=None,
+               stochastic_sampling=False, output_logprobs=False, output_hiddens=False):
         """Generate captions for given image features using greedy search."""
+        assert not stochastic_sampling, 'Unimplemented stochastic_sampling'
+        assert not output_logprobs, 'Unimplemented output_logprobs'
+        assert not output_hiddens, 'Unimplemented output_hiddens'
 
         inputs = features.unsqueeze(1)
         batch_size = inputs.size()[0]
