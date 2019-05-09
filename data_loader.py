@@ -171,7 +171,12 @@ class DatasetParams:
         for ds in configs:
             print('[Dataset]', ds.name)
             for name, value in ds._asdict().items():
-                if name!='name' and name!='config_dict' and value is not None:
+                if name=='image_dir' and value is not None:
+                    s = str(value)
+                    if len(s)>60:
+                        s = s[0:60]+" ..."
+                    print('    {}: {}'.format(name, s))
+                elif name!='name' and name!='config_dict' and value is not None:
                     print('    {}: {}'.format(name, value))
                 elif name=='config_dict':
                     print('    {}:'.format(name))
