@@ -1221,6 +1221,48 @@ class SelfCriticalLoss(nn.Module):
         return score - score_baseline
 
 
+class SelfCriticalWithTokenPenaltyLoss(nn.Module):
+    """Reinforcement Learning Self-critical loss.
+    https://arxiv.org/abs/1612.00563
+    Code from https://github.com/ruotianluo/self-critical.pytorch
+    """
+    def __init__(self):
+        super(SelfCriticalWithTokenPenaltyLoss, self).__init__()
+
+    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
+        assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
+
+        reward = self.get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False)
+        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample)
+
+        # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
+        # so no loss would be needed for it. Can be done with something like:
+        # mask = (sample > 0).float() (would not work here bc our tokens are positive also)
+        # Instead, we penalize if the model doesn't generate them:
+
+        # Penalization if no end token is found
+        reward += (((sample == vocab('<end>')).sum(1) == 0).float() * -5).unsqueeze(1).expand_as(reward)
+
+        # Penalization if no start token
+        reward = reward.contiguous()
+        reward[:, 0] += (sample[:, 0] != vocab('<start>')).float() * -5
+
+        return torch.mean(- sample_log_probs * reward)
+
+    @staticmethod
+    def get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False):
+        scorer = scorers['CIDEr']
+
+        gts = dict(enumerate(gts_batch))
+        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
+        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
+
+        _, score = scorer.compute_score(gts, res)
+        _, score_baseline = scorer.compute_score(gts, res_greedy)
+
+        return score - score_baseline
+
+
 def trigram_penalty(i, batch_size, sampled_ids, logprobs, trigrams, alpha=2.0):
     """
     Inference constraint that penalizes the log-probabilities of words that would result in repeated trigrams.
