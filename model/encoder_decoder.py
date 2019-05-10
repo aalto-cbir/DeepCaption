@@ -1199,10 +1199,7 @@ class SelfCriticalLoss(nn.Module):
         assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
 
         reward = self.get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False)
-        reward = torch.from_numpy(reward).to(device)
-
-        if reward.dtype != sample_log_probs.dtype:
-            reward = reward.type(sample_log_probs.type())
+        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample)
 
         # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
         # so no loss would be needed for it. Can be done with something like:
@@ -1221,11 +1218,7 @@ class SelfCriticalLoss(nn.Module):
         _, score = scorer.compute_score(gts, res)
         _, score_baseline = scorer.compute_score(gts, res_greedy)
 
-        scores = score - score_baseline
-
-        rewards = np.repeat(scores[:, np.newaxis], sample.size(1), 1)
-
-        return rewards
+        return score - score_baseline
 
 
 def trigram_penalty(i, batch_size, sampled_ids, logprobs, trigrams, alpha=2.0):
