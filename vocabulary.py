@@ -195,7 +195,12 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
             print(k, counter[k])
 
     # If the word frequency is less than 'threshold', then the word is discarded
-    words = [word for word, cnt in counter.items() if cnt >= ext_args.vocab_threshold]
+    words, leftovers = [], []
+    for word, cnt in counter.items():
+        if cnt >= ext_args.vocab_threshold:
+            words.append(word)
+        elif ext_args.create_leftover_words_file:
+            leftovers.append((word, cnt))
 
     if ext_args.verbose:
         print(words)
@@ -223,6 +228,14 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
 
     print("Total vocabulary size: {}".format(len(vocab)))
     print("Saved the vocabulary to '{}'".format(vocab_output_path))
+
+    if ext_args.create_leftover_words_file:
+        leftovers_name = 'leftovers.txt'
+        with open(leftovers_name, 'w') as f:
+            for word, count in sorted(leftovers, key=lambda x: (-x[1], x[0])):
+                f.write('{} {}\n'.format(word, count))
+
+        print("Leftover words saved to '{}'".format(leftovers_name))
 
     return vocab
 

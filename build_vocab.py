@@ -22,6 +22,7 @@ def parse_args():
     parser.add_argument('--show_tokens', action="store_true")
     parser.add_argument('--no_tokenize', action="store_true")
     parser.add_argument('--verbose', action="store_true")
+    parser.add_argument('--create_leftover_words_file', action="store_true", help='Create leftovers.txt file.')
 
     return parser.parse_args()
 
