@@ -7,6 +7,9 @@ import torchvision.models as models
 import numpy as np
 import gensim
 from gensim.scripts.glove2word2vec import glove2word2vec
+from nltk.translate.bleu_score import sentence_bleu
+from itertools import combinations
+from multiprocess import Pool
 
 from collections import OrderedDict, namedtuple
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
@@ -1261,6 +1264,58 @@ class SelfCriticalWithTokenPenaltyLoss(nn.Module):
         _, score_baseline = scorer.compute_score(gts, res_greedy)
 
         return score - score_baseline
+
+
+class SelfCriticalWithDiversityLoss(nn.Module):
+    def __init__(self):
+        super(SelfCriticalWithDiversityLoss, self).__init__()
+
+    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
+        gts, res, res_greedy = self.tensor_to_words(greedy_sample, sample, gts_batch, vocab, keep_tokens=False)
+
+        accuracy = self.self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers)
+        diversity = self.ngram_count(res)#res_greedy? no, no?
+
+        return accuracy + diversity
+
+    @staticmethod
+    def tensor_to_words(greedy_sample, sample, gts_batch, vocab, keep_tokens=False):
+        gts = dict(enumerate(gts_batch))
+        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
+        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
+
+        return gts, res, res_greedy
+
+    @staticmethod
+    def self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers):
+        scorer = scorers['CIDEr']
+        _, score = scorer.compute_score(gts, res)
+        _, score_baseline = scorer.compute_score(gts, res_greedy)
+
+        reward = score - score_baseline
+
+        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample)
+
+        # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
+        # so no loss would be needed for it. Can be done with something like:
+        # mask = (sample > 0).float() (would not work here bc our tokens are positive also)
+        # Instead, we penalize if the model doesn't generate them:
+
+        # Penalization if no end token is found
+        reward += (((sample == vocab('<end>')).sum(1) == 0).float() * -5).unsqueeze(1).expand_as(reward)
+
+        # Penalization if no start token
+        reward = reward.contiguous()
+        reward[:, 0] += (sample[:, 0] != vocab('<start>')).float() * -5
+
+        return torch.mean(- sample_log_probs * reward)
+
+    @staticmethod
+    def ngram_count(res):
+        with Pool() as pool:
+            pairwise_bleu = pool.map(lambda x: sentence_bleu(x[0][0], x[1][0]), combinations(res.values(), 2))
+
+        return sum(pairwise_bleu)
 
 
 def trigram_penalty(i, batch_size, sampled_ids, logprobs, trigrams, alpha=2.0):
