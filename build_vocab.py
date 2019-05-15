@@ -32,6 +32,10 @@ def parse_args():
                              'were under the threshold.')
     parser.add_argument('--leftovers_from_vocabulary', type=str, default=None,
                         help='Create leftovers file relative to specified vocabulary. No other file is created.')
+    parser.add_argument('--leftovers_from_dataset', type=str, default=None,
+                        help='Create leftovers file relative to specified dataset. No other file is created.'
+                             'You can specify a filename with --vocab_output_path, otherwise the name of the dataset '
+                             'will be used.')
 
     return parser.parse_args()
 
@@ -52,8 +56,9 @@ def check_dataset(args):
     return args.dataset
 
 
-def main():
-    args = parse_args()
+def configure_args_if_leftovers(args):
+    assert not(args.leftovers_from_vocabulary is not None and args.leftovers_from_dataset is not None), \
+        'Leftovers ambiguity'
 
     if args.leftovers_from_vocabulary is not None:
         args.vocab = args.leftovers_from_vocabulary
@@ -62,7 +67,8 @@ def main():
             args.dataset = vocab.metadata['dataset']
             args.vocab_threshold = vocab.metadata['vocab_threshold']
         else:
-            print('No metadata found in the vocabulary, so no dataset could be retrieved. This should be an old vocabulary.')
+            print(
+                'No metadata found in the vocabulary, so no dataset could be retrieved. This should be an old vocabulary.')
             print('Falling back to --dataset and --vocab_threshold parameters.')
             print()
 
@@ -71,10 +77,22 @@ def main():
         args.create_leftovers_file = True
         args.create_vocab_stats_file = False
 
+    if args.leftovers_from_dataset is not None:
+        args.dataset = args.leftovers_from_dataset
+
+        args.vocab_output_path = args.vocab_output_path if args.vocab_output_path is not None else args.leftovers_from_dataset
+        args.dont_create_vocab = True
+        args.create_leftovers_file = True
+        args.create_vocab_stats_file = False
+
+
+def main():
+    args = parse_args()
+
+    configure_args_if_leftovers(args)
     check_dataset(args)
 
     assert args.show_vocab_stats is False, "Deprecated flag, please use --create_vocab_stats_file."
-
     assert args.vocab_output_path is not None or args.dont_create_vocab, \
         'When creating a vocabulary file you should always specify it on a command line, ' \
         'e.g. --vocab_output_path=/some/dir/vocab.pkl'
