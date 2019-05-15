@@ -220,10 +220,11 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     vocab.update_metadata(metadata)
 
     # Save it
-    vocab.save(vocab_output_path)
+    if not ext_args.dont_create_vocab:
+        vocab.save(vocab_output_path)
 
-    print("Total vocabulary size: {}".format(len(vocab)))
-    print("Saved the vocabulary to '{}'".format(vocab_output_path))
+        print("Total vocabulary size: {}".format(len(vocab)))
+        print("Saved the vocabulary to '{}'".format(vocab_output_path))
 
     if ext_args.create_leftovers_file:
         dirn = os.path.dirname(vocab_output_path)

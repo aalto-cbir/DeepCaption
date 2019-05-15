@@ -4,7 +4,7 @@ from datetime import datetime
 import sys
 
 import data_loader as dl
-from vocabulary import build_vocab
+from vocabulary import build_vocab, get_vocab
 from data_loader import DatasetParams
 
 
@@ -23,18 +23,20 @@ def parse_args():
     parser.add_argument('--show_tokens', action="store_true")
     parser.add_argument('--no_tokenize', action="store_true")
     parser.add_argument('--verbose', action="store_true")
+    parser.add_argument('--dont_create_vocab', action="store_true",
+                        help='Dont create the vocabulary file.')
     parser.add_argument('--create_vocab_stats_file', action="store_true",
                         help='Create {vocab_name}-vocab_stats.txt file with key counts.')
     parser.add_argument('--create_leftovers_file', action="store_true",
                         help='Create {vocab_name}-leftovers.txt file with the words and counts that '
                              'were under the threshold.')
+    parser.add_argument('--leftovers_from_vocabulary', type=str, default=None,
+                        help='Create leftovers file relative to specified vocabulary. No other file is created.')
 
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-
+def check_dataset(args):
     if args.dataset is None:
         print('ERROR: No dataset selected!')
         print('Please supply a training dataset with the argument --dataset DATASET')
@@ -47,10 +49,35 @@ def main():
 
         sys.exit(1)
 
+    return args.dataset
+
+
+def main():
+    args = parse_args()
+
+    if args.leftovers_from_vocabulary is not None:
+        args.vocab = args.leftovers_from_vocabulary
+        vocab = get_vocab(args)
+        if hasattr(vocab, 'metadata'):
+            args.dataset = vocab.metadata['dataset']
+            args.vocab_threshold = vocab.metadata['vocab_threshold']
+        else:
+            print('No metadata found in the vocabulary, so no dataset could be retrieved. This should be an old vocabulary.')
+            print('Falling back to --dataset and --vocab_threshold parameters.')
+            print()
+
+        args.vocab_output_path = args.leftovers_from_vocabulary.split('.')[0]
+        args.dont_create_vocab = True
+        args.create_leftovers_file = True
+        args.create_vocab_stats_file = False
+
+    check_dataset(args)
+
     assert args.show_vocab_stats is False, "Deprecated flag, please use --create_vocab_stats_file."
 
-    assert args.vocab_output_path is not None, 'When creating a vocabulary file you should always specify it ' \
-                                               'on a command line, e.g. --vocab_output_path=/some/dir/vocab.pkl'
+    assert args.vocab_output_path is not None or args.dont_create_vocab, \
+        'When creating a vocabulary file you should always specify it on a command line, ' \
+        'e.g. --vocab_output_path=/some/dir/vocab.pkl'
 
     dataset_configs = dl.DatasetParams(args.dataset_config_file)
     dataset_params = dataset_configs.get_params(args.dataset)
