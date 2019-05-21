@@ -581,10 +581,11 @@ class DecoderRNN(nn.Module):
 
     def sample(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None,
-               stochastic_sampling=False, output_logprobs=False, output_hiddens=False):
+               stochastic_sampling=False, output_logprobs=False, output_hiddens=False, output_outputs=False):
         """Generate captions for given image features using greedy (beam size = 1) search."""
         sampled_ids = []
         seq_logprobs = []
+        outputs_list = []
 
         batch_size = len(images)
 
@@ -653,11 +654,17 @@ class DecoderRNN(nn.Module):
                 seq_logprobs.append(predicted_logprobs)
             if output_hiddens:
                 all_hiddens[:, i] = hiddens.squeeze(1)
+            if output_outputs:
+                outputs_list.append(outputs)
 
         # sampled_ids: (batch_size, max_seq_length)
         sampled_ids = torch.stack(sampled_ids, dim=1)
 
-        if output_hiddens:
+        if output_outputs and output_logprobs:
+            return sampled_ids, torch.stack(seq_logprobs, dim=1), torch.stack(outputs_list, dim=1)
+        elif output_outputs:
+            return sampled_ids, torch.stack(outputs_list, dim=1)
+        elif output_hiddens:
             return sampled_ids, all_hiddens,
         elif output_logprobs:
             return sampled_ids, torch.stack(seq_logprobs, dim=1)
@@ -750,7 +757,7 @@ class EncoderDecoder(nn.Module):
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None, output_decoder_hiddens=False,
-               stochastic_sampling=False, output_logprobs=False):
+               stochastic_sampling=False, output_logprobs=False, output_outputs=False):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
                                           max_seq_length=max_seq_length,
@@ -758,7 +765,8 @@ class EncoderDecoder(nn.Module):
                                           end_token_id=end_token_id,
                                           output_hiddens=output_decoder_hiddens,
                                           stochastic_sampling=stochastic_sampling,
-                                          output_logprobs=output_logprobs)
+                                          output_logprobs=output_logprobs,
+                                          output_outputs=output_outputs)
 
         return sampled_ids
 
@@ -1013,11 +1021,12 @@ class HierarchicalDecoderRNN(nn.Module):
 
     def sample(self, features, images, external_features, states=None,
                max_seq_length=50, start_token_id=None, end_token_id=None,
-               stochastic_sampling=False, output_logprobs=False, output_hiddens=False):
+               stochastic_sampling=False, output_logprobs=False, output_hiddens=False, output_outputs=False):
         """Generate captions for given image features using greedy search."""
         assert not stochastic_sampling, 'Unimplemented stochastic_sampling'
         assert not output_logprobs, 'Unimplemented output_logprobs'
         assert not output_hiddens, 'Unimplemented output_hiddens'
+        assert not output_outputs, 'Unimplemented output_outputs'
 
         inputs = features.unsqueeze(1)
         batch_size = inputs.size()[0]
@@ -1264,6 +1273,25 @@ class SelfCriticalWithTokenPenaltyLoss(nn.Module):
         _, score_baseline = scorer.compute_score(gts, res_greedy)
 
         return score - score_baseline
+
+
+class MixedLoss(nn.Module):
+    def __init__(self):
+        super(MixedLoss, self).__init__()
+        self.rl = SelfCriticalWithTokenPenaltyLoss()
+        self.ce = nn.CrossEntropyLoss()
+
+    def forward(self, sample, sample_log_probs, outputs, greedy_sample, gts_batch, scorers, vocab, targets, lengths, gamma_ml_rl):
+        packed_outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
+        assert targets.size() != packed_outputs.size(), 'Targets and outputs dont have same dimension. ' \
+                                                        'Check sequence length on the unpacked tensors.'
+
+        rl_loss = self.rl(sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab)
+        ml_loss = self.ce(packed_outputs, targets)
+
+        loss = gamma_ml_rl * rl_loss + (1 - gamma_ml_rl) * ml_loss
+
+        return loss
 
 
 class SelfCriticalWithDiversityLoss(nn.Module):
