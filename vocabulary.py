@@ -190,12 +190,13 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
                 print(diff_same, caption, '=>', joined)
             counter.update(words)
 
-    if ext_args.show_vocab_stats:
-        for k in counter.keys():
-            print(k, counter[k])
-
     # If the word frequency is less than 'threshold', then the word is discarded
-    words = [word for word, cnt in counter.items() if cnt >= ext_args.vocab_threshold]
+    words, leftovers = [], []
+    for word, cnt in counter.items():
+        if cnt >= ext_args.vocab_threshold:
+            words.append(word)
+        elif ext_args.create_leftovers_file:
+            leftovers.append((word, cnt))
 
     if ext_args.verbose:
         print(words)
@@ -219,10 +220,31 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     vocab.update_metadata(metadata)
 
     # Save it
-    vocab.save(vocab_output_path)
+    if not ext_args.dont_create_vocab:
+        vocab.save(vocab_output_path)
 
-    print("Total vocabulary size: {}".format(len(vocab)))
-    print("Saved the vocabulary to '{}'".format(vocab_output_path))
+        print("Total vocabulary size: {}".format(len(vocab)))
+        print("Saved the vocabulary to '{}'".format(vocab_output_path))
+
+    if ext_args.create_leftovers_file:
+        dirn = os.path.dirname(vocab_output_path)
+        namef = os.path.basename(vocab_output_path).split('.')[0]
+        leftovers_name = (dirn + '/') if dirn else '' + namef + '-leftovers.txt'
+        with open(leftovers_name, 'w') as f:
+            for word, count in sorted(leftovers, key=lambda x: (-x[1], x[0])):
+                f.write('{} {}\n'.format(word, count))
+
+        print("Leftover words saved to '{}'".format(leftovers_name))
+
+    if ext_args.create_vocab_stats_file:
+        dirn = os.path.dirname(vocab_output_path)
+        namef = os.path.basename(vocab_output_path).split('.')[0]
+        stats_name = (dirn + '/') if dirn else '' + namef + '-vocab_stats.txt'
+        with open(stats_name, 'w') as f:
+            for word, count in sorted(counter.items(), key=lambda x: (-x[1], x[0])):
+                f.write('{} {}\n'.format(word, count))
+
+        print("Leftover words saved to '{}'".format(stats_name))
 
     return vocab
 
