@@ -382,3 +382,58 @@ def get_ground_truth_captions(dataset):
         return gts
     else:
         raise NotImplementedError
+
+
+def trigram_penalty(i, batch_size, sampled_ids, logprobs, trigrams, alpha=2.0):
+    """
+    Inference constraint that penalizes the log-probabilities of words that would result in repeated trigrams.
+    The penalty is proportional to the number of times the trigram has already been generated.
+
+    Source:
+    https://www.aclweb.org/anthology/D18-1084
+    https://github.com/lukemelas/image-paragraph-captioning
+    :param i:
+    :param batch_size:
+    :param sampled_ids:
+    :param logprobs:
+    :param trigrams:
+    :param alpha:
+    :return:
+    """
+    # Mess with trigrams
+    if i >= 3:  # This is counting out the start token. Use 2 on the conditions if no token is generated.
+        # Store trigram generated at last step
+        prev_two_batch = sampled_ids[i - 3:i - 1]
+        for j in range(batch_size):  # = seq.size(0)
+            prev_two = (prev_two_batch[0][j].item(), prev_two_batch[1][j].item())
+            current = sampled_ids[i - 1][j]
+
+            if i == 3:  # initialize
+                trigrams.append({prev_two: [current]})  # {LongTensor: list containing 1 int}
+            elif i > 3:
+                if prev_two in trigrams[j]:  # add to list
+                    trigrams[j][prev_two].append(current)
+                else:  # create list
+                    trigrams[j][prev_two] = [current]
+
+        # Block used trigrams at next step
+        prev_two_batch = sampled_ids[i - 2:i]
+        mask = torch.zeros(logprobs.size()).to(sampled_ids.device)  # batch_size x vocab_size
+        for j in range(batch_size):
+            prev_two = (prev_two_batch[0][j].item(), prev_two_batch[1][j].item())
+
+            if prev_two in trigrams[j]:
+                for k in trigrams[j][prev_two]:
+                    mask[j, k] += 1
+
+        # Apply mask to log probs
+        # logprobs = logprobs - (mask * 1e9)
+        logprobs = logprobs + (mask * -0.693 * alpha)  # ln(1/2) * alpha (alpha -> infty works best)
+
+        # Length penalty
+        # penalty = 1.00
+        # formula = penalty**t  # (5 + t)**penalty / (5 + 1)**penalty
+        # helper = (torch.ones(logprobs.shape) - (1.0 - formula) * (torch.arange(logprobs.shape[1]).expand(logprobs.shape) <= 1).float()).cuda()
+        # logprobs = logprobs * helper
+
+    return logprobs

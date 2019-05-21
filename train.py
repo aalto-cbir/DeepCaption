@@ -18,7 +18,7 @@ from utils import prepare_hierarchical_targets, get_model_name, save_model, init
 from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
 from model.encoder_decoder import ModelParams, EncoderDecoder
-from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
+from model.loss import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
 from vocabulary import caption_ids_to_words, paragraph_ids_to_words
 
 try:
@@ -410,13 +410,13 @@ def main(args):
 
     if sc_will_happen:  # save it for later
         if args.self_critical_loss == 'sc':
-            from model.encoder_decoder import SelfCriticalLoss
+            from model.loss import SelfCriticalLoss
             rl_criterion = SelfCriticalLoss()
         elif args.self_critical_loss == 'sc_with_penalty':
-            from model.encoder_decoder import SelfCriticalWithTokenPenaltyLoss
+            from model.loss import SelfCriticalWithTokenPenaltyLoss
             rl_criterion = SelfCriticalWithTokenPenaltyLoss()
         elif args.self_critical_loss == 'mixed':
-            from model.encoder_decoder import MixedLoss
+            from model.loss import MixedLoss
             rl_criterion = MixedLoss()
         else:
             raise ValueError('Invalid self-critical loss')
