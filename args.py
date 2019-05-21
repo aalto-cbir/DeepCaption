@@ -157,6 +157,14 @@ def parse_args():
     parser.add_argument('--self_critical_from_epoch', type=int, default=-1,
                         help='After what epoch do we start finetuning the model? '
                              '(-1 = disable; never finetune, 0 = finetune from start)')
+    parser.add_argument('--self_critical_loss', type=str, default='sc_with_penalty',
+                        help='Select the self-critical variant. Some types:\n'
+                             'sc - Plain self-critical\n'
+                             'sc_with_penalty - (default) With token penalty in case <start> or <end> arent generated\n'
+                             'mixed - Mixed Self-critical with penalty and Cross entropy losses. '
+                             'Mixture controled by --gamma_ml_rl arg.')
+    parser.add_argument('--gamma_ml_rl', type=float, default=0.9995,
+                        help='Between 0 and 1. Controls the mixture of RL and ML loss in MixedLoss')
 
     # For teacher forcing schedule see - https://arxiv.org/pdf/1506.03099.pdf
     parser.add_argument('--teacher_forcing', type=str, default='always',

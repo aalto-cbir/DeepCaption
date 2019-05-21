@@ -18,7 +18,7 @@ from utils import prepare_hierarchical_targets, get_model_name, save_model, init
 from vocabulary import get_vocab
 from data_loader import get_loader, DatasetParams
 from model.encoder_decoder import ModelParams, EncoderDecoder
-from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss, SelfCriticalLoss
+from model.encoder_decoder import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
 from vocabulary import caption_ids_to_words, paragraph_ids_to_words
 
 try:
@@ -103,15 +103,26 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             projection = model.decoder.projection.weight
             loss = criterion(projection, outputs, targets)
         elif sc_activated:
+            sample_len = captions.size(1) if args.self_critical_loss == 'mixed' else 20
             with torch.no_grad():
-                outputs, log_probs = model.sample(images, init_features, persist_features,
-                                                  max_seq_length=20, start_token_id=vocab('<start>'),
-                                                  stochastic_sampling=True, output_logprobs=True)
-                greedy_outputs = model.sample(images, init_features, persist_features,
-                                              max_seq_length=20, start_token_id=vocab('<start>'),
-                                              stochastic_sampling=False)
+                sampled_seq, sampled_log_probs, outputs = model.sample(images, init_features, persist_features,
+                                                                       max_seq_length=sample_len,
+                                                                       start_token_id=vocab('<start>'),
+                                                                       stochastic_sampling=True, output_logprobs=True,
+                                                                       output_outputs=True)
+                greedy_sampled_seq = model.sample(images, init_features, persist_features,
+                                                  max_seq_length=sample_len, start_token_id=vocab('<start>'),
+                                                  stochastic_sampling=False)
 
-            loss = criterion(outputs, log_probs, greedy_outputs, [gts[i] for i in image_ids], scorers, vocab)
+            if args.self_critical_loss in ['sc', 'sc_with_penalty']:
+                loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
+                                 [gts[i] for i in image_ids], scorers, vocab)
+            elif args.self_critical_loss == 'mixed':
+                loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
+                                 [gts[i] for i in image_ids], scorers, vocab, targets, lengths,
+                                 gamma_ml_rl=args.gamma_ml_rl)
+            else:
+                raise ValueError('Invalid self-critical loss')
         else:
             loss = criterion(outputs, targets)
 
@@ -397,11 +408,22 @@ def main(args):
     else:
         criterion = nn.CrossEntropyLoss()
 
-    if sc_will_happen and start_epoch >= args.self_critical_from_epoch:
-        criterion = SelfCriticalLoss()
-        sc_activated = True
-    elif sc_will_happen:  # save it for later
-        rl_criterion = SelfCriticalLoss()
+    if sc_will_happen:  # save it for later
+        if args.self_critical_loss == 'sc':
+            from model.encoder_decoder import SelfCriticalLoss
+            rl_criterion = SelfCriticalLoss()
+        elif args.self_critical_loss == 'sc_with_penalty':
+            from model.encoder_decoder import SelfCriticalWithTokenPenaltyLoss
+            rl_criterion = SelfCriticalWithTokenPenaltyLoss()
+        elif args.self_critical_loss == 'mixed':
+            from model.encoder_decoder import MixedLoss
+            rl_criterion = MixedLoss()
+        else:
+            raise ValueError('Invalid self-critical loss')
+
+        if start_epoch >= args.self_critical_from_epoch:
+            criterion = rl_criterion
+            sc_activated = True
 
     # When using CyclicalLR, default learning rate should be always 1.0
     if args.lr_scheduler == 'CyclicalLR':
@@ -605,10 +627,13 @@ def main(args):
                 if writer and (i == len(data_loader) - 1 or i == args.num_batches - 1):
                     writer_data = {'writer': writer, 'epoch': epoch + 1}
 
+                sample_len = captions.size(1) if args.self_critical_loss == 'mixed' else 20
                 if sc_activated:
-                    outputs, log_probs = model.sample(images, init_features, persist_features,
-                                                      max_seq_length=20, start_token_id=vocab('<start>'),
-                                                      stochastic_sampling=True, output_logprobs=True)
+                    sampled_seq, sampled_log_probs, outputs = model.sample(images, init_features, persist_features,
+                                                                           max_seq_length=sample_len,
+                                                                           start_token_id=vocab('<start>'),
+                                                                           stochastic_sampling=True,
+                                                                           output_logprobs=True, output_outputs=True)
                 else:
                     outputs = model(images, init_features, captions, lengths, persist_features, teacher_p,
                                     args.teacher_forcing, sorting_order, writer_data=writer_data)
@@ -622,12 +647,20 @@ def main(args):
                     # get greedy decoding baseline
                     model.eval()
                     with torch.no_grad():
-                        greedy_outputs = model.sample(images, init_features, persist_features,
-                                                      max_seq_length=20, start_token_id=vocab('<start>'),
-                                                      stochastic_sampling=False)
+                        greedy_sampled_seq = model.sample(images, init_features, persist_features,
+                                                          max_seq_length=sample_len, start_token_id=vocab('<start>'),
+                                                          stochastic_sampling=False)
                     model.train()
 
-                    loss = criterion(outputs, log_probs, greedy_outputs, [gts_sc[i] for i in image_ids], scorers, vocab)
+                    if args.self_critical_loss in ['sc', 'sc_with_penalty']:
+                        loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
+                                         [gts_sc[i] for i in image_ids], scorers, vocab)
+                    elif args.self_critical_loss == 'mixed':
+                        loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
+                                         [gts_sc[i] for i in image_ids], scorers, vocab, targets, lengths,
+                                         gamma_ml_rl=args.gamma_ml_rl)
+                    else:
+                        raise ValueError('Invalid self-critical loss')
                 else:
                     loss = criterion(outputs, targets)
 
