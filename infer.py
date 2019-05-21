@@ -13,7 +13,7 @@ from torchvision import transforms
 
 from vocabulary import paragraph_ids_to_words, caption_ids_to_words, remove_duplicate_sentences, \
     remove_incomplete_sentences, get_vocab  # (Needed to handle Vocabulary pickle)
-from data_loader import get_loader, DatasetParams
+from dataset import get_loader, DatasetParams
 from model.encoder_decoder import ModelParams, EncoderDecoder
 from utils import basename
 

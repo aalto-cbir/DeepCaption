@@ -10,7 +10,7 @@ import torch
 from torchvision import transforms
 
 from model.encoder_decoder import FeatureExtractor
-from data_loader import get_loader, DatasetParams
+from dataset import get_loader, DatasetParams
 
 try:
     from tqdm import tqdm

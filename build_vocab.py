@@ -3,7 +3,7 @@ import argparse
 from datetime import datetime
 import sys
 
-import data_loader as dl
+import dataset as dl
 from vocabulary import build_vocab
 
 

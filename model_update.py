@@ -3,7 +3,7 @@
 import sys
 import argparse
 import torch
-from data_loader import ExternalFeature, DatasetParams
+from dataset import ExternalFeature, DatasetParams
 
 
 def get_feature_dims(state, args):

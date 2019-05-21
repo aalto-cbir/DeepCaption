@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from data_loader import get_loader, DatasetParams
+from dataset import get_loader, DatasetParams
 
 try:
     from tqdm import tqdm
