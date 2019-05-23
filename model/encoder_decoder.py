@@ -577,7 +577,7 @@ class DecoderRNN(nn.Module):
             return outputs
 
     def sample(self, features, images, external_features, states=None,
-               max_seq_length=20, start_token_id=None, end_token_id=None,
+               max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
                stochastic_sampling=False, output_logprobs=False, output_hiddens=False, output_outputs=False):
         """Generate captions for given image features using greedy (beam size = 1) search."""
         sampled_ids = []
@@ -612,10 +612,9 @@ class DecoderRNN(nn.Module):
             # inputs: (batch_size, 1, embed_size + len(external features))
             inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
 
-        block_trigrams = False
+        block_trigrams = trigram_penalty_alpha > 0
         if block_trigrams:
             trigrams = []  # will be a list of batch_size dictionaries
-            trigrams_alpha = 2.0  # = 4.0
 
         for i in range(max_seq_length):
             hiddens, states = self.rnn(inputs, states)
@@ -633,7 +632,7 @@ class DecoderRNN(nn.Module):
             if not stochastic_sampling:
                 # greedy (beam search size = 1)
                 if block_trigrams:
-                    logprobs = trigram_penalty(i, batch_size, sampled_ids, logprobs, trigrams, alpha=trigrams_alpha)
+                    logprobs = trigram_penalty(i, batch_size, sampled_ids, logprobs, trigrams, alpha=trigram_penalty_alpha)
 
                 predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
             else:
@@ -753,13 +752,14 @@ class EncoderDecoder(nn.Module):
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20, start_token_id=None, end_token_id=None, output_decoder_hiddens=False,
-               stochastic_sampling=False, output_logprobs=False, output_outputs=False):
+               max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
+               output_decoder_hiddens=False, stochastic_sampling=False, output_logprobs=False, output_outputs=False):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
                                           max_seq_length=max_seq_length,
                                           start_token_id=start_token_id,
                                           end_token_id=end_token_id,
+                                          trigram_penalty_alpha=trigram_penalty_alpha,
                                           output_hiddens=output_decoder_hiddens,
                                           stochastic_sampling=stochastic_sampling,
                                           output_logprobs=output_logprobs,
@@ -1004,13 +1004,14 @@ class HierarchicalDecoderRNN(nn.Module):
         return sentence_stopping, word_rnn_out
 
     def sample(self, features, images, external_features, states=None,
-               max_seq_length=50, start_token_id=None, end_token_id=None,
+               max_seq_length=50, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
                stochastic_sampling=False, output_logprobs=False, output_hiddens=False, output_outputs=False):
         """Generate captions for given image features using greedy search."""
         assert not stochastic_sampling, 'Unimplemented stochastic_sampling'
         assert not output_logprobs, 'Unimplemented output_logprobs'
         assert not output_hiddens, 'Unimplemented output_hiddens'
         assert not output_outputs, 'Unimplemented output_outputs'
+        assert trigram_penalty_alpha <= 0, 'Unimplemented trigrams penalty'
 
         inputs = features.unsqueeze(1)
         batch_size = inputs.size()[0]

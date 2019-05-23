@@ -418,7 +418,7 @@ def trigram_penalty(i, batch_size, sampled_ids, logprobs, trigrams, alpha=2.0):
 
         # Block used trigrams at next step
         prev_two_batch = sampled_ids[i - 2:i]
-        mask = torch.zeros(logprobs.size()).to(sampled_ids.device)  # batch_size x vocab_size
+        mask = torch.zeros(logprobs.size()).to(logprobs.device)  # batch_size x vocab_size
         for j in range(batch_size):
             prev_two = (prev_two_batch[0][j].item(), prev_two_batch[1][j].item())
 

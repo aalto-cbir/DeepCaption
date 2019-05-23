@@ -154,6 +154,7 @@ def parse_args():
                         help='Default step size for StepLR lr scheduler')
     parser.add_argument('--share_embedding_weights', action='store_true',
                         help='Share weights for language model input and output embeddings')
+
     parser.add_argument('--self_critical_from_epoch', type=int, default=-1,
                         help='After what epoch do we start finetuning the model? '
                              '(-1 = disable; never finetune, 0 = finetune from start)')
@@ -163,6 +164,8 @@ def parse_args():
                              'sc_with_penalty - (default) With token penalty in case <start> or <end> arent generated\n'
                              'mixed - Mixed Self-critical with penalty and Cross entropy losses. '
                              'Mixture controled by --gamma_ml_rl arg.')
+    parser.add_argument('--trigram_penalty_alpha', type=float, default=-1,
+                        help='Inference penalty for repeating trigrams. It should be positive.')
     parser.add_argument('--gamma_ml_rl', type=float, default=0.9995,
                         help='Between 0 and 1. Controls the mixture of RL and ML loss in MixedLoss')
 

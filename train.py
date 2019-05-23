@@ -94,6 +94,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             if len(scorers) > 0:
                 # Generate a caption from the image
                 sampled_batch = model.sample(images, init_features, persist_features,
+                                             trigram_penalty_alpha=args.trigram_penalty_alpha,
                                              max_seq_length=20, start_token_id=vocab('<start>'))
                 sampled_ids_batch = sampled_batch
 
@@ -108,9 +109,11 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 sampled_seq, sampled_log_probs, outputs = model.sample(images, init_features, persist_features,
                                                                        max_seq_length=sample_len,
                                                                        start_token_id=vocab('<start>'),
+                                                                       trigram_penalty_alpha=args.trigram_penalty_alpha,
                                                                        stochastic_sampling=True, output_logprobs=True,
                                                                        output_outputs=True)
                 greedy_sampled_seq = model.sample(images, init_features, persist_features,
+                                                  trigram_penalty_alpha=args.trigram_penalty_alpha,
                                                   max_seq_length=sample_len, start_token_id=vocab('<start>'),
                                                   stochastic_sampling=False)
 
@@ -635,6 +638,7 @@ def main(args):
                     sampled_seq, sampled_log_probs, outputs = model.sample(images, init_features, persist_features,
                                                                            max_seq_length=sample_len,
                                                                            start_token_id=vocab('<start>'),
+                                                                           trigram_penalty_alpha=args.trigram_penalty_alpha,
                                                                            stochastic_sampling=True,
                                                                            output_logprobs=True, output_outputs=True)
                 else:
@@ -652,6 +656,7 @@ def main(args):
                     with torch.no_grad():
                         greedy_sampled_seq = model.sample(images, init_features, persist_features,
                                                           max_seq_length=sample_len, start_token_id=vocab('<start>'),
+                                                          trigram_penalty_alpha=args.trigram_penalty_alpha,
                                                           stochastic_sampling=False)
                     model.train()
 
