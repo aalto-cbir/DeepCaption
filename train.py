@@ -117,7 +117,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                                   max_seq_length=sample_len, start_token_id=vocab('<start>'),
                                                   stochastic_sampling=False)
 
-            if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout']:
+            if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout', 'sc_masked_tokens']:
                 loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                  [gts[i] for i in image_ids], scorers, vocab)
             elif args.self_critical_loss == 'mixed':
@@ -424,6 +424,9 @@ def main(args):
         elif args.self_critical_loss == 'mixed':
             from model.loss import MixedLoss
             rl_criterion = MixedLoss()
+        elif args.self_critical_loss == 'sc_masked_tokens':
+            from model.loss import SelfCriticalMaskedTokensLoss
+            rl_criterion = SelfCriticalMaskedTokensLoss()
         else:
             raise ValueError('Invalid self-critical loss')
 
@@ -660,7 +663,7 @@ def main(args):
                                                           stochastic_sampling=False)
                     model.train()
 
-                    if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout']:
+                    if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout', 'sc_masked_tokens']:
                         loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                          [gts_sc[i] for i in image_ids], scorers, vocab)
                     elif args.self_critical_loss == 'mixed':

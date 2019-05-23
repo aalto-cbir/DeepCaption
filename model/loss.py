@@ -104,6 +104,38 @@ class SelfCriticalLoss(nn.Module):
         return score - score_baseline
 
 
+class SelfCriticalMaskedTokensLoss(nn.Module):
+    """Reinforcement Learning Self-critical loss.
+    https://arxiv.org/abs/1612.00563
+    Code from https://github.com/ruotianluo/self-critical.pytorch
+    """
+    def __init__(self):
+        super(SelfCriticalMaskedTokensLoss, self).__init__()
+
+    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
+        assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
+
+        reward = self.get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False)
+        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample)
+
+        mask = (sample != vocab('<start>')) & (sample != vocab('<end>')) & (sample != vocab('<pad>'))
+
+        return - torch.mean(sample_log_probs * reward * mask.float())
+
+    @staticmethod
+    def get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False):
+        scorer = scorers['CIDEr']
+
+        gts = dict(enumerate(gts_batch))
+        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
+        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
+
+        _, score = scorer.compute_score(gts, res)
+        _, score_baseline = scorer.compute_score(gts, res_greedy)
+
+        return score - score_baseline
+
+
 class SelfCriticalWithTokenPenaltyLoss(nn.Module):
     """Reinforcement Learning Self-critical loss.
     https://arxiv.org/abs/1612.00563
