@@ -189,18 +189,30 @@ class ExternalFeature:
         if base_path is None:
             base_path = ''
         full_path = os.path.expanduser(os.path.join(base_path, filename))
+        full_path_o = full_path
+        self.is_mean = False
         self.lmdb = None
         self.lmdb_path = None
         self.bin = None
         self.disable_cache = False
 
         if not os.path.exists(full_path):
-            raise FileNotFoundError('ERROR: external feature file not found: ' + full_path)
+            m = re.match('^(.+)\.(.+?)$', filename)
+            fnmean = m.group(1)+'-mean.'+m.group(2) if m else filename
+            self.is_mean = fnmean!=filename
+            full_path = os.path.expanduser(os.path.join(base_path, fnmean))
+
+        if not os.path.exists(full_path):
+            raise FileNotFoundError('ERROR: external feature file not found: ' + full_path_o)
+
+        if self.is_mean:
+            print('Using mean features from '+full_path);
 
         if filename.endswith('.h5'):
             import h5py
             self.f = h5py.File(full_path, 'r')
             self.data = self.f['data']
+
         elif filename.endswith('.lmdb'):
             import lmdb
             self.lmdb = lmdb
@@ -304,7 +316,8 @@ class ExternalFeature:
             for i in self.binx[pid]:
                 found = False
                 for j in idx:
-                    v = i.get_float(j)
+                    k = j if not self.is_mean else 0
+                    v = i.get_float(k)
                     if not np.isnan(v[0]):
                         found = True
                         x += v
