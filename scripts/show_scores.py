@@ -54,12 +54,12 @@ def metric_strs(g, metrics_strs, separator):
 def print_scores_gdoc(scores, separator):
     header = 'model METEOR	CIDER	BLEU	Best epoch each	METEOR	CIDER	BLEU	Best epoch each	METEOR	METEOR*	CIDER	CIDER*'
 
-    print(header)
+    # print(header)
     for model, groups in sorted(scores.items()):
         model_str = model \
-                    + metric_strs(groups['2016'], ['METEOR', 'CIDER', 'BLEU-4'], separator) + separator \
-                    + metric_strs(groups['2017-G2'], ['METEOR', 'CIDER', 'BLEU-4'], separator) + separator \
-                    + metric_strs(groups['2018'], ['METEOR', '<space>', 'CIDER', '<space>', 'BLEU-4'], separator)
+                    + ((metric_strs(groups['2016'], ['METEOR', 'CIDER', 'BLEU-4'], separator) + separator) if '2016' in groups else '') \
+                    + ((metric_strs(groups['2017-G2'], ['METEOR', 'CIDER', 'BLEU-4'], separator) + separator) if '2017-G2' in groups else '') \
+                    + (metric_strs(groups['2018'], ['METEOR', '<space>', 'CIDER', '<space>', 'BLEU-4'], separator) if '2018' in groups else '')
         print(model_str)
 
 
