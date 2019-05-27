@@ -25,6 +25,8 @@ class Vocabulary(object):
         """
         self.word2idx = {}
         self.idx2word = {}
+        self.freq = {}
+        self.freq_sum = -1
         self.idx = 0
 
         self.metadata = {'includes_start_token': start_token}
@@ -33,10 +35,13 @@ class Vocabulary(object):
         if not start_token:
             self.special_tokens.remove('<start>')
 
-    def add_word(self, word):
+    def add_word(self, word, frequency=None):
         if word not in self.word2idx:
             self.word2idx[word] = self.idx
             self.idx2word[self.idx] = word
+            if frequency is not None:
+                self.freq[self.idx] = frequency
+
             self.idx += 1
 
     def __call__(self, word):
@@ -52,9 +57,28 @@ class Vocabulary(object):
     def __len__(self):
         return len(self.word2idx)
 
+    def frequency(self, word):
+        assert hasattr(self, 'metadata') and self.metadata['save_frequencies'], \
+            'No frequencies were saved for the vocabulary, please rebuild it again with frequencies enabled.'
+
+        if isinstance(word, str):
+            return self.freq[self.word2idx[word]]
+        elif isinstance(word, int):
+            return self.freq[word]
+        elif isinstance(word, list):
+            return [self.freq[x] for x in word]
+        else:
+            raise ValueError('Unrecognised parameter type')
+
+    def frequency_sum(self):
+        assert hasattr(self, 'metadata') and self.metadata['save_frequencies'], \
+            'No frequencies were saved for the vocabulary, please rebuild it again with frequencies enabled.'
+
+        return self.freq_sum
+
     def add_special_tokens(self):
         for t in self.special_tokens:
-            self.add_word(t)
+            self.add_word(t, 0)
 
     def save(self, vocab_path):
         vocab_dir = os.path.dirname(vocab_path)
@@ -194,7 +218,7 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     words, leftovers = [], []
     for word, cnt in counter.items():
         if cnt >= ext_args.vocab_threshold:
-            words.append(word)
+            words.append((word, cnt))
         elif ext_args.create_leftovers_file:
             leftovers.append((word, cnt))
 
@@ -206,15 +230,19 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     vocab.add_special_tokens()
 
     # Add the words to the vocabulary
-    for word in words:
-        vocab.add_word(word)
+    for word, cnt in words:
+        vocab.add_word(word, cnt if ext_args.keep_frequency else None)
+
+    if ext_args.keep_frequency:
+        vocab.freq_sum = sum(vocab.freq.values())
 
     # Store vocabulary metadata:
     metadata = {
         'file_path': os.path.abspath(vocab_output_path),
         'dataset': ext_args.dataset,
         'vocab_threshold': ext_args.vocab_threshold,
-        'no_tokenize': ext_args.no_tokenize
+        'no_tokenize': ext_args.no_tokenize,
+        'keep_frequency': ext_args.keep_frequency
     }
 
     vocab.update_metadata(metadata)

@@ -22,6 +22,7 @@ def parse_args():
                         help='show key counts')
     parser.add_argument('--show_tokens', action="store_true")
     parser.add_argument('--no_tokenize', action="store_true")
+    parser.add_argument('--keep_frequency', action="store_true")
     parser.add_argument('--verbose', action="store_true")
     parser.add_argument('--dont_create_vocab', action="store_true",
                         help='Dont create the vocabulary file.')
