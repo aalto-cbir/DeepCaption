@@ -1,7 +1,3 @@
-from nltk.translate.bleu_score import sentence_bleu
-from itertools import combinations
-from multiprocess import Pool
-
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence
@@ -252,8 +248,8 @@ class SelfCriticalWithDiversityLoss(nn.Module):
     def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
         gts, res, res_greedy = self.tensor_to_words(greedy_sample, sample, gts_batch, vocab, keep_tokens=False)
 
-        accuracy = self.self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers)
-        diversity = self.ngram_count(res)#res_greedy? no, no?
+        accuracy = self.self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers)  # SelfCriticalWithTokenPenaltyLoss
+        diversity = self.diversity(res)
 
         return accuracy + diversity
 
@@ -290,8 +286,22 @@ class SelfCriticalWithDiversityLoss(nn.Module):
         return torch.mean(- sample_log_probs * reward)
 
     @staticmethod
-    def ngram_count(res):
-        with Pool() as pool:
-            pairwise_bleu = pool.map(lambda x: sentence_bleu(x[0][0], x[1][0]), combinations(res.values(), 2))
+    def diversity(res):
+        unigram, bigram, trigram, cuatrigram = set(), set(), set(), set()
+        n_tokens = 0
 
-        return sum(pairwise_bleu)
+        for a, b in res.items():
+            cap = b[0].split()
+            v_len = len(cap)
+            n_tokens += v_len
+            unigram.update(cap)
+            bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
+            trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
+            cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
+
+        d1 = len(unigram) / n_tokens
+        d2 = len(bigram) / n_tokens
+        d3 = len(trigram) / n_tokens
+        d4 = len(cuatrigram) / n_tokens
+
+        return - (d1 + d2 + d3 + d4)

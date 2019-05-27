@@ -104,7 +104,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
             projection = model.decoder.projection.weight
             loss = criterion(projection, outputs, targets)
         elif sc_activated:
-            sample_len = captions.size(1) if args.self_critical_loss == 'mixed' else 20
+            sample_len = captions.size(1) if args.self_critical_loss in ['mixed'] else 20
             with torch.no_grad():
                 sampled_seq, sampled_log_probs, outputs = model.sample(images, init_features, persist_features,
                                                                        max_seq_length=sample_len,
@@ -117,10 +117,11 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                                   max_seq_length=sample_len, start_token_id=vocab('<start>'),
                                                   stochastic_sampling=False)
 
-            if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout', 'sc_masked_tokens']:
+            if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
+                                           'sc_with_diversity', 'sc_masked_tokens']:
                 loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                  [gts[i] for i in image_ids], scorers, vocab)
-            elif args.self_critical_loss == 'mixed':
+            elif args.self_critical_loss in ['mixed']:
                 loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
                                  [gts[i] for i in image_ids], scorers, vocab, targets, lengths,
                                  gamma_ml_rl=args.gamma_ml_rl)
@@ -421,6 +422,9 @@ def main(args):
         elif args.self_critical_loss == 'sc_with_penalty_throughout':
             from model.loss import SelfCriticalWithTokenPenaltyThroughoutLoss
             rl_criterion = SelfCriticalWithTokenPenaltyThroughoutLoss()
+        elif args.self_critical_loss == 'sc_with_diversity':
+            from model.loss import SelfCriticalWithDiversityLoss
+            rl_criterion = SelfCriticalWithDiversityLoss()
         elif args.self_critical_loss == 'mixed':
             from model.loss import MixedLoss
             rl_criterion = MixedLoss()
@@ -636,7 +640,7 @@ def main(args):
                 if writer and (i == len(data_loader) - 1 or i == args.num_batches - 1):
                     writer_data = {'writer': writer, 'epoch': epoch + 1}
 
-                sample_len = captions.size(1) if args.self_critical_loss == 'mixed' else 20
+                sample_len = captions.size(1) if args.self_critical_loss in ['mixed'] else 20
                 if sc_activated:
                     sampled_seq, sampled_log_probs, outputs = model.sample(images, init_features, persist_features,
                                                                            max_seq_length=sample_len,
@@ -663,10 +667,11 @@ def main(args):
                                                           stochastic_sampling=False)
                     model.train()
 
-                    if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout', 'sc_masked_tokens']:
+                    if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
+                                                   'sc_with_diversity', 'sc_masked_tokens']:
                         loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                          [gts_sc[i] for i in image_ids], scorers, vocab)
-                    elif args.self_critical_loss == 'mixed':
+                    elif args.self_critical_loss in ['mixed']:
                         loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
                                          [gts_sc[i] for i in image_ids], scorers, vocab, targets, lengths,
                                          gamma_ml_rl=args.gamma_ml_rl)
