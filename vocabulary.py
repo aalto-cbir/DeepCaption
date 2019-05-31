@@ -370,3 +370,9 @@ def word_ids_to_words(sample, vocab, is_hierarchical=False, keep_tokens=False):
     """
     ids_to_words_fn = paragraph_ids_to_words if is_hierarchical else caption_ids_to_words
     return {i: [ids_to_words_fn(sample[i], vocab, keep_tokens=keep_tokens).lower()] for i in range(sample.shape[0])}
+
+
+def clean_word_ids(sample, vocab):
+    end_idx = [(sample[i] == vocab('<end>')).nonzero() for i in range(sample.size(0))]  # because no dim=0 parameter
+    end_idx = [i[0].item() if i.size(0) != 0 else None for i in end_idx]
+    return [sample[i][:ei + 1 if ei is not None else ei] for i, ei in enumerate(end_idx)]  # end_idx included

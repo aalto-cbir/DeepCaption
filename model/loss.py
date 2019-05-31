@@ -1,10 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils.rnn import pack_padded_sequence
+from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, PackedSequence
 
-from collections import Counter
-from vocabulary import word_ids_to_words
+from collections import Counter, defaultdict
+from vocabulary import word_ids_to_words, clean_word_ids
 
 # Device configuration
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -249,7 +249,7 @@ class FACELoss(nn.Module):
     https://arxiv.org/abs/1902.09191.pdf
     Code from https://github.com/ShaojieJiang/FACE
     """
-    def __init__(self, frequency_type='out', weighing_time='pre'):
+    def __init__(self, vocab_size, frequency_type='out', weighing_time='pre'):
         """
         FACE initialization.
         :param frequency_type: What to use for calculating token frequency.
@@ -262,15 +262,17 @@ class FACELoss(nn.Module):
         self.frequency_type = frequency_type
         self.weighing_time = weighing_time
         self.criterion = nn.CrossEntropyLoss(reduction='none' if self.weighing_time == 'post' else 'mean')
-        self.word_freq = {}
+        self.word_freq = torch.zeros(vocab_size).to(device)
 
-    def forward(self, sample, packed_outputs, targets, packed_targets):
+    def forward(self, sample, packed_outputs, targets, packed_targets, vocab):
 
         # Update token frequency, or not
         if self.frequency_type == 'gt':
-            self.update_frequency(self.clean_preds(targets))
+            # self.update_frequency(self.clean_preds(targets))
+            self.update_frequency(clean_word_ids(targets, vocab))
         elif self.frequency_type == 'out':
-            self.update_frequency(self.clean_preds(sample))
+            # self.update_frequency(self.clean_preds(sample))
+            self.update_frequency(clean_word_ids(sample, vocab))
 
         # calculate loss w/ or w/o pre-/post-weight
         if self.weighing_time == 'pre':
@@ -278,24 +280,22 @@ class FACELoss(nn.Module):
             loss = self.criterion(packed_outputs, packed_targets)
         elif self.weighing_time == 'post':
             loss = self.criterion(packed_outputs, packed_targets)
-            device = loss.device
-            freq_pred = self.word_freq[sample.view(-1).cpu().numpy()]
-            freq_pred = torch.FloatTensor(freq_pred).to(device)
-            freq_GT = self.word_freq[targets.cpu().numpy()]
-            freq_GT = torch.FloatTensor(freq_GT).to(device)
+            freq_pred = self.word_freq[sample.view(-1)].float().sum()
+            freq_GT = self.word_freq[targets.view(-1)].float().sum()
             total_freq = self.word_freq.sum()
             weight = 1 + F.relu(freq_pred - freq_GT) / total_freq
             loss = torch.matmul(loss, weight)
 
-        notnull = packed_targets.ne(self.NULL_IDX)
-        target_tokens = notnull.long().sum().item()
+        # notnull = packed_targets.ne(self.NULL_IDX)
+        # target_tokens = notnull.long().sum().item()
+        target_tokens = packed_targets.view(-1).size(0)
 
         return loss / target_tokens
 
     def update_frequency(self, preds):
         curr = Counter()
         for pred in preds:
-            curr.update(pred)
+            curr.update(pred.tolist())
 
         for k, v in curr.items():
             self.word_freq[k] += v
@@ -318,11 +318,7 @@ class FACELoss(nn.Module):
         RF = self.word_freq / self.word_freq.sum()  # relative frequency
         a = -1 / RF.max()
         weight = a * RF + 1
-        weight = weight / weight.sum() * len(weight)  # normalization
-        if self.use_cuda:
-            return torch.FloatTensor(weight).cuda()
-        else:
-            return torch.FloatTensor(weight)
+        return weight / weight.sum() * len(weight)  # normalization
 
 
 class MixedWithFACELoss(nn.Module):
@@ -335,18 +331,18 @@ class MixedWithFACELoss(nn.Module):
     https://arxiv.org/abs/1902.09191.pdf
     Code from https://github.com/ShaojieJiang/FACE
     """
-    def __init__(self):
+    def __init__(self, vocab_size):
         super(MixedWithFACELoss, self).__init__()
         self.rl = SelfCriticalWithTokenPenaltyLoss()
-        self.face = FACELoss()
+        self.face = FACELoss(vocab_size)
 
-    def forward(self, sample, sample_log_probs, outputs, greedy_sample, gts_batch, scorers, vocab, targets, lengths, gamma_ml_rl):
+    def forward(self, sample, sample_log_probs, outputs, greedy_sample, gts_batch, scorers, vocab, captions, targets, lengths, gamma_ml_rl):
         packed_outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
         assert targets.size() != packed_outputs.size(), 'Targets and outputs dont have same dimension. ' \
                                                         'Check sequence length on the unpacked tensors.'
 
         rl_loss = self.rl(sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab)
-        ml_loss = self.face(sample, packed_outputs, 0, targets)
+        ml_loss = self.face(sample, packed_outputs, targets=captions, packed_targets=targets, vocab=vocab)
 
         loss = gamma_ml_rl * rl_loss + (1 - gamma_ml_rl) * ml_loss
 
@@ -363,6 +359,8 @@ class SelfCriticalWithDiversityLoss(nn.Module):
         accuracy = self.self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers)  # SelfCriticalWithTokenPenaltyLoss
         diversity = self.diversity(res)
 
+        # gamma = 0.5
+        # return gamma * accuracy + (1 - gamma) * diversity
         return accuracy + diversity
 
     @staticmethod
