@@ -397,6 +397,14 @@ class SelfCriticalWithDiversityLoss(nn.Module):
 
     @staticmethod
     def diversity(res):
+        """
+        Diversity loss is taken and adapted for 3 and 4-gram from:
+        FACE: Improving Neural Response Diversity with Frequency-Aware Cross-Entropy Loss
+        https://arxiv.org/abs/1902.09191.pdf
+        Code from https://github.com/ShaojieJiang/FACE
+        :param res:
+        :return:
+        """
         unigram, bigram, trigram, cuatrigram = set(), set(), set(), set()
         n_tokens = 0
 
@@ -415,3 +423,94 @@ class SelfCriticalWithDiversityLoss(nn.Module):
         d4 = len(cuatrigram) / n_tokens
 
         return - (d1 + d2 + d3 + d4)
+
+
+class SelfCriticalWithRepetitionLoss(nn.Module):
+    def __init__(self):
+        super(SelfCriticalWithRepetitionLoss, self).__init__()
+
+    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
+        gts, res, res_greedy = self.tensor_to_words(greedy_sample, sample, gts_batch, vocab, keep_tokens=False)
+
+        accuracy = self.self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers)  # SelfCriticalWithTokenPenaltyLoss
+        diversity = self.repetition(res)
+
+        # gamma = 0.5
+        # return gamma * accuracy + (1 - gamma) * diversity
+        return accuracy + diversity
+
+    @staticmethod
+    def tensor_to_words(greedy_sample, sample, gts_batch, vocab, keep_tokens=False):
+        gts = dict(enumerate(gts_batch))
+        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
+        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
+
+        return gts, res, res_greedy
+
+    @staticmethod
+    def self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers):
+        scorer = scorers['CIDEr']
+        _, score = scorer.compute_score(gts, res)
+        _, score_baseline = scorer.compute_score(gts, res_greedy)
+
+        reward = score - score_baseline
+
+        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample)
+
+        # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
+        # so no loss would be needed for it. Can be done with something like:
+        # mask = (sample > 0).float() (would not work here bc our tokens are positive also)
+        # Instead, we penalize if the model doesn't generate them:
+
+        # Penalization if no end token is found
+        reward += (((sample == vocab('<end>')).sum(1) == 0).float() * -5).unsqueeze(1).expand_as(reward)
+
+        # Penalization if no start token
+        reward = reward.contiguous()
+        reward[:, 0] += (sample[:, 0] != vocab('<start>')).float() * -5
+
+        return torch.mean(- sample_log_probs * reward)
+
+    @staticmethod
+    def repetition(res):
+        unigram, bigram, trigram, cuatrigram = Counter(), Counter(), Counter(), Counter()
+        n_tokens = 0
+        d1, d2, d3, d4 = 0, 0, 0, 0
+
+        for a, b in res.items():
+            cap = b[0].split()
+            v_len = len(cap)
+            n_tokens += v_len
+
+            unigram.update(cap)
+            bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
+            trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
+            cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
+
+            d1 += ((torch.tensor(list(unigram.values())).float() - 1) ** 2).sum() / v_len if v_len > 0 else 0
+            d2 += ((torch.tensor(list(bigram.values())).float() - 1) ** 2).sum() / (v_len - 1) if v_len > 1 else 0
+            d3 += ((torch.tensor(list(trigram.values())).float() - 1) ** 2).sum() / (v_len - 2) if v_len > 2 else 0
+            d4 += ((torch.tensor(list(cuatrigram.values())).float() - 1) ** 2).sum() / (v_len - 3) if v_len > 3 else 0
+
+            unigram.clear()
+            bigram.clear()
+            trigram.clear()
+            cuatrigram.clear()
+
+        # for a, b in res.items():
+        #     cap = b[0].split()
+        #     v_len = len(cap)
+        #     n_tokens += v_len
+        #     unigram.update(cap)
+        #     bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
+        #     trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
+        #     cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
+        #
+        # d1 = ((np.stack(unigram.values()) - 1) ** 3).sum() / n_tokens
+        # d2 = ((np.stack(bigram.values()) - 1) ** 3).sum() / n_tokens
+        # d3 = ((np.stack(trigram.values()) - 1) ** 3).sum() / n_tokens
+        # d4 = ((np.stack(cuatrigram.values()) - 1) ** 3).sum() / n_tokens
+
+        return d1 * 0.1 + d2 + d3 + d4
+        # 1 - len(Counter([tuple(s2[i:i + 2]) for i in range(len(s2) - 1)])) / len(s2)
+        # ((np.array(list(Counter([tuple(s1[i:i + 2]) for i in range(len(s1) - 1)]).values())) - 1) ** 3).sum() / len(s1)
