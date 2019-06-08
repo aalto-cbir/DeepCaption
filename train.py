@@ -118,7 +118,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                                   stochastic_sampling=False)
 
             if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
-                                           'sc_with_diversity', 'sc_masked_tokens']:
+                                           'sc_with_diversity', 'sc_with_repetition', 'sc_masked_tokens']:
                 loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                  [gts[i] for i in image_ids], scorers, vocab)
             elif args.self_critical_loss in ['mixed']:
@@ -429,6 +429,9 @@ def main(args):
         elif args.self_critical_loss == 'sc_with_diversity':
             from model.loss import SelfCriticalWithDiversityLoss
             rl_criterion = SelfCriticalWithDiversityLoss()
+        elif args.self_critical_loss == 'sc_with_repetition':
+            from model.loss import SelfCriticalWithRepetitionLoss
+            rl_criterion = SelfCriticalWithRepetitionLoss()
         elif args.self_critical_loss == 'mixed':
             from model.loss import MixedLoss
             rl_criterion = MixedLoss()
@@ -441,9 +444,12 @@ def main(args):
         else:
             raise ValueError('Invalid self-critical loss')
 
+        print('Selected self-critical loss is', rl_criterion)
+
         if start_epoch >= args.self_critical_from_epoch:
             criterion = rl_criterion
             sc_activated = True
+            print('Self-critical loss training begins')
 
     # When using CyclicalLR, default learning rate should be always 1.0
     if args.lr_scheduler == 'CyclicalLR':
@@ -585,7 +591,7 @@ def main(args):
 
                 optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
                 criterion = rl_criterion
-                print('Changing loss function to Self Critical')
+                print('Self-critical loss training begins')
                 sc_activated = True
 
             for i, data in enumerate(data_loader):
@@ -675,7 +681,7 @@ def main(args):
                     model.train()
 
                     if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
-                                                   'sc_with_diversity', 'sc_masked_tokens']:
+                                                   'sc_with_diversity', 'sc_with_repetition', 'sc_masked_tokens']:
                         loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                          [gts_sc[i] for i in image_ids], scorers, vocab)
                     elif args.self_critical_loss in ['mixed']:
