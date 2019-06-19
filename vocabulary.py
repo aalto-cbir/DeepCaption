@@ -54,6 +54,14 @@ class Vocabulary(object):
                 return -1
             return self.idx2word[word]
 
+    def __contains__(self, item):
+        if isinstance(item, str):
+            return item in self.word2idx
+        elif isinstance(item, int):
+            return item in self.idx2word
+        else:
+            raise ValueError
+
     def __len__(self):
         return len(self.word2idx)
 
