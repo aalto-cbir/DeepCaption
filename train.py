@@ -209,6 +209,9 @@ def main(args):
             if s == 'cider':
                 from eval.cider import Cider
                 scorers['CIDEr'] = Cider()
+            if s == 'ciderd':
+                from eval.ciderD.ciderD import CiderD
+                scorers['CIDEr-D'] = CiderD(df=args.cached_words)
 
     ########################
     # Set Model parameters #
