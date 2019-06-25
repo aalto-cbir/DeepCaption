@@ -67,7 +67,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 if params.hierarchical_model:
                     gts[jid].append(paragraph_ids_to_words(captions[j, :], vocab).lower())
                 else:
-                    gts[jid].append(caption_ids_to_words(captions[j, :], vocab).lower())
+                    gts[jid].append(caption_ids_to_words(captions[j, :], vocab, skip_start_token=True).lower())
 
         # Set mini-batch dataset
         images = images.to(device)
@@ -148,7 +148,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 if params.hierarchical_model:
                     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
                 else:
-                    res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+                    res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab, skip_start_token=True).lower()]
 
         # Used for testing:
         if i + 1 == args.num_batches:
@@ -159,6 +159,8 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
     end = datetime.now()
 
     for score_name, scorer in scorers.items():
+        if score_name == 'CIDEr-D':
+            continue
         score = scorer.compute_score(gts, res)[0]
         print('Validation', score_name, score)
         stats['validation_' + score_name.lower()] = score
@@ -458,7 +460,7 @@ def main(args):
         default_lr = 0.001
 
     if sc_activated:
-        optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
+        optimizer = torch.optim.Adam(opt_params, lr=args.learning_rate if args.learning_rate else 5e-5, weight_decay=args.weight_decay)
     elif args.optimizer == 'adam':
         optimizer = torch.optim.Adam(opt_params, lr=default_lr, weight_decay=args.weight_decay)
     elif args.optimizer == 'rmsprop':
@@ -682,8 +684,8 @@ def main(args):
 
                     if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
                                                    'sc_with_diversity', 'sc_with_repetition', 'sc_masked_tokens']:
-                        loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
-                                         [gts_sc[i] for i in image_ids], scorers, vocab)
+                        loss, advantage = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
+                                                    [gts_sc[i] for i in image_ids], scorers, vocab, return_advantage=True)
                     elif args.self_critical_loss in ['mixed']:
                         loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
                                          [gts_sc[i] for i in image_ids], scorers, vocab, targets, lengths,
@@ -694,6 +696,11 @@ def main(args):
                                          gamma_ml_rl=args.gamma_ml_rl)
                     else:
                         raise ValueError('Invalid self-critical loss')
+
+                    if writer is not None and i % 100 == 0:
+                        writer.add_scalar('training_loss', loss.item(), epoch * len(data_loader) + i)
+                        writer.add_scalar('advantage', advantage, epoch * len(data_loader) + i)
+                        writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch * len(data_loader) + i)
                 else:
                     loss = criterion(outputs, targets)
 

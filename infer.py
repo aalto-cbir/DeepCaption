@@ -202,7 +202,7 @@ class infer_object:
                 if self.params.hierarchical_model:
                     caption = paragraph_ids_to_words(sampled_ids, self.vocab)
                 else:
-                    caption = caption_ids_to_words(sampled_ids, self.vocab)
+                    caption = caption_ids_to_words(sampled_ids, self.vocab, skip_start_token=True)
 
                 if args['no_repeat_sentences']:
                     caption = remove_duplicate_sentences(caption)
