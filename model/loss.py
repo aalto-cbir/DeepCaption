@@ -69,72 +69,6 @@ class HierarchicalXEntropyLoss(nn.Module):
         return self.weight_sent, self.loss_s, self.weight_word, self.loss_w
 
 
-class SelfCriticalLoss(nn.Module):
-    """Reinforcement Learning Self-critical loss.
-    https://arxiv.org/abs/1612.00563
-    Code from https://github.com/ruotianluo/self-critical.pytorch
-    """
-    def __init__(self):
-        super(SelfCriticalLoss, self).__init__()
-
-    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
-        assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
-
-        reward = self.get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False)
-        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample)
-
-        # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
-        # so no loss would be needed for it. Can be done with something like:
-        # mask = (sample > 0).float() (would not work here bc our tokens are positive also)
-
-        return torch.mean(- sample_log_probs * reward)
-
-    @staticmethod
-    def get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False):
-        scorer = scorers['CIDEr']
-
-        gts = dict(enumerate(gts_batch))
-        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
-        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
-
-        _, score = scorer.compute_score(gts, res)
-        _, score_baseline = scorer.compute_score(gts, res_greedy)
-
-        return score - score_baseline
-
-
-class SelfCriticalMaskedTokensLoss(nn.Module):
-    """Reinforcement Learning Self-critical loss.
-    https://arxiv.org/abs/1612.00563
-    Code from https://github.com/ruotianluo/self-critical.pytorch
-    """
-    def __init__(self):
-        super(SelfCriticalMaskedTokensLoss, self).__init__()
-
-    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
-        assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
-
-        reward = self.get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False)
-        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample)
-
-        mask = (sample != vocab('<start>')) & (sample != vocab('<end>')) & (sample != vocab('<pad>'))
-
-        return - torch.mean(sample_log_probs * reward * mask.float())
-
-    @staticmethod
-    def get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False):
-        scorer = scorers['CIDEr']
-
-        gts = dict(enumerate(gts_batch))
-        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
-        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
-
-        _, score = scorer.compute_score(gts, res)
-        _, score_baseline = scorer.compute_score(gts, res_greedy)
-
-        return score - score_baseline
-
-
 def get_caps(greedy_sample, sample, vocab, skip_start_token=False, keep_tokens=False):
     res_sample = word_ids_to_words(sample, vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens)
     res_greedy = word_ids_to_words(greedy_sample, vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens)
@@ -158,6 +92,14 @@ def get_self_critical_reward(res_sample, res_greedy, gts, scorers, max_len=20):
 
 
 def create_mask(sample, vocab):
+    """
+    Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
+    so no loss would be needed for it.
+    Mask also tokens after <end>, because they shouldn't get any gradient.
+    :param sample:
+    :param vocab:
+    :return:
+    """
     sample_max_len = sample.size(1)
     mask = torch.zeros(sample.size()).float().to(device)
     end_idx = [(sample[i] == vocab('<end>')).nonzero() for i in range(sample.size(0))]  # because no dim=0 parameter
@@ -169,13 +111,13 @@ def create_mask(sample, vocab):
     return mask
 
 
-class SelfCriticalWithTokenPenaltyLoss(nn.Module):
+class SelfCriticalLoss(nn.Module):
     """Reinforcement Learning Self-critical loss.
     https://arxiv.org/abs/1612.00563
     Code from https://github.com/ruotianluo/self-critical.pytorch
     """
     def __init__(self):
-        super(SelfCriticalWithTokenPenaltyLoss, self).__init__()
+        super(SelfCriticalLoss, self).__init__()
 
     def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab, return_advantage=False):
         assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
@@ -192,47 +134,123 @@ class SelfCriticalWithTokenPenaltyLoss(nn.Module):
         return (loss, advantage) if return_advantage else loss
 
 
-class SelfCriticalWithTokenPenaltyThroughoutLoss(nn.Module):
-    """Reinforcement Learning Self-critical loss.
-    https://arxiv.org/abs/1612.00563
-    Code from https://github.com/ruotianluo/self-critical.pytorch
-    """
+class SelfCriticalWithDiversityLoss(nn.Module):
     def __init__(self):
-        super(SelfCriticalWithTokenPenaltyThroughoutLoss, self).__init__()
+        super(SelfCriticalWithDiversityLoss, self).__init__()
 
-    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
+    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab, return_advantage=False):
         assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
 
-        reward = self.get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False)
-        reward = torch.tensor(reward).type_as(sample_log_probs).to(device)
+        # Don't look for starting token because is always first given and then discarded, during sampling
+        res_sample, res_greedy = get_caps(greedy_sample, sample, vocab, skip_start_token=True)
+        reward, advantage = get_self_critical_reward(res_sample, res_greedy, gts_batch, scorers, max_len=sample.size(1))
 
-        # Penalization if no start token
-        reward += (sample[:, 0] != vocab('<start>')).float() * -5
+        # Mask tokens out after <end>, and tokens not generated by the network
+        mask = create_mask(sample, vocab)
 
-        # Penalization if no end token is found
-        reward += ((sample == vocab('<end>')).sum(1) == 0).float() * -5
+        accuracy = - (sample_log_probs * reward * mask).sum() / mask.sum()
+        diversity = self.diversity(res_sample)
 
-        reward = reward.unsqueeze(1).expand_as(sample)
-
-        # Mask tokens out if they're forced. I.e. when start of sentence token is always given instead of predicted,
-        # so no loss would be needed for it. Can be done with something like:
-        # mask = (sample > 0).float() (would not work here bc our tokens are positive also)
-        # Instead, we penalize if the model doesn't generate them:
-
-        return - torch.mean(sample_log_probs * reward)
+        # gamma = 0.5
+        # loss = gamma * accuracy + (1 - gamma) * diversity
+        loss = accuracy + diversity
+        return (loss, advantage) if return_advantage else loss
 
     @staticmethod
-    def get_self_critical_reward(greedy_sample, sample, gts_batch, scorers, vocab, keep_tokens=False):
-        scorer = scorers['CIDEr']
+    def diversity(res):
+        """
+        Diversity loss is taken and adapted for 3 and 4-gram from:
+        FACE: Improving Neural Response Diversity with Frequency-Aware Cross-Entropy Loss
+        https://arxiv.org/abs/1902.09191.pdf
+        Code from https://github.com/ShaojieJiang/FACE
+        :param res:
+        :return:
+        """
+        unigram, bigram, trigram, cuatrigram = set(), set(), set(), set()
+        n_tokens = 0
 
-        gts = dict(enumerate(gts_batch))
-        res = word_ids_to_words(sample, vocab, keep_tokens=keep_tokens)
-        res_greedy = word_ids_to_words(greedy_sample, vocab, keep_tokens=keep_tokens)
+        for a, b in res.items():
+            cap = b[0].split()
+            v_len = len(cap)
+            n_tokens += v_len
+            unigram.update(cap)
+            bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
+            trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
+            cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
 
-        _, score = scorer.compute_score(gts, res)
-        _, score_baseline = scorer.compute_score(gts, res_greedy)
+        d1 = len(unigram) / n_tokens
+        d2 = len(bigram) / n_tokens
+        d3 = len(trigram) / n_tokens
+        d4 = len(cuatrigram) / n_tokens
 
-        return score - score_baseline
+        return - (d1 + d2 + d3 + d4)
+
+
+class SelfCriticalWithRepetitionLoss(nn.Module):
+    def __init__(self):
+        super(SelfCriticalWithRepetitionLoss, self).__init__()
+
+    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab, return_advantage=False):
+        assert sample.shape[0] == sample_log_probs.shape[0] == greedy_sample.shape[0] == len(gts_batch)
+
+        # Don't look for starting token because is always first given and then discarded, during sampling
+        res_sample, res_greedy = get_caps(greedy_sample, sample, vocab, skip_start_token=True)
+        reward, advantage = get_self_critical_reward(res_sample, res_greedy, gts_batch, scorers, max_len=sample.size(1))
+
+        # Mask tokens out after <end>, and tokens not generated by the network
+        mask = create_mask(sample, vocab)
+
+        accuracy = - (sample_log_probs * reward * mask).sum() / mask.sum()
+        diversity = self.repetition(res_sample)
+
+        # gamma = 0.5
+        # loss = gamma * accuracy + (1 - gamma) * diversity
+        loss = accuracy + diversity
+        return (loss, advantage) if return_advantage else loss
+
+    @staticmethod
+    def repetition(res):
+        unigram, bigram, trigram, cuatrigram = Counter(), Counter(), Counter(), Counter()
+        n_tokens = 0
+        d1, d2, d3, d4 = 0, 0, 0, 0
+
+        for a, b in res.items():
+            cap = b[0].split()
+            v_len = len(cap)
+            n_tokens += v_len
+
+            unigram.update(cap)
+            bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
+            trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
+            cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
+
+            d1 += ((torch.tensor(list(unigram.values())).float() - 1) ** 2).sum() / v_len if v_len > 0 else 0
+            d2 += ((torch.tensor(list(bigram.values())).float() - 1) ** 2).sum() / (v_len - 1) if v_len > 1 else 0
+            d3 += ((torch.tensor(list(trigram.values())).float() - 1) ** 2).sum() / (v_len - 2) if v_len > 2 else 0
+            d4 += ((torch.tensor(list(cuatrigram.values())).float() - 1) ** 2).sum() / (v_len - 3) if v_len > 3 else 0
+
+            unigram.clear()
+            bigram.clear()
+            trigram.clear()
+            cuatrigram.clear()
+
+        # for a, b in res.items():
+        #     cap = b[0].split()
+        #     v_len = len(cap)
+        #     n_tokens += v_len
+        #     unigram.update(cap)
+        #     bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
+        #     trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
+        #     cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
+        #
+        # d1 = ((np.stack(unigram.values()) - 1) ** 3).sum() / n_tokens
+        # d2 = ((np.stack(bigram.values()) - 1) ** 3).sum() / n_tokens
+        # d3 = ((np.stack(trigram.values()) - 1) ** 3).sum() / n_tokens
+        # d4 = ((np.stack(cuatrigram.values()) - 1) ** 3).sum() / n_tokens
+
+        return d1 * 0.1 + d2 + d3 + d4
+        # 1 - len(Counter([tuple(s2[i:i + 2]) for i in range(len(s2) - 1)])) / len(s2)
+        # ((np.array(list(Counter([tuple(s1[i:i + 2]) for i in range(len(s1) - 1)]).values())) - 1) ** 3).sum() / len(s1)
 
 
 class MixedLoss(nn.Module):
@@ -243,20 +261,20 @@ class MixedLoss(nn.Module):
     """
     def __init__(self):
         super(MixedLoss, self).__init__()
-        self.rl = SelfCriticalWithTokenPenaltyLoss()
+        self.rl = SelfCriticalLoss()
         self.ce = nn.CrossEntropyLoss()
 
-    def forward(self, sample, sample_log_probs, outputs, greedy_sample, gts_batch, scorers, vocab, targets, lengths, gamma_ml_rl):
+    def forward(self, sample, sample_log_probs, outputs, greedy_sample, gts_batch, scorers, vocab, targets, lengths, gamma_ml_rl, return_advantage=False):
         packed_outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
         assert targets.size() != packed_outputs.size(), 'Targets and outputs dont have same dimension. ' \
                                                         'Check sequence length on the unpacked tensors.'
 
-        rl_loss = self.rl(sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab)
+        rl_loss, advantage = self.rl(sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab, return_advantage=return_advantage)
         ml_loss = self.ce(packed_outputs, targets)
 
         loss = gamma_ml_rl * rl_loss + (1 - gamma_ml_rl) * ml_loss
 
-        return loss
+        return (loss, advantage) if return_advantage else loss
 
 
 class FACELoss(nn.Module):
@@ -349,166 +367,17 @@ class MixedWithFACELoss(nn.Module):
     """
     def __init__(self, vocab_size):
         super(MixedWithFACELoss, self).__init__()
-        self.rl = SelfCriticalWithTokenPenaltyLoss()
+        self.rl = SelfCriticalLoss()
         self.face = FACELoss(vocab_size)
 
-    def forward(self, sample, sample_log_probs, outputs, greedy_sample, gts_batch, scorers, vocab, captions, targets, lengths, gamma_ml_rl):
+    def forward(self, sample, sample_log_probs, outputs, greedy_sample, gts_batch, scorers, vocab, captions, targets, lengths, gamma_ml_rl, return_advantage=False):
         packed_outputs = pack_padded_sequence(outputs, lengths, batch_first=True)[0]
         assert targets.size() != packed_outputs.size(), 'Targets and outputs dont have same dimension. ' \
                                                         'Check sequence length on the unpacked tensors.'
 
-        rl_loss = self.rl(sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab)
+        rl_loss, advantage = self.rl(sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab, return_advantage=return_advantage)
         ml_loss = self.face(sample, packed_outputs, targets=captions, packed_targets=targets, vocab=vocab)
 
         loss = gamma_ml_rl * rl_loss + (1 - gamma_ml_rl) * ml_loss
 
-        return loss
-
-
-class SelfCriticalWithDiversityLoss(nn.Module):
-    def __init__(self):
-        super(SelfCriticalWithDiversityLoss, self).__init__()
-
-    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
-        gts, res, res_greedy = self.tensor_to_words(greedy_sample, sample, gts_batch, vocab, skip_start_token=True, keep_tokens=False)
-
-        accuracy = self.self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers)
-        diversity = self.diversity(res)
-
-        # gamma = 0.5
-        # return gamma * accuracy + (1 - gamma) * diversity
-        return accuracy + diversity
-
-    @staticmethod
-    def tensor_to_words(greedy_sample, sample, gts_batch, vocab, skip_start_token=False, keep_tokens=False):
-        gts = dict(enumerate(gts_batch))
-        res = word_ids_to_words(sample, vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens)
-        res_greedy = word_ids_to_words(greedy_sample, vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens)
-
-        return gts, res, res_greedy
-
-    @staticmethod
-    def self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers):
-        sample_max_len = sample.size(1)
-        scorer = scorers['CIDEr']
-        _, score = scorer.compute_score(gts, res)
-        _, score_baseline = scorer.compute_score(gts, res_greedy)
-
-        reward = score - score_baseline
-        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample).contiguous()
-
-        # We have to mask tokens out after <end> token
-        mask = create_mask(sample, sample_log_probs, sample_max_len, vocab)
-
-        return - (sample_log_probs * reward * mask).sum() / mask.sum()
-
-    @staticmethod
-    def diversity(res):
-        """
-        Diversity loss is taken and adapted for 3 and 4-gram from:
-        FACE: Improving Neural Response Diversity with Frequency-Aware Cross-Entropy Loss
-        https://arxiv.org/abs/1902.09191.pdf
-        Code from https://github.com/ShaojieJiang/FACE
-        :param res:
-        :return:
-        """
-        unigram, bigram, trigram, cuatrigram = set(), set(), set(), set()
-        n_tokens = 0
-
-        for a, b in res.items():
-            cap = b[0].split()
-            v_len = len(cap)
-            n_tokens += v_len
-            unigram.update(cap)
-            bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
-            trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
-            cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
-
-        d1 = len(unigram) / n_tokens
-        d2 = len(bigram) / n_tokens
-        d3 = len(trigram) / n_tokens
-        d4 = len(cuatrigram) / n_tokens
-
-        return - (d1 + d2 + d3 + d4)
-
-
-class SelfCriticalWithRepetitionLoss(nn.Module):
-    def __init__(self):
-        super(SelfCriticalWithRepetitionLoss, self).__init__()
-
-    def forward(self, sample, sample_log_probs, greedy_sample, gts_batch, scorers, vocab):
-        gts, res, res_greedy = self.tensor_to_words(greedy_sample, sample, gts_batch, vocab, skip_start_token=True, keep_tokens=False)
-
-        accuracy = self.self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers)
-        diversity = self.repetition(res)
-
-        # gamma = 0.5
-        # return gamma * accuracy + (1 - gamma) * diversity
-        return accuracy + diversity
-
-    @staticmethod
-    def tensor_to_words(greedy_sample, sample, gts_batch, vocab, skip_start_token=False, keep_tokens=False):
-        gts = dict(enumerate(gts_batch))
-        res = word_ids_to_words(sample, vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens)
-        res_greedy = word_ids_to_words(greedy_sample, vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens)
-
-        return gts, res, res_greedy
-
-    @staticmethod
-    def self_critical_loss(sample, sample_log_probs, gts, res, res_greedy, vocab, scorers):
-        sample_max_len = sample.size(1)
-        scorer = scorers['CIDEr']
-        _, score = scorer.compute_score(gts, res)
-        _, score_baseline = scorer.compute_score(gts, res_greedy)
-
-        reward = score - score_baseline
-        reward = torch.tensor(reward).type_as(sample_log_probs).to(device).unsqueeze(1).expand_as(sample).contiguous()
-
-        # We have to mask tokens out after <end> token
-        mask = create_mask(sample, sample_log_probs, sample_max_len, vocab)
-
-        return - (sample_log_probs * reward * mask).sum() / mask.sum()
-
-    @staticmethod
-    def repetition(res):
-        unigram, bigram, trigram, cuatrigram = Counter(), Counter(), Counter(), Counter()
-        n_tokens = 0
-        d1, d2, d3, d4 = 0, 0, 0, 0
-
-        for a, b in res.items():
-            cap = b[0].split()
-            v_len = len(cap)
-            n_tokens += v_len
-
-            unigram.update(cap)
-            bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
-            trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
-            cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
-
-            d1 += ((torch.tensor(list(unigram.values())).float() - 1) ** 2).sum() / v_len if v_len > 0 else 0
-            d2 += ((torch.tensor(list(bigram.values())).float() - 1) ** 2).sum() / (v_len - 1) if v_len > 1 else 0
-            d3 += ((torch.tensor(list(trigram.values())).float() - 1) ** 2).sum() / (v_len - 2) if v_len > 2 else 0
-            d4 += ((torch.tensor(list(cuatrigram.values())).float() - 1) ** 2).sum() / (v_len - 3) if v_len > 3 else 0
-
-            unigram.clear()
-            bigram.clear()
-            trigram.clear()
-            cuatrigram.clear()
-
-        # for a, b in res.items():
-        #     cap = b[0].split()
-        #     v_len = len(cap)
-        #     n_tokens += v_len
-        #     unigram.update(cap)
-        #     bigram.update([tuple(cap[i:i + 2]) for i in range(len(cap) - 1)])
-        #     trigram.update([tuple(cap[i:i + 3]) for i in range(len(cap) - 2)])
-        #     cuatrigram.update([tuple(cap[i:i + 4]) for i in range(len(cap) - 3)])
-        #
-        # d1 = ((np.stack(unigram.values()) - 1) ** 3).sum() / n_tokens
-        # d2 = ((np.stack(bigram.values()) - 1) ** 3).sum() / n_tokens
-        # d3 = ((np.stack(trigram.values()) - 1) ** 3).sum() / n_tokens
-        # d4 = ((np.stack(cuatrigram.values()) - 1) ** 3).sum() / n_tokens
-
-        return d1 * 0.1 + d2 + d3 + d4
-        # 1 - len(Counter([tuple(s2[i:i + 2]) for i in range(len(s2) - 1)])) / len(s2)
-        # ((np.array(list(Counter([tuple(s1[i:i + 2]) for i in range(len(s1) - 1)]).values())) - 1) ** 3).sum() / len(s1)
+        return (loss, advantage) if return_advantage else loss

@@ -117,8 +117,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                                   max_seq_length=sample_len, start_token_id=vocab('<start>'),
                                                   stochastic_sampling=False)
 
-            if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
-                                           'sc_with_diversity', 'sc_with_repetition', 'sc_masked_tokens']:
+            if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_repetition']:
                 loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                  [gts[i] for i in image_ids], scorers, vocab)
             elif args.self_critical_loss in ['mixed']:
@@ -425,12 +424,6 @@ def main(args):
         if args.self_critical_loss == 'sc':
             from model.loss import SelfCriticalLoss
             rl_criterion = SelfCriticalLoss()
-        elif args.self_critical_loss == 'sc_with_penalty':
-            from model.loss import SelfCriticalWithTokenPenaltyLoss
-            rl_criterion = SelfCriticalWithTokenPenaltyLoss()
-        elif args.self_critical_loss == 'sc_with_penalty_throughout':
-            from model.loss import SelfCriticalWithTokenPenaltyThroughoutLoss
-            rl_criterion = SelfCriticalWithTokenPenaltyThroughoutLoss()
         elif args.self_critical_loss == 'sc_with_diversity':
             from model.loss import SelfCriticalWithDiversityLoss
             rl_criterion = SelfCriticalWithDiversityLoss()
@@ -443,9 +436,8 @@ def main(args):
         elif args.self_critical_loss == 'mixed_with_face':
             from model.loss import MixedWithFACELoss
             rl_criterion = MixedWithFACELoss(vocab_size=len(vocab))
-        elif args.self_critical_loss == 'sc_masked_tokens':
-            from model.loss import SelfCriticalMaskedTokensLoss
-            rl_criterion = SelfCriticalMaskedTokensLoss()
+        elif args.self_critical_loss in ['sc_with_penalty', 'sc_with_penalty_throughout', 'sc_masked_tokens']:
+            raise ValueError('Deprecated loss, use \'sc\' loss')
         else:
             raise ValueError('Invalid self-critical loss')
 
@@ -685,18 +677,17 @@ def main(args):
                                                           stochastic_sampling=False)
                     model.train()
 
-                    if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
-                                                   'sc_with_diversity', 'sc_with_repetition', 'sc_masked_tokens']:
+                    if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_repetition']:
                         loss, advantage = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                                     [gts_sc[i] for i in image_ids], scorers, vocab, return_advantage=True)
                     elif args.self_critical_loss in ['mixed']:
-                        loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
-                                         [gts_sc[i] for i in image_ids], scorers, vocab, targets, lengths,
-                                         gamma_ml_rl=args.gamma_ml_rl)
+                        loss, advantage = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
+                                                    [gts_sc[i] for i in image_ids], scorers, vocab, targets, lengths,
+                                                    gamma_ml_rl=args.gamma_ml_rl, return_advantage=True)
                     elif args.self_critical_loss in ['mixed_with_face']:
-                        loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
-                                         [gts_sc[i] for i in image_ids], scorers, vocab, captions, targets, lengths,
-                                         gamma_ml_rl=args.gamma_ml_rl)
+                        loss, advantage = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
+                                                    [gts_sc[i] for i in image_ids], scorers, vocab, captions, targets,
+                                                    lengths, gamma_ml_rl=args.gamma_ml_rl, return_advantage=True)
                     else:
                         raise ValueError('Invalid self-critical loss')
 
