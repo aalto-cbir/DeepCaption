@@ -649,7 +649,8 @@ class DecoderRNN(nn.Module):
             if not stochastic_sampling:
                 # greedy (beam search size = 1)
                 if block_trigrams:
-                    logprobs = trigram_penalty(i, batch_size, sampled_ids, logprobs, trigrams, alpha=trigram_penalty_alpha)
+                    # i - 1 because we don't want to count i == 0, the initial features
+                    logprobs = trigram_penalty(i - 1, batch_size, sampled_ids, logprobs, trigrams, alpha=trigram_penalty_alpha)
 
                 predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
             else:
