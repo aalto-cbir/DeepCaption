@@ -117,7 +117,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                                   max_seq_length=sample_len, start_token_id=vocab('<start>'),
                                                   stochastic_sampling=False)
 
-            if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_repetition']:
+            if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_relative_diversity', 'sc_with_bleu_diversity', 'sc_with_repetition']:
                 loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                  [gts[i] for i in image_ids], scorers, vocab)
             elif args.self_critical_loss in ['mixed']:
@@ -427,6 +427,12 @@ def main(args):
         elif args.self_critical_loss == 'sc_with_diversity':
             from model.loss import SelfCriticalWithDiversityLoss
             rl_criterion = SelfCriticalWithDiversityLoss()
+        elif args.self_critical_loss == 'sc_with_relative_diversity':
+            from model.loss import SelfCriticalWithRelativeDiversityLoss
+            rl_criterion = SelfCriticalWithRelativeDiversityLoss()
+        elif args.self_critical_loss == 'sc_with_bleu_diversity':
+            from model.loss import SelfCriticalWithBLEUDiversityLoss
+            rl_criterion = SelfCriticalWithBLEUDiversityLoss()
         elif args.self_critical_loss == 'sc_with_repetition':
             from model.loss import SelfCriticalWithRepetitionLoss
             rl_criterion = SelfCriticalWithRepetitionLoss()
@@ -677,7 +683,7 @@ def main(args):
                                                           stochastic_sampling=False)
                     model.train()
 
-                    if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_repetition']:
+                    if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_relative_diversity', 'sc_with_bleu_diversity', 'sc_with_repetition']:
                         loss, advantage = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                                     [gts_sc[i] for i in image_ids], scorers, vocab, return_advantage=True)
                     elif args.self_critical_loss in ['mixed']:
