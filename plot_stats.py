@@ -102,7 +102,7 @@ def main(args):
                 last_modified = modtime
 
             with open(filename, 'r') as fp:
-                print(filename)
+                # print(filename)
                 match = re.match(r'.*train_stats-(.*)\.json$', filename)
                 if i < len(labels):
                     label = labels[i]
@@ -114,7 +114,7 @@ def main(args):
                 if label not in plots:
                     plots[label] = {}
                 plots[label].update(json.load(fp))
-                print(label, filename)
+                print(label, '=', filename)
 
         for i, (label, plot_dict) in enumerate(plots.items()):
             plot_stats(label, plot_dict, colors[i % len(colors)], ax1, ax2, args)
@@ -139,7 +139,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    print('matplotlib.__version__ =',matplotlib.__version__)
+    # print('matplotlib.__version__ =',matplotlib.__version__)
     import argparse
 
     parser = argparse.ArgumentParser()

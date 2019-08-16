@@ -209,7 +209,8 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     # Start counting words...
     counter = Counter()
     show_progress = sys.stderr.isatty()
-    print("Building vocabulary...")
+    print('Building vocabulary with threshold {} (inclusive) ...'.
+          format(ext_args.vocab_threshold))
     for _, captions, _, _, _ in tqdm(data_loader, disable=not show_progress):
         for caption in captions:
             if ext_args.no_tokenize:
