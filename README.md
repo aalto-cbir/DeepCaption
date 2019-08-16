@@ -118,3 +118,16 @@ Inference also supports the following flags:
 ## Misc
 ### Project structure
 We are trying to maintain a standard project structure. One can be referred to [this template](https://github.com/victoresque/pytorch-template) for future development.
+
+### Vocabulary precomputation for self-critical training
+If self-critic loss is going to be used, CIDEr-D precomputation of n-grams needs to be done in order to speed up the training. Please see `scripts/preprocess_ngrams.py`. It needs a dataset, a preprocessed vocabulary and the name of the output precomputations.
+
+An usage example:
+```bash
+python scripts/preprocess_ngrams.py --dataset picsom:COCO:train2014+picsom:tgif:imageset --vocab ../vocab-coco.pkl --output ngrams_precomputed.pkl
+```
+
+This is then passed to `train.py` as:
+```
+train.py --... --self_critical_loss sc --validation_scoring ciderd --cached_words ngrams_precomputed.pkl
+```
