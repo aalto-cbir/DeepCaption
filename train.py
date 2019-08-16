@@ -203,6 +203,7 @@ def main(args):
 
     scorers = {}
     if args.validation_scoring is not None or sc_will_happen:
+        assert not (args.validation_scoring is None and sc_will_happen), "Please provide a metric when using self-critical training"
         for s in args.validation_scoring.split(','):
             s = s.lower().strip()
             if s == 'cider':
