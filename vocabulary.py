@@ -279,7 +279,7 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
 
 # sentence functions now
 
-def fix_caption(caption, skip_start_token=False, keep_tokens=False):
+def fix_caption(caption, skip_start_token=False, keep_tokens=False, capitalize=True):
     if keep_tokens:
         if skip_start_token:
             m = re.match(r'(.*?)( <end>)', caption)
@@ -287,7 +287,7 @@ def fix_caption(caption, skip_start_token=False, keep_tokens=False):
             m = re.match(r'(<start> )(.*?)( <end>)', caption)
         if m is None:
             print('ERROR: unexpected caption format: "{}"'.format(caption))
-            return caption.capitalize()
+            return caption.capitalize() if capitalize else caption
 
         ret = ''.join(m.groups())
     else:
@@ -297,15 +297,16 @@ def fix_caption(caption, skip_start_token=False, keep_tokens=False):
             m = re.match(r'^<start> (.*?)( <end>)?$', caption)
         if m is None:
             print('ERROR: unexpected caption format: "{}"'.format(caption))
-            return caption.capitalize()
+            return caption.capitalize() if capitalize else caption
 
         ret = m.group(1)
 
     ret = re.sub(r'\s([.,])(\s|$)', r'\1\2', ret)
-    return ret.capitalize()
+    return ret.capitalize() if capitalize else ret
 
 
-def caption_ids_to_words(sampled_ids, vocab, keep_tokens=False):
+def caption_ids_to_words(sampled_ids, vocab,
+                         keep_tokens=False, capitalize=True):
     """
     Converts output tensor of ids to sentences.
     :param sampled_ids: tensor of ids
@@ -321,7 +322,8 @@ def caption_ids_to_words(sampled_ids, vocab, keep_tokens=False):
             if keep_tokens:
                 sampled_caption.append(word)
             break
-    return fix_caption(' '.join(sampled_caption), keep_tokens=keep_tokens)
+    return fix_caption(' '.join(sampled_caption),
+                       keep_tokens=keep_tokens, capitalize=capitalize)
 
 
 def paragraph_ids_to_words(sampled_ids, vocab):
