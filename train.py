@@ -67,7 +67,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 if params.hierarchical_model:
                     gts[jid].append(paragraph_ids_to_words(captions[j, :], vocab).lower())
                 else:
-                    gts[jid].append(caption_ids_to_words(captions[j, :], vocab).lower())
+                    gts[jid].append(caption_ids_to_words(captions[j, :], vocab, skip_start_token=True).lower())
 
         # Set mini-batch dataset
         images = images.to(device)
@@ -117,8 +117,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                                   max_seq_length=sample_len, start_token_id=vocab('<start>'),
                                                   stochastic_sampling=False)
 
-            if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
-                                           'sc_with_diversity', 'sc_masked_tokens']:
+            if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_relative_diversity', 'sc_with_bleu_diversity', 'sc_with_repetition']:
                 loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                  [gts[i] for i in image_ids], scorers, vocab)
             elif args.self_critical_loss in ['mixed']:
@@ -148,7 +147,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 if params.hierarchical_model:
                     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
                 else:
-                    res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab).lower()]
+                    res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab, skip_start_token=True).lower()]
 
         # Used for testing:
         if i + 1 == args.num_batches:
@@ -159,6 +158,8 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
     end = datetime.now()
 
     for score_name, scorer in scorers.items():
+        if score_name == 'CIDEr-D':
+            continue
         score = scorer.compute_score(gts, res)[0]
         print('Validation', score_name, score)
         stats['validation_' + score_name.lower()] = score
@@ -202,11 +203,15 @@ def main(args):
 
     scorers = {}
     if args.validation_scoring is not None or sc_will_happen:
+        assert not (args.validation_scoring is None and sc_will_happen), "Please provide a metric when using self-critical training"
         for s in args.validation_scoring.split(','):
             s = s.lower().strip()
             if s == 'cider':
                 from eval.cider import Cider
                 scorers['CIDEr'] = Cider()
+            if s == 'ciderd':
+                from eval.ciderD.ciderD import CiderD
+                scorers['CIDEr-D'] = CiderD(df=args.cached_words)
 
     ########################
     # Set Model parameters #
@@ -420,30 +425,35 @@ def main(args):
         if args.self_critical_loss == 'sc':
             from model.loss import SelfCriticalLoss
             rl_criterion = SelfCriticalLoss()
-        elif args.self_critical_loss == 'sc_with_penalty':
-            from model.loss import SelfCriticalWithTokenPenaltyLoss
-            rl_criterion = SelfCriticalWithTokenPenaltyLoss()
-        elif args.self_critical_loss == 'sc_with_penalty_throughout':
-            from model.loss import SelfCriticalWithTokenPenaltyThroughoutLoss
-            rl_criterion = SelfCriticalWithTokenPenaltyThroughoutLoss()
         elif args.self_critical_loss == 'sc_with_diversity':
             from model.loss import SelfCriticalWithDiversityLoss
             rl_criterion = SelfCriticalWithDiversityLoss()
+        elif args.self_critical_loss == 'sc_with_relative_diversity':
+            from model.loss import SelfCriticalWithRelativeDiversityLoss
+            rl_criterion = SelfCriticalWithRelativeDiversityLoss()
+        elif args.self_critical_loss == 'sc_with_bleu_diversity':
+            from model.loss import SelfCriticalWithBLEUDiversityLoss
+            rl_criterion = SelfCriticalWithBLEUDiversityLoss()
+        elif args.self_critical_loss == 'sc_with_repetition':
+            from model.loss import SelfCriticalWithRepetitionLoss
+            rl_criterion = SelfCriticalWithRepetitionLoss()
         elif args.self_critical_loss == 'mixed':
             from model.loss import MixedLoss
             rl_criterion = MixedLoss()
         elif args.self_critical_loss == 'mixed_with_face':
             from model.loss import MixedWithFACELoss
             rl_criterion = MixedWithFACELoss(vocab_size=len(vocab))
-        elif args.self_critical_loss == 'sc_masked_tokens':
-            from model.loss import SelfCriticalMaskedTokensLoss
-            rl_criterion = SelfCriticalMaskedTokensLoss()
+        elif args.self_critical_loss in ['sc_with_penalty', 'sc_with_penalty_throughout', 'sc_masked_tokens']:
+            raise ValueError('Deprecated loss, use \'sc\' loss')
         else:
             raise ValueError('Invalid self-critical loss')
+
+        print('Selected self-critical loss is', rl_criterion)
 
         if start_epoch >= args.self_critical_from_epoch:
             criterion = rl_criterion
             sc_activated = True
+            print('Self-critical loss training begins')
 
     # When using CyclicalLR, default learning rate should be always 1.0
     if args.lr_scheduler == 'CyclicalLR':
@@ -452,7 +462,7 @@ def main(args):
         default_lr = 0.001
 
     if sc_activated:
-        optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
+        optimizer = torch.optim.Adam(opt_params, lr=args.learning_rate if args.learning_rate else 5e-5, weight_decay=args.weight_decay)
     elif args.optimizer == 'adam':
         optimizer = torch.optim.Adam(opt_params, lr=default_lr, weight_decay=args.weight_decay)
     elif args.optimizer == 'rmsprop':
@@ -585,7 +595,7 @@ def main(args):
 
                 optimizer = torch.optim.Adam(opt_params, lr=5e-5, weight_decay=args.weight_decay)
                 criterion = rl_criterion
-                print('Changing loss function to Self Critical')
+                print('Self-critical loss training begins')
                 sc_activated = True
 
             for i, data in enumerate(data_loader):
@@ -674,20 +684,24 @@ def main(args):
                                                           stochastic_sampling=False)
                     model.train()
 
-                    if args.self_critical_loss in ['sc', 'sc_with_penalty', 'sc_with_penalty_throughout',
-                                                   'sc_with_diversity', 'sc_masked_tokens']:
-                        loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
-                                         [gts_sc[i] for i in image_ids], scorers, vocab)
+                    if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_relative_diversity', 'sc_with_bleu_diversity', 'sc_with_repetition']:
+                        loss, advantage = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
+                                                    [gts_sc[i] for i in image_ids], scorers, vocab, return_advantage=True)
                     elif args.self_critical_loss in ['mixed']:
-                        loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
-                                         [gts_sc[i] for i in image_ids], scorers, vocab, targets, lengths,
-                                         gamma_ml_rl=args.gamma_ml_rl)
+                        loss, advantage = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
+                                                    [gts_sc[i] for i in image_ids], scorers, vocab, targets, lengths,
+                                                    gamma_ml_rl=args.gamma_ml_rl, return_advantage=True)
                     elif args.self_critical_loss in ['mixed_with_face']:
-                        loss = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
-                                         [gts_sc[i] for i in image_ids], scorers, vocab, captions, targets, lengths,
-                                         gamma_ml_rl=args.gamma_ml_rl)
+                        loss, advantage = criterion(sampled_seq, sampled_log_probs, outputs, greedy_sampled_seq,
+                                                    [gts_sc[i] for i in image_ids], scorers, vocab, captions, targets,
+                                                    lengths, gamma_ml_rl=args.gamma_ml_rl, return_advantage=True)
                     else:
                         raise ValueError('Invalid self-critical loss')
+
+                    if writer is not None and i % 100 == 0:
+                        writer.add_scalar('training_loss', loss.item(), epoch * len(data_loader) + i)
+                        writer.add_scalar('advantage', advantage, epoch * len(data_loader) + i)
+                        writer.add_scalar('lr', optimizer.param_groups[0]['lr'], epoch * len(data_loader) + i)
                 else:
                     loss = criterion(outputs, targets)
 

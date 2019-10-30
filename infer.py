@@ -251,6 +251,7 @@ class infer_object:
                     caption = paragraph_ids_to_words(sampled_ids, self.vocab)
                 else:
                     caption = caption_ids_to_words(sampled_ids, self.vocab,
+                                                   skip_start_token=True,
                                                    capitalize=not args['no_capitalize'])
 
                 if args['no_repeat_sentences']:

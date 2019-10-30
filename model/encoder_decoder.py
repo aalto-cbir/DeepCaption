@@ -595,6 +595,112 @@ class DecoderRNN(nn.Module):
             all_hiddens = torch.zeros(batch_size,
                                       max_seq_length, self.rnn.hidden_size).to(device)
 
+        # # Initialize the rnn from input features, instead of setting the hidden
+        # # state to zeros (as done by default):
+        # if self.rnn_hidden_init == 'from_features':
+        #     states = init_hidden_state(self, features)
+        #
+        #     assert start_token_id is not None
+        #
+        #     # Start generating the sentence by first feeding in the start token:
+        #     start_token_embedding = self.embed(torch.tensor(start_token_id).to(device))
+        #     embed_size = len(start_token_embedding)
+        #     start_token_embedding = start_token_embedding.unsqueeze(0).expand(batch_size,
+        #                                                                       embed_size)
+        #     inputs = torch.cat([start_token_embedding, persist_features], 1).unsqueeze(1)
+        # else:
+        #     # inputs: (batch_size, 1, embed_size + len(external features))
+        #     inputs = torch.cat([features, persist_features], 1).unsqueeze(1)
+        assert start_token_id is not None
+
+        block_trigrams = trigram_penalty_alpha > 0
+        if block_trigrams:
+            trigrams = []  # will be a list of batch_size dictionaries
+
+        for i in range(max_seq_length + 1):
+            if i == 0:
+                # from_features means we begin directly with input token
+                if self.rnn_hidden_init == 'from_features':
+                    continue
+
+                embeddings = features
+            elif i == 1:
+                # Start generating the sentence by first feeding in the start token:
+                embeddings = self.embed(torch.ones(batch_size).long().to(device) * start_token_id)
+
+            elif i > 1:
+                embeddings = self.embed(predicted)
+
+            # inputs: (batch_size, 1, embed_size + len(external_features))
+            inputs = torch.cat([embeddings, persist_features], 1).unsqueeze(1)
+
+            hiddens, states = self.rnn(inputs, states)
+
+            # If we are sharing embedding weights before and after the RNN processing:
+            if self.share_embedding_weights:
+                hiddens_p = self.projection(hiddens.squeeze(1))
+                output_embeddings = self.hidden_to_embeddings(hiddens_p)
+                outputs = torch.matmul(output_embeddings, self.embed_output.weight)
+            else:
+                outputs = self.linear(hiddens.squeeze(1))
+
+            logprobs = F.log_softmax(outputs, dim=1)
+
+            if not stochastic_sampling:
+                # greedy (beam search size = 1)
+                if block_trigrams:
+                    # i - 1 because we don't want to count i == 0, the initial features
+                    logprobs = trigram_penalty(i - 1, batch_size, sampled_ids, logprobs, trigrams, alpha=trigram_penalty_alpha)
+
+                predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
+            else:
+                # predicted = logprobs.exp().multinomial(num_samples=1).view(-1)# if logprobs have to be modified before
+                predicted = F.softmax(outputs, 1).multinomial(num_samples=1).view(-1)  # torch.multinomial(logprobs, 1) doesn't work with logits
+                if output_logprobs:
+                    predicted_logprobs = logprobs.gather(1, predicted.unsqueeze(1)).view(-1)  # gather the logprobs at sampled positions
+
+            if i >= 1:
+                sampled_ids.append(predicted)
+                if output_logprobs:
+                    seq_logprobs.append(predicted_logprobs)
+                if output_hiddens:
+                    all_hiddens[:, i] = hiddens.squeeze(1)
+                if output_outputs:
+                    outputs_list.append(outputs)
+
+        # sampled_ids: (batch_size, max_seq_length)
+        sampled_ids = torch.stack(sampled_ids, dim=1)
+
+        if output_outputs and output_logprobs:
+            return sampled_ids, torch.stack(seq_logprobs, dim=1), torch.stack(outputs_list, dim=1)
+        elif output_outputs:
+            return sampled_ids, torch.stack(outputs_list, dim=1)
+        elif output_hiddens:
+            return sampled_ids, all_hiddens,
+        elif output_logprobs:
+            return sampled_ids, torch.stack(seq_logprobs, dim=1)
+        else:
+            return sampled_ids
+
+    def sample_old(self, features, images, external_features, states=None,
+               max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
+               stochastic_sampling=False, output_logprobs=False, output_hiddens=False, output_outputs=False):
+        """Generate captions for given image features using greedy (beam size = 1) search."""
+        sampled_ids = []
+        seq_logprobs = []
+        outputs_list = []
+
+        batch_size = len(images)
+
+        # Concatenate internal and external features
+        persist_features = self._cat_features(images, external_features)
+        if persist_features is None:
+            persist_features = features.new_empty(0)
+
+        if output_hiddens:
+            all_hiddens = torch.zeros(batch_size,
+                                      max_seq_length, self.rnn.hidden_size).to(device)
+
         # Initialize the rnn from input features, instead of setting the hidden
         # state to zeros (as done by default):
         if self.rnn_hidden_init == 'from_features':

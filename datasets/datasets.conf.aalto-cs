@@ -116,6 +116,31 @@ subset        = test16g
 [picsom:trecvid2018:testall]
 subset        = testall
 
+[picsom:trecvid2019]
+root_dir      = /m/cs/scratch/imagedb/picsom/databases/trecvid2019
+features_path = features
+caption_path  = textdumps/gt-cooked.txt
+label_map     = label-map.txt
+image_dir     =
+
+[picsom:trecvid2019:test19g]
+subset        = test19g
+
+[picsom:trecvid2019:test18g]
+subset        = test18g
+
+[picsom:trecvid2019:test17g]
+subset        = test17g
+
+[picsom:trecvid2019:test16g]
+subset        = test16g
+
+[picsom:trecvid2019:test1718g]
+subset        = test1718g
+
+[picsom:trecvid2019:testall]
+subset        = testall
+
 [picsom:tgif]
 root_dir      = /m/cs/scratch/imagedb/picsom/databases/tgif
 features_path = features

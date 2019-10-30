@@ -57,6 +57,8 @@ def parse_args():
                         help='show generated vocabulary word counts')
     parser.add_argument('--skip_start_token', action="store_true",
                         help='Do not prepend <start> token to caption')
+    parser.add_argument('--cached_words', type=str, default=None,
+                        help='Preprocessed document frequency')
 
     # Model parameters:
     parser.add_argument('--features', type=str, default=default_features,

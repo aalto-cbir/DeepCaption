@@ -54,6 +54,14 @@ class Vocabulary(object):
                 return -1
             return self.idx2word[word]
 
+    def __contains__(self, item):
+        if isinstance(item, str):
+            return item in self.word2idx
+        elif isinstance(item, int):
+            return item in self.idx2word
+        else:
+            raise ValueError
+
     def __len__(self):
         return len(self.word2idx)
 
@@ -201,7 +209,8 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
     # Start counting words...
     counter = Counter()
     show_progress = sys.stderr.isatty()
-    print("Building vocabulary...")
+    print('Building vocabulary with threshold {} (inclusive) ...'.
+          format(ext_args.vocab_threshold))
     for _, captions, _, _, _ in tqdm(data_loader, disable=not show_progress):
         for caption in captions:
             if ext_args.no_tokenize:
@@ -305,7 +314,7 @@ def fix_caption(caption, skip_start_token=False, keep_tokens=False, capitalize=T
     return ret.capitalize() if capitalize else ret
 
 
-def caption_ids_to_words(sampled_ids, vocab,
+def caption_ids_to_words(sampled_ids, vocab, skip_start_token=False,
                          keep_tokens=False, capitalize=True):
     """
     Converts output tensor of ids to sentences.
@@ -322,16 +331,16 @@ def caption_ids_to_words(sampled_ids, vocab,
             if keep_tokens:
                 sampled_caption.append(word)
             break
-    return fix_caption(' '.join(sampled_caption),
+    return fix_caption(' '.join(sampled_caption), skip_start_token=skip_start_token,
                        keep_tokens=keep_tokens, capitalize=capitalize)
 
 
-def paragraph_ids_to_words(sampled_ids, vocab):
+def paragraph_ids_to_words(sampled_ids, vocab, skip_start_token=False, keep_tokens=False):
     paragraph = ''
     for sentence in sampled_ids:
         if sentence[0] == vocab("<pad>"):
             break
-        paragraph += caption_ids_to_words(sentence, vocab) + '. '
+        paragraph += caption_ids_to_words(sentence, vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens) + '. '
 
     paragraph = paragraph.replace(" .", ".")
 
@@ -361,7 +370,7 @@ def remove_incomplete_sentences(caption):
         return caption
 
 
-def word_ids_to_words(sample, vocab, is_hierarchical=False, keep_tokens=False):
+def word_ids_to_words(sample, vocab, is_hierarchical=False, skip_start_token=False, keep_tokens=False):
     """
     Converts a tensor matrix of ids (model outputs) into a list of sentences.
     :param sample: Tensor matrix with rows of ids to be converted to sentences.
@@ -371,7 +380,8 @@ def word_ids_to_words(sample, vocab, is_hierarchical=False, keep_tokens=False):
     :return: Dictionary with sentences addressed by the position in which they were placed in the tensor, by shape[0].
     """
     ids_to_words_fn = paragraph_ids_to_words if is_hierarchical else caption_ids_to_words
-    return {i: [ids_to_words_fn(sample[i], vocab, keep_tokens=keep_tokens).lower()] for i in range(sample.shape[0])}
+    return {i: [ids_to_words_fn(sample[i], vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens).lower()]
+            for i in range(sample.shape[0])}
 
 
 def clean_word_ids(sample, vocab):
