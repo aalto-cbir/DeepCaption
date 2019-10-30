@@ -45,6 +45,8 @@ class infer_object:
             args['ext_features'] = None
         if 'ext_persist_features' not in args:
             args['ext_persist_features'] = None
+        if 'lemma_pos_rules' not in args:
+            args['lemma_pos_rules'] = None
         
         global device
         device = torch.device('cuda' if torch.cuda.is_available() and
@@ -56,7 +58,8 @@ class infer_object:
         try:
             self.state = torch.load(args['model'], map_location=device)
         except AttributeError:
-            print('WARNING: Old model found. Please use model_update.py in the model before executing this script.')
+            print('WARNING: Old model found. '+
+                  'Please use model_update.py in the model before executing this script.')
             exit(1)
             
         self.params = ModelParams(self.state)
@@ -87,7 +90,11 @@ class infer_object:
         self.model = EncoderDecoder(self.params, device, len(self.vocab), self.state, ef_dims).eval()
         # print(self.params.ext_features_dim)
 
-
+        self.lemma_pos_rules = {}
+        self.pos_names = set()
+        if args['lemma_pos_rules'] is not None:
+            self.read_lemma_pos_rules(args['lemma_pos_rules'])
+            
     def external_features(self):
         ef_dims = self.params.ext_features_dim
         ret = [(self.state['features'].external,         ef_dims[0]),
@@ -96,11 +103,52 @@ class infer_object:
         return ret
 
 
+    def read_lemma_pos_rules(self, file):
+        # print('Reading lemma_pos_rules from <{}>'.format(file))
+        with open(file) as fp:
+            n = 0
+            for line in fp:
+                ll = line.split(' ')
+                l, p, w = ll[:3]
+                # print (l, p, w)
+                if p not in self.lemma_pos_rules:
+                    self.lemma_pos_rules[p] = {}
+                assert l not in self.lemma_pos_rules[p], 'l in lemma_pos_rules[p]'
+                self.lemma_pos_rules[p][l] = w
+                n += 1
+            self.pos_names = self.lemma_pos_rules.keys()
+            print('Read {} lemma_pos_rules for {} pos from <{}>'.
+                  format(n, len(self.pos_names), file))
+        assert len(self.pos_names)>0, 'failed reading lemma_pos_rules from <{}>'.format(file)
+            
+
+    def apply_lemma_pos_rules(self, caption):
+        if len(self.pos_names)==0:
+            return caption
+        
+        w = caption.split(' ')
+        x = []
+        for i in range(len(w)):
+            if w[i] in self.pos_names:
+                continue
+            if i+1<len(w) and w[i+1] in self.pos_names:
+                if w[i] in self.lemma_pos_rules[w[i+1]]:
+                    x.append(self.lemma_pos_rules[w[i+1]][w[i]])
+                else:
+                    x.append(w[i])
+            else:
+                x.append(w[i])
+
+        return ' '.join(x)
+
+
     def infer(self, args):
         # print('infer() :', args)
 
         if 'image_features' not in args:
             args['image_features'] = None
+        if 'no_capitalize' not in args:
+            args['no_capitalize'] = False
     
         # Image preprocessing
         transform = transforms.Compose([
@@ -202,7 +250,8 @@ class infer_object:
                 if self.params.hierarchical_model:
                     caption = paragraph_ids_to_words(sampled_ids, self.vocab)
                 else:
-                    caption = caption_ids_to_words(sampled_ids, self.vocab)
+                    caption = caption_ids_to_words(sampled_ids, self.vocab,
+                                                   capitalize=not args['no_capitalize'])
 
                 if args['no_repeat_sentences']:
                     caption = remove_duplicate_sentences(caption)
@@ -213,6 +262,11 @@ class infer_object:
                 if args['verbose']:
                     print('=>', caption)
 
+                if True:
+                    caption = self.apply_lemma_pos_rules(caption)
+                    if args['verbose']:
+                        print('#>', caption)
+                    
                 output_data.append({'caption': caption, 'image_id': image_ids[i]})
                 res[image_ids[i]] = [caption.lower()]
 
@@ -311,6 +365,10 @@ def parse_args(ext_args=None):
     parser.add_argument('--model', type=str, required=True,
                         help='path to existing model')
     parser.add_argument('--vocab', type=str, help='path for vocabulary wrapper')
+    parser.add_argument('--no_capitalize', action='store_true',
+                        help='prevent final capitalization of the result')
+    parser.add_argument('--lemma_pos_rules', type=str,
+                        help='file containing rules to map "lemma POS" to "word"')
     parser.add_argument('--ext_features', type=str,
                         help='paths for the external features, overrides the '
                         'paths in the model ckpt file (which are the ones '
