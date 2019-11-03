@@ -10,6 +10,17 @@ from PIL import Image
 import torch
 from torch.nn.utils.rnn import pack_padded_sequence
 from torch.utils.data import Dataset, ConcatDataset
+import torchvision
+import nltk
+
+def show_versions():
+    print('python =',       sys.version)
+    print('nltk =',         nltk.__version__)
+    print('torch =',        torch.__version__)
+    print('torchvision =',  torchvision.__version__)
+    print('cuda =',         torch.version.cuda)
+    print('cudnn =',        torch.backends.cudnn.version())
+    print('is_available =', torch.cuda.is_available())
 
 
 def basename(fname, split=None):

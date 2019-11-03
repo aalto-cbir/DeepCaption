@@ -12,7 +12,7 @@ from torch.nn.utils.rnn import pack_padded_sequence
 from torchvision import transforms
 
 from utils import prepare_hierarchical_targets, get_model_name, save_model, init_stats, log_model_data, save_stats, \
-    get_teacher_prob, clip_gradients, cyclical_lr, get_model_path, get_ground_truth_captions
+    get_teacher_prob, clip_gradients, cyclical_lr, get_model_path, get_ground_truth_captions, show_versions
 
 # (Needed to handle Vocabulary pickle)
 from vocabulary import get_vocab
@@ -799,6 +799,8 @@ def main(args):
 
 
 if __name__ == '__main__':
+    show_versions()
+    
     args = args.parse_args()
 
     begin = datetime.now()
