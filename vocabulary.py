@@ -327,10 +327,37 @@ def caption_ids_to_words(sampled_ids, vocab, skip_start_token=False,
     for word_id in sampled_ids.cpu().numpy():
         word = vocab.idx2word[word_id]
         sampled_caption.append(word)
-        if word == '<end>':
+        if word == '<end>': # obs! this logic is strange?
             if keep_tokens:
                 sampled_caption.append(word)
             break
+    return fix_caption(' '.join(sampled_caption), skip_start_token=skip_start_token,
+                       keep_tokens=keep_tokens, capitalize=capitalize)
+
+
+def caption_ids_ext_to_words(sampled_ids, vocab, skip_start_token=False,
+                             keep_tokens=False, capitalize=True):
+    """
+    Converts output struct of ids and probs with alternatives to sentences.
+    :param sampled_ids: struct of ids
+    :param vocab: vocabulary object
+    :param keep_tokens: Will keep <start> and <end> if True.
+    :return: Resulting sentence.
+    """
+    sampled_caption = []
+    for word_id in sampled_ids:
+        wl = []
+        for word_id_alt in word_id:
+            word = vocab.idx2word[word_id_alt[0]]
+            if word == '<end>' and not keep_tokens:
+                break
+            if len(word_id_alt)==2:
+                word += '='+str(word_id_alt[1])
+            wl.append(word)
+
+        if len(wl):
+            sampled_caption.append('/'.join(wl))
+
     return fix_caption(' '.join(sampled_caption), skip_start_token=skip_start_token,
                        keep_tokens=keep_tokens, capitalize=capitalize)
 
