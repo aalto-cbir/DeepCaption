@@ -11,8 +11,8 @@ from datetime import datetime
 import torch
 from torchvision import transforms
 
-from vocabulary import paragraph_ids_to_words, caption_ids_to_words, remove_duplicate_sentences, \
-    remove_incomplete_sentences, get_vocab  # (Needed to handle Vocabulary pickle)
+from vocabulary import paragraph_ids_to_words, caption_ids_ext_to_words, \
+    remove_duplicate_sentences, remove_incomplete_sentences, get_vocab
 from dataset import get_loader, DatasetParams
 from model.encoder_decoder import ModelParams, EncoderDecoder
 from utils import basename
@@ -147,9 +147,7 @@ class infer_object:
 
         if 'image_features' not in args:
             args['image_features'] = None
-        if 'no_capitalize' not in args:
-            args['no_capitalize'] = False
-    
+
         # Image preprocessing
         transform = transforms.Compose([
             transforms.Resize((args['resize'], args['resize'])),
@@ -239,21 +237,23 @@ class infer_object:
             sampled_batch = self.model.sample(images, init_features, persist_features,
                                               max_seq_length=args['max_seq_length'],
                                               start_token_id=self.vocab('<start>'),
-                                              end_token_id=self.vocab('<end>'))
+                                              end_token_id=self.vocab('<end>'),
+                                              alternatives=args['alternatives'],
+                                              probabilities=args['probabilities'])
 
             sampled_ids_batch = sampled_batch
 
-            for i in range(sampled_ids_batch.shape[0]):
+            for i in range(len(sampled_ids_batch)):
                 sampled_ids = sampled_ids_batch[i]
 
                 # Convert word_ids to words
                 if self.params.hierarchical_model:
+                    assert False, 'paragraph_ids_to_words() need to be updated'
                     caption = paragraph_ids_to_words(sampled_ids, self.vocab)
                 else:
-                    caption = caption_ids_to_words(sampled_ids, self.vocab,
-                                                   skip_start_token=True,
-                                                   capitalize=not args['no_capitalize'])
-
+                    caption = caption_ids_ext_to_words(sampled_ids, self.vocab,
+                                                       skip_start_token=True,
+                                                       capitalize=not args['no_capitalize'])
                 if args['no_repeat_sentences']:
                     caption = remove_duplicate_sentences(caption)
 
@@ -268,7 +268,7 @@ class infer_object:
                     if args['verbose']:
                         print('#>', caption)
                     
-                output_data.append({'caption': caption, 'image_id': image_ids[i]})
+                output_data.append({'image_id': image_ids[i], 'caption': caption})
                 res[image_ids[i]] = [caption.lower()]
 
         for score_name, scorer in scorers.items():
@@ -360,6 +360,8 @@ def parse_args(ext_args=None):
                         help='resize input image to this size')
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--num_workers', type=int, default=2)
+    parser.add_argument('--alternatives', type=int, default=1)
+    parser.add_argument('--probabilities', action='store_true')
     parser.add_argument('image_files', type=str, nargs='*')
     parser.add_argument('--image_dir', type=str,
                         help='input image dir for generating captions')
