@@ -578,13 +578,15 @@ class DecoderRNN(nn.Module):
 
     def sample(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
-               stochastic_sampling=False, output_logprobs=False, output_hiddens=False, output_outputs=False):
+               stochastic_sampling=False, alternatives=1, probabilities=False,
+               output_logprobs=False, output_hiddens=False, output_outputs=False):
         """Generate captions for given image features using greedy (beam size = 1) search."""
-        sampled_ids = []
+        sampled_ids  = []
         seq_logprobs = []
         outputs_list = []
+        batch_size   = len(images)
 
-        batch_size = len(images)
+        sampled_out  = [[] for i in range(batch_size)]
 
         # Concatenate internal and external features
         persist_features = self._cat_features(images, external_features)
@@ -652,14 +654,29 @@ class DecoderRNN(nn.Module):
                     # i - 1 because we don't want to count i == 0, the initial features
                     logprobs = trigram_penalty(i - 1, batch_size, sampled_ids, logprobs, trigrams, alpha=trigram_penalty_alpha)
 
-                predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
+                # this might still be used if alternatives==1
+                # predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
+                pred_logprobs, pred = torch.sort(logprobs, dim=1, descending=True)
+                predicted_logprobs = pred_logprobs[:,0]
+                predicted          = pred[:,0]
+
             else:
+                assert False, 'stochastic_sampling not implemented'
                 # predicted = logprobs.exp().multinomial(num_samples=1).view(-1)# if logprobs have to be modified before
                 predicted = F.softmax(outputs, 1).multinomial(num_samples=1).view(-1)  # torch.multinomial(logprobs, 1) doesn't work with logits
                 if output_logprobs:
                     predicted_logprobs = logprobs.gather(1, predicted.unsqueeze(1)).view(-1)  # gather the logprobs at sampled positions
 
             if i >= 1:
+                a = pred[:,:alternatives].cpu().numpy()
+                b = pred_logprobs[:,:alternatives].detach().numpy()
+                for j in range(batch_size):
+                    if probabilities:
+                        ab = [ ( a[j][k], np.exp(b[j][k]) ) for k in range(alternatives) ]
+                    else:
+                        ab = [ ( a[j][k],                 ) for k in range(alternatives) ]
+                    sampled_out[j].append(ab)
+
                 sampled_ids.append(predicted)
                 if output_logprobs:
                     seq_logprobs.append(predicted_logprobs)
@@ -669,18 +686,18 @@ class DecoderRNN(nn.Module):
                     outputs_list.append(outputs)
 
         # sampled_ids: (batch_size, max_seq_length)
-        sampled_ids = torch.stack(sampled_ids, dim=1)
+        # sampled_ids = torch.stack(sampled_ids, dim=1)
 
         if output_outputs and output_logprobs:
-            return sampled_ids, torch.stack(seq_logprobs, dim=1), torch.stack(outputs_list, dim=1)
+            return sampled_out, torch.stack(seq_logprobs, dim=1), torch.stack(outputs_list, dim=1)
         elif output_outputs:
-            return sampled_ids, torch.stack(outputs_list, dim=1)
+            return sampled_out, torch.stack(outputs_list, dim=1)
         elif output_hiddens:
-            return sampled_ids, all_hiddens,
+            return sampled_out, all_hiddens
         elif output_logprobs:
-            return sampled_ids, torch.stack(seq_logprobs, dim=1)
+            return sampled_out, torch.stack(seq_logprobs, dim=1)
         else:
-            return sampled_ids
+            return sampled_out
 
     def sample_old(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
@@ -859,7 +876,8 @@ class EncoderDecoder(nn.Module):
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
-               output_decoder_hiddens=False, stochastic_sampling=False, output_logprobs=False, output_outputs=False):
+               stochastic_sampling=False, alternatives=1, probabilities=False,
+               output_decoder_hiddens=False, output_logprobs=False, output_outputs=False):
         feature = self.encoder(image_tensor, init_features)
         sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
                                           max_seq_length=max_seq_length,
@@ -868,6 +886,8 @@ class EncoderDecoder(nn.Module):
                                           trigram_penalty_alpha=trigram_penalty_alpha,
                                           output_hiddens=output_decoder_hiddens,
                                           stochastic_sampling=stochastic_sampling,
+                                          alternatives=alternatives,
+                                          probabilities=probabilities,
                                           output_logprobs=output_logprobs,
                                           output_outputs=output_outputs)
 
