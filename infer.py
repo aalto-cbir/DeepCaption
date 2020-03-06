@@ -248,8 +248,9 @@ class infer_object:
 
                 # Convert word_ids to words
                 if self.params.hierarchical_model:
-                    assert False, 'paragraph_ids_to_words() need to be updated'
-                    caption = paragraph_ids_to_words(sampled_ids, self.vocab)
+                    # assert False, 'paragraph_ids_to_words() need to be updated'
+                    caption = paragraph_ids_to_words(sampled_ids, self.vocab,
+                                                     skip_start_token=True)
                 else:
                     caption = caption_ids_ext_to_words(sampled_ids, self.vocab,
                                                        skip_start_token=True,
