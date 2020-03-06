@@ -790,6 +790,15 @@ class DecoderRNN(nn.Module):
         else:
             return sampled_ids
 
+    def remove_alt_prob(self, s):
+        r = []
+        for a in s:
+            l = []
+            for b in a:
+                l.append(b[0][0])
+            r.append(l)
+        return r
+    
 
 class EncoderDecoder(nn.Module):
     def __init__(self, params, device, vocab_size, state, ef_dims_x=None, lr_dict=None):
@@ -1131,13 +1140,16 @@ class HierarchicalDecoderRNN(nn.Module):
 
     def sample(self, features, images, external_features, states=None,
                max_seq_length=50, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
-               stochastic_sampling=False, output_logprobs=False, output_hiddens=False, output_outputs=False):
+               stochastic_sampling=False, output_logprobs=False, output_hiddens=False,
+               output_outputs=False, alternatives=1, probabilities=False):
         """Generate captions for given image features using greedy search."""
         assert not stochastic_sampling, 'Unimplemented stochastic_sampling'
         assert not output_logprobs, 'Unimplemented output_logprobs'
         assert not output_hiddens, 'Unimplemented output_hiddens'
         assert not output_outputs, 'Unimplemented output_outputs'
         assert trigram_penalty_alpha <= 0, 'Unimplemented trigrams penalty'
+        assert alternatives==1, 'Unimplemented alternatives'
+        assert not probabilities, 'Unimplemented probabilities'
 
         inputs = features.unsqueeze(1)
         batch_size = inputs.size()[0]
@@ -1166,7 +1178,7 @@ class HierarchicalDecoderRNN(nn.Module):
             # If stopping[:, 0] <= stopping[:, 1] => STOP
             if t + 1 < self.max_sentences:
                 masks[:, t + 1] = (
-                    masks[:, t] & (stopping[:, 0] > stopping[:, 1]))
+                    masks[:, t] & (stopping[:, 0] > stopping[:, 1]).to(dtype=torch.uint8))
 
         # Tensor storing sentence topics which are used as input for Word RNN:
         topics = torch.zeros(batch_size,
@@ -1208,12 +1220,14 @@ class HierarchicalDecoderRNN(nn.Module):
                 hiddens_w = torch.stack(
                     [hiddens_w[i, j] for i, j in enumerate(eos_indices)])
             else:
-                sentence = self.word_decoder.sample(topic, images, external_features,
-                                                    max_seq_length=max_seq_length)
+                sentence_ap = self.word_decoder.sample(topic, images, external_features,
+                                                       max_seq_length=max_seq_length,
+                                                       start_token_id=1)
+                sentence = torch.tensor(self.word_decoder.remove_alt_prob(sentence_ap)).to(device=device)
 
             mask = masks[:, t]
-            paragraphs[:, t][mask] = sentence[mask]
-
+            paragraphs[:, t][mask.bool()] = sentence[mask.bool()]
+            
         return paragraphs
 
 
