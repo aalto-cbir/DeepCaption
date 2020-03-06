@@ -295,7 +295,7 @@ def fix_caption(caption, skip_start_token=False, keep_tokens=False, capitalize=T
         else:
             m = re.match(r'(<start> )(.*?)( <end>)', caption)
         if m is None:
-            print('ERROR: unexpected caption format: "{}"'.format(caption))
+            print('ERROR: fix_caption(A) unexpected caption format: "{}"'.format(caption))
             return caption.capitalize() if capitalize else caption
 
         ret = ''.join(m.groups())
@@ -305,7 +305,7 @@ def fix_caption(caption, skip_start_token=False, keep_tokens=False, capitalize=T
         else:
             m = re.match(r'^<start> (.*?)( <end>)?$', caption)
         if m is None:
-            print('ERROR: unexpected caption format: "{}"'.format(caption))
+            print('ERROR: fix_caption(B) unexpected caption format: "{}"'.format(caption))
             return caption.capitalize() if capitalize else caption
 
         ret = m.group(1)
