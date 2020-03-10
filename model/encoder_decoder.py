@@ -699,6 +699,16 @@ class DecoderRNN(nn.Module):
         else:
             return sampled_out
 
+    def remove_alt_prob(self, s):
+        r = []
+        for a in s:
+            l = []
+            for b in a:
+                l.append(b[0][0])
+            r.append(l)
+        return r
+        
+
     def sample_old(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
                stochastic_sampling=False, output_logprobs=False, output_hiddens=False, output_outputs=False):
@@ -790,15 +800,6 @@ class DecoderRNN(nn.Module):
         else:
             return sampled_ids
 
-    def remove_alt_prob(self, s):
-        r = []
-        for a in s:
-            l = []
-            for b in a:
-                l.append(b[0][0])
-            r.append(l)
-        return r
-    
 
 class EncoderDecoder(nn.Module):
     def __init__(self, params, device, vocab_size, state, ef_dims_x=None, lr_dict=None):
@@ -1222,11 +1223,11 @@ class HierarchicalDecoderRNN(nn.Module):
             else:
                 sentence_ap = self.word_decoder.sample(topic, images, external_features,
                                                        max_seq_length=max_seq_length,
-                                                       start_token_id=1)
+                                                       start_token_id=start_token_id)
                 sentence = torch.tensor(self.word_decoder.remove_alt_prob(sentence_ap)).to(device=device)
 
             mask = masks[:, t]
-            paragraphs[:, t][mask.bool()] = sentence[mask.bool()]
+            paragraphs[:, t][mask.to(torch.bool)] = sentence[mask.to(torch.bool)]
             
         return paragraphs
 
