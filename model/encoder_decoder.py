@@ -577,7 +577,8 @@ class DecoderRNN(nn.Module):
             return outputs
 
     def sample(self, features, images, external_features, states=None,
-               max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
+               max_seq_length=20, start_token_id=None, end_token_id=None,
+               trigram_penalty_alpha=-1,
                stochastic_sampling=False, alternatives=1, probabilities=False,
                output_logprobs=False, output_hiddens=False, output_outputs=False):
         """Generate captions for given image features using greedy (beam size = 1) search."""
@@ -628,7 +629,8 @@ class DecoderRNN(nn.Module):
                 embeddings = features
             elif i == 1:
                 # Start generating the sentence by first feeding in the start token:
-                embeddings = self.embed(torch.ones(batch_size).long().to(device) * start_token_id)
+                embeddings = self.embed(torch.ones(batch_size).long().
+                                        to(device) * start_token_id)
 
             elif i > 1:
                 embeddings = self.embed(predicted)
@@ -656,32 +658,41 @@ class DecoderRNN(nn.Module):
 
                 # this might still be used if alternatives==1
                 # predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
-                pred_logprobs, pred = torch.sort(logprobs, dim=1, descending=True)
+                pred_logprobs, pred = torch.sort(logprobs, dim=1,
+                                                 descending=True)
                 predicted_logprobs = pred_logprobs[:,0]
                 predicted          = pred[:,0]
 
             else:
                 assert False, 'stochastic_sampling not implemented'
-                # predicted = logprobs.exp().multinomial(num_samples=1).view(-1)# if logprobs have to be modified before
-                predicted = F.softmax(outputs, 1).multinomial(num_samples=1).view(-1)  # torch.multinomial(logprobs, 1) doesn't work with logits
+                # predicted = logprobs.exp().multinomial(num_samples=1).view(-1)
+                # if logprobs have to be modified before
+                predicted = F.softmax(outputs, 1).multinomial(num_samples=1).\
+                            view(-1)  # torch.multinomial(logprobs, 1) doesn't
+                                      # work with logits
                 if output_logprobs:
-                    predicted_logprobs = logprobs.gather(1, predicted.unsqueeze(1)).view(-1)  # gather the logprobs at sampled positions
+                    # gather the logprobs at sampled positions
+                    predicted_logprobs = logprobs.gather(1, predicted.\
+                                                         unsqueeze(1)).view(-1)
 
             if i >= 1:
                 a = pred[:,:alternatives].cpu().numpy()
                 b = pred_logprobs[:,:alternatives].detach().numpy()
                 for j in range(batch_size):
                     if probabilities:
-                        ab = [ ( a[j][k], np.exp(b[j][k]) ) for k in range(alternatives) ]
+                        ab = [ ( a[j][k], np.exp(b[j][k]) )
+                               for k in range(alternatives) ]
                     else:
-                        ab = [ ( a[j][k],                 ) for k in range(alternatives) ]
+                        ab = [ ( a[j][k],                 )
+                               for k in range(alternatives) ]
                     sampled_out[j].append(ab)
 
                 sampled_ids.append(predicted)
                 if output_logprobs:
                     seq_logprobs.append(predicted_logprobs)
                 if output_hiddens:
-                    all_hiddens[:, i] = hiddens.squeeze(1)
+                    # jorma changed i to i-1 below 20200310
+                    all_hiddens[:, i-1] = hiddens.squeeze(1)
                 if output_outputs:
                     outputs_list.append(outputs)
 
@@ -875,31 +886,36 @@ class EncoderDecoder(nn.Module):
                 writer_data=None, output_decoder_hiddens=False):
         features = self.encoder(images, init_features)
         if self.model_type == 'hierarchical_model':
-            # TODO: Make the hierarchical and regular decoder take the same arguments
-            # if possible:
-            outputs = self.decoder(features, captions, lengths, images, sorting_order,
-                                   external_features=persist_features, writer_data=writer_data)
+            # TODO: Make the hierarchical and regular decoder take
+            # the same arguments if possible:
+            outputs = self.decoder(features, captions, lengths, images,
+                                   sorting_order,
+                                   external_features=persist_features,
+                                   writer_data=writer_data)
         else:
-            outputs = self.decoder(features, captions, lengths, images, persist_features,
-                                   teacher_p, teacher_forcing, output_hiddens=output_decoder_hiddens)
+            outputs = self.decoder(features, captions, lengths, images,
+                                   persist_features, teacher_p, teacher_forcing,
+                                   output_hiddens=output_decoder_hiddens)
         return outputs
 
     def sample(self, image_tensor, init_features, persist_features, states=None,
-               max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
-               stochastic_sampling=False, alternatives=1, probabilities=False,
-               output_decoder_hiddens=False, output_logprobs=False, output_outputs=False):
+               max_seq_length=20, start_token_id=None, end_token_id=None,
+               trigram_penalty_alpha=-1, stochastic_sampling=False,
+               alternatives=1, probabilities=False, output_decoder_hiddens=False,
+               output_logprobs=False, output_outputs=False):
         feature = self.encoder(image_tensor, init_features)
-        sampled_ids = self.decoder.sample(feature, image_tensor, persist_features, states,
-                                          max_seq_length=max_seq_length,
-                                          start_token_id=start_token_id,
-                                          end_token_id=end_token_id,
-                                          trigram_penalty_alpha=trigram_penalty_alpha,
-                                          output_hiddens=output_decoder_hiddens,
-                                          stochastic_sampling=stochastic_sampling,
-                                          alternatives=alternatives,
-                                          probabilities=probabilities,
-                                          output_logprobs=output_logprobs,
-                                          output_outputs=output_outputs)
+        sampled_ids = self.decoder.\
+                      sample(feature, image_tensor, persist_features, states,
+                             max_seq_length=max_seq_length,
+                             start_token_id=start_token_id,
+                             end_token_id=end_token_id,
+                             trigram_penalty_alpha=trigram_penalty_alpha,
+                             output_hiddens=output_decoder_hiddens,
+                             stochastic_sampling=stochastic_sampling,
+                             alternatives=alternatives,
+                             probabilities=probabilities,
+                             output_logprobs=output_logprobs,
+                             output_outputs=output_outputs)
 
         return sampled_ids
 
@@ -1140,8 +1156,9 @@ class HierarchicalDecoderRNN(nn.Module):
         return sentence_stopping, word_rnn_out
 
     def sample(self, features, images, external_features, states=None,
-               max_seq_length=50, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
-               stochastic_sampling=False, output_logprobs=False, output_hiddens=False,
+               max_seq_length=50, start_token_id=None, end_token_id=None,
+               trigram_penalty_alpha=-1, stochastic_sampling=False,
+               output_logprobs=False, output_hiddens=False,
                output_outputs=False, alternatives=1, probabilities=False):
         """Generate captions for given image features using greedy search."""
         assert not stochastic_sampling, 'Unimplemented stochastic_sampling'
@@ -1204,13 +1221,19 @@ class HierarchicalDecoderRNN(nn.Module):
             topic = topics[:, t]
             if self.coherent_sentences:
                 topic = self.coupling_unit(hiddens_w, G, topic)
-                sentence, hiddens_w = self.word_decoder.sample(topic, images,
-                                                               external_features,
-                                                               max_seq_length=max_seq_length,
-                                                               output_hiddens=True)
-
+                sentence_ap, hiddens_w = self.word_decoder.\
+                                         sample(topic, images,
+                                                external_features,
+                                                max_seq_length=max_seq_length,
+                                                start_token_id=start_token_id,
+                                                output_hiddens=True)
+                sentence = torch.tensor(self.word_decoder.
+                                        remove_alt_prob(sentence_ap)).\
+                                        to(device=device)
+                
                 # TODO: Get the right hiddens_w from the previous crop of outputs
-                # For each sentence, get the index of the token corresponding to end_token_idx
+                # For each sentence, get the index of the token corresponding
+                # to end_token_idx
                 assert end_token_id is not None
 
                 # Index the end of sentence token for each sentence.
@@ -1221,10 +1244,13 @@ class HierarchicalDecoderRNN(nn.Module):
                 hiddens_w = torch.stack(
                     [hiddens_w[i, j] for i, j in enumerate(eos_indices)])
             else:
-                sentence_ap = self.word_decoder.sample(topic, images, external_features,
-                                                       max_seq_length=max_seq_length,
-                                                       start_token_id=start_token_id)
-                sentence = torch.tensor(self.word_decoder.remove_alt_prob(sentence_ap)).to(device=device)
+                sentence_ap = self.word_decoder.\
+                              sample(topic, images, external_features,
+                                     max_seq_length=max_seq_length,
+                                     start_token_id=start_token_id)
+                sentence = torch.tensor(self.word_decoder.
+                                        remove_alt_prob(sentence_ap)).\
+                                        to(device=device)
 
             mask = masks[:, t]
             paragraphs[:, t][mask.to(torch.bool)] = sentence[mask.to(torch.bool)]
