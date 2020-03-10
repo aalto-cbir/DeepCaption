@@ -52,6 +52,10 @@ class infer_object:
         device = torch.device('cuda' if torch.cuda.is_available() and
                               not args['cpu'] else 'cpu')
 
+        vi = sys.version_info
+        print('Python version {}.{}.{}, torch version {}'.format(vi[0], vi[1], vi[2],
+                                                                 torch.__version__))
+        
         # Build models
         print('Bulding model for device {}'.format(device.type))
 
@@ -211,7 +215,9 @@ class infer_object:
 
         print('Starting inference, max sentence length: {} num_workers: {}'.\
               format(args['max_seq_length'], args['num_workers']))
-        show_progress = sys.stderr.isatty() and not args['verbose']
+        show_progress = sys.stderr.isatty() and not args['verbose'] \
+                        and ext_feature_sets is not None
+
         for i, (images, ref_captions, lengths, image_ids,
                 features) in enumerate(tqdm(self.data_loader, disable=not show_progress)):
 
