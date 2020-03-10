@@ -289,6 +289,10 @@ def build_vocab(vocab_output_path, dataset_params, ext_args):
 # sentence functions now
 
 def fix_caption(caption, skip_start_token=False, keep_tokens=False, capitalize=True):
+    if False:
+        print('fix_caption() skip_start_token={} keep_tokens={} capitalize={}'.
+              format(skip_start_token, keep_tokens, capitalize))
+        print('fix_caption() input   [{}]'.format(caption))
     if keep_tokens:
         if skip_start_token:
             m = re.match(r'(.*?)( <end>)', caption)
@@ -311,7 +315,11 @@ def fix_caption(caption, skip_start_token=False, keep_tokens=False, capitalize=T
         ret = m.group(1)
 
     ret = re.sub(r'\s([.,])(\s|$)', r'\1\2', ret)
-    return ret.capitalize() if capitalize else ret
+    if capitalize:
+        ret = ret.capitalize()
+    if False:
+        print('fix_caption() returns [{}]'.format(ret))
+    return ret
 
 
 def caption_ids_to_words(sampled_ids, vocab, skip_start_token=False,
@@ -326,12 +334,14 @@ def caption_ids_to_words(sampled_ids, vocab, skip_start_token=False,
     sampled_caption = []
     for word_id in sampled_ids.cpu().numpy():
         word = vocab.idx2word[word_id]
-        sampled_caption.append(word)
-        if word == '<end>': # obs! this logic is strange?
+        if word == '<end>':
             if keep_tokens:
                 sampled_caption.append(word)
             break
-    return fix_caption(' '.join(sampled_caption), skip_start_token=skip_start_token,
+        sampled_caption.append(word)
+        
+    return fix_caption(' '.join(sampled_caption),
+                       skip_start_token=skip_start_token,
                        keep_tokens=keep_tokens, capitalize=capitalize)
 
 
@@ -344,20 +354,27 @@ def caption_ids_ext_to_words(sampled_ids, vocab, skip_start_token=False,
     :param keep_tokens: Will keep <start> and <end> if True.
     :return: Resulting sentence.
     """
+    if False:
+        print(('caption_ids_ext_to_words() skip_start_token={} keep_tokens={}'
+               ' capitalize={}').format(skip_start_token, keep_tokens,
+                                        capitalize))
     sampled_caption = []
+    end_found = False
     for word_id in sampled_ids:
         wl = []
         for word_id_alt in word_id:
             word = vocab.idx2word[word_id_alt[0]]
-            if word == '<end>' and not keep_tokens:
+            if word=='<end>' and len(wl)==0 and not keep_tokens:
+                end_found = True
                 break
             if len(word_id_alt)==2:
                 word += '='+str(word_id_alt[1])
             wl.append(word)
-
         if len(wl):
             sampled_caption.append('/'.join(wl))
-
+        if (end_found):
+            break
+            
     return fix_caption(' '.join(sampled_caption), skip_start_token=skip_start_token,
                        keep_tokens=keep_tokens, capitalize=capitalize)
 
@@ -367,7 +384,9 @@ def paragraph_ids_to_words(sampled_ids, vocab, skip_start_token=False, keep_toke
     for sentence in sampled_ids:
         if sentence[0] == vocab("<pad>"):
             break
-        paragraph += caption_ids_to_words(sentence, vocab, skip_start_token=skip_start_token, keep_tokens=keep_tokens) + '. '
+        paragraph += caption_ids_to_words(sentence, vocab,
+                                          skip_start_token=skip_start_token,
+                                          keep_tokens=keep_tokens) + '. '
 
     paragraph = paragraph.replace(" .", ".")
 
