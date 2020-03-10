@@ -203,7 +203,9 @@ class ExternalFeature:
             full_path = os.path.expanduser(os.path.join(base_path, fnmean))
 
         if not os.path.exists(full_path):
-            raise FileNotFoundError('ERROR: external feature file not found: ' + full_path_o)
+            raise FileNotFoundError('ERROR: external feature file not found: '
+                                    +full_path_o+' searched as '+full_path
+                                    +' with base_path='+base_path)
 
         if self.is_mean:
             print('Using mean features from '+full_path);
@@ -292,18 +294,23 @@ class ExternalFeature:
     def get_feature(self, idx):
         if self.lmdb is not None:
             if self.disable_cache:
-                with self.lmdb.open(self.lmdb_path, max_readers=1, readonly=True, lock=False,
+                with self.lmdb.open(self.lmdb_path, max_readers=1,
+                                    readonly=True, lock=False,
                                     readahead=False, meminit=False) as env:
                     with env.begin(write=False) as txn:
-                        x = self._lmdb_to_numpy(txn.get(str(idx).encode('ascii')))
+                        x = self._lmdb_to_numpy(txn.get(str(idx).
+                                                        encode('ascii')))
                         x.reshape(self._vdim)
             else:
                 try:
-                    x = self._lmdb_to_numpy(self.lmdb.get(str(idx).encode('ascii')))
+                    x = self._lmdb_to_numpy(self.lmdb.get(str(idx).
+                                                          encode('ascii')))
                 except:
-                    print('No feature data was found with key <{}>'.format(str(idx)))
+                    print('No feature data was found with key <{}>'.
+                          format(str(idx)))
                     exit(1)
                 x.reshape(self._vdim)
+
         elif self.bin is not None:
             from picsom.bin_data import picsom_bin_data
             pid = os.getpid();
@@ -323,12 +330,13 @@ class ExternalFeature:
                         x += v
                         break
                 if not found:
-                    print('ERROR 1', idx)
-                    exit(1)
+                    raise IndexError('ERROR', i.path(), idx)
+
             #if np.isnan(x).any():
             #    print('ERROR 2', idx, ':', x)
             #print('QQQ', self.bin.path(), idx, x[0:5])
             #assert not np.isnan(x).any(), self.bin.path()+' '+str(idx)
+
         else:
             x = self.data[idx]
 
@@ -911,8 +919,9 @@ class TRECVID2018Dataset(data.Dataset):
 
 
 class PicSOMDataset(data.Dataset):
-    def __init__(self, root, json_file, vocab, subset=None, transform=None, skip_images=False,
-                 iter_over_images=False, feature_loaders=None, config_dict=None, unique_ids=False):
+    def __init__(self, root, json_file, vocab, subset=None, transform=None,
+                 skip_images=False, iter_over_images=False, feature_loaders=None,
+                 config_dict=None, unique_ids=False):
         from picsom.label_index import picsom_label_index
         from picsom.class_file  import picsom_class
         from picsom.bin_data    import picsom_bin_data
@@ -931,7 +940,8 @@ class PicSOMDataset(data.Dataset):
         self.show_tokens      = config_dict.get('show_tokens', False)
 
         if vocab is not None:
-            self.hierarchical_model = config_dict.get('hierarchical_model', False)
+            self.hierarchical_model = config_dict.get('hierarchical_model',
+                                                      False)
             self.max_sentences = config_dict.get('max_sentences')
         else:
             self.hierarchical_model = False
@@ -943,21 +953,23 @@ class PicSOMDataset(data.Dataset):
               format(self.picsom_root, self.picsom_database, self.db_root))
         
         self.labels = picsom_label_index(self.db_root+'/labels.txt')
-        print('PicSOM database {:s} contains {:d} objects'.format(self.picsom_database, 
-                                                                  self.labels.nobjects()))
+        print('PicSOM database {:s} contains {:d} objects'.
+              format(self.picsom_database, self.labels.nobjects()))
 
         self.use_lmdb = self.feature_loaders is not None and \
                         len(self.feature_loaders[0]) and \
                         self.feature_loaders[0][0].lmdb is not None
-        print('PicSOM using {} features'.format('LMDB' if self.use_lmdb else 'BIN'))
+        print('PicSOM using {} features'.format('LMDB' if self.use_lmdb
+                                                else 'BIN'))
 
         subset = self.db_root+'/classes/'+self.subset
         # print(subset)
-        assert os.path.isfile(subset), 'subset class file <'+subset+'> inexistent'
+        assert os.path.isfile(subset), 'subset class file <'+subset+\
+            '> inexistent'
         self.restr = picsom_class(subset)
         restr_size = len(self.restr.objects())
-        print('PicSOM class file {:s} contains {:d} objects'.format(self.restr.path(),
-                                                                    restr_size))
+        print('PicSOM class file {:s} contains {:d} objects'.
+              format(self.restr.path(), restr_size))
 
         restr_set = self.restr.objects()
         
@@ -982,29 +994,30 @@ class PicSOMDataset(data.Dataset):
         tt = json_file
         ll = {}
         # print(tt)
-        with open(tt) as fp:
-            for l in fp:
-                l = l.rstrip()
-                #print('<{}>'.format(l))
-                a = re.match('([^ ]+)( (.*))?', l)
-                assert a, 'reading <'+tt+'> failed'
-                label = a.group(1)
-                if label in restr_set:
-                    ll[label] = 1
-                    idxs = []
-                    if not self.use_lmdb:
-                        idxs.append(self.labels.index_by_label(label))
-                        laa = label_map.get(label, '').split()
-                        for la in laa:
-                            idxs.append(self.labels.index_by_label(la))
-                            
-                    texts = a.group(3).split(' # ')
-                    #if len(texts)!=1:
-                    #    print(label, len(texts))
-                    label = label if not self.unique_ids \
-                        else self.picsom_database + ':' + self.subset + ':' + label
-                    for text in texts:
-                        self.data.append((label, text, idxs))
+        if tt is not None:
+            with open(tt) as fp:
+                for l in fp:
+                    l = l.rstrip()
+                    #print('<{}>'.format(l))
+                    a = re.match('([^ ]+)( (.*))?', l)
+                    assert a, 'reading <'+tt+'> failed'
+                    label = a.group(1)
+                    if label in restr_set:
+                        ll[label] = 1
+                        idxs = []
+                        if not self.use_lmdb:
+                            idxs.append(self.labels.index_by_label(label))
+                            laa = label_map.get(label, '').split()
+                            for la in laa:
+                                idxs.append(self.labels.index_by_label(la))
+
+                        texts = a.group(3).split(' # ')
+                        #if len(texts)!=1:
+                        #    print(label, len(texts))
+                        label = label if not self.unique_ids \
+                            else self.picsom_database+':'+self.subset+':'+label
+                        for text in texts:
+                            self.data.append((label, text, idxs))
         
         print('PicSOM {} texts loaded for {} images from {}'.
               format(len(self.data), len(ll), tt))
