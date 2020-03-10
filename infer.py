@@ -275,7 +275,8 @@ class infer_object:
                     if args['verbose']:
                         print('#>', caption)
                     
-                output_data.append({'image_id': image_ids[i], 'caption': caption})
+                output_data.append({'image_id': image_ids[i],
+                                    'caption': caption})
                 res[image_ids[i]] = [caption.lower()]
 
         for score_name, scorer in scorers.items():
@@ -298,7 +299,8 @@ class infer_object:
             if not is_in_same_folder:
                 model_name = args['model'].split(os.sep)[-2]
                 model_epoch = basename(args['model'])
-                output_file = '{}-{}.{}'.format(model_name, model_epoch, output_format)
+                output_file = '{}-{}.{}'.format(model_name, model_epoch,
+                                                output_format)
             else:
                 output_file = model_name_path.stem + '.' + output_format
         else:
@@ -313,7 +315,8 @@ class infer_object:
                     for data in output_data:
                         print(data['image_id'], data['caption'], file=fp)
 
-            print('Wrote generated captions to {} as {}'.format(output_path, args['output_format']))
+            print('Wrote generated captions to {} as {}'.
+                  format(output_path, args['output_format']))
 
         if args['print_results']:
             for d in output_data:
