@@ -142,7 +142,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
         num_batches += 1
 
         if len(scorers) > 0:
-            for j in range(sampled_ids_batch.shape[0]):
+            for j in range(len(sampled_ids_batch)):
                 jid = image_ids[j]
                 if params.hierarchical_model:
                     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
