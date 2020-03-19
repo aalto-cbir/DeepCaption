@@ -19,7 +19,7 @@ from vocabulary import get_vocab
 from dataset import get_loader, DatasetParams
 from model.encoder_decoder import ModelParams, EncoderDecoder
 from model.loss import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
-from vocabulary import caption_ids_to_words, paragraph_ids_to_words
+from vocabulary import caption_ids_to_words, caption_ids_ext_to_words, paragraph_ids_to_words
 
 try:
     from tensorboardX import SummaryWriter
@@ -67,6 +67,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 if params.hierarchical_model:
                     gts[jid].append(paragraph_ids_to_words(captions[j, :], vocab).lower())
                 else:
+                    # obs! this should be caption_ids_ext_to_words()
                     gts[jid].append(caption_ids_to_words(captions[j, :], vocab, skip_start_token=True).lower())
 
         # Set mini-batch dataset
@@ -147,7 +148,7 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                 if params.hierarchical_model:
                     res[jid] = [paragraph_ids_to_words(sampled_ids_batch[j], vocab).lower()]
                 else:
-                    res[jid] = [caption_ids_to_words(sampled_ids_batch[j], vocab, skip_start_token=True).lower()]
+                    res[jid] = [caption_ids_ext_to_words(sampled_ids_batch[j], vocab, skip_start_token=True).lower()]
 
         # Used for testing:
         if i + 1 == args.num_batches:
