@@ -31,6 +31,7 @@ def plot_stats(label, stats, color, ax1, ax2, args):
     epochs = sorted([int(x) for x in stats.keys()])
 
     measures = list(stats[str(epochs[0])].keys())
+    print(measures)
 
     for measure in measures:
         vals = [stats[str(e)][measure] for e in epochs]
@@ -139,7 +140,7 @@ def main(args):
 
 
 if __name__ == '__main__':
-    # print('matplotlib.__version__ =',matplotlib.__version__)
+    print('matplotlib.__version__ =',matplotlib.__version__)
     import argparse
 
     parser = argparse.ArgumentParser()
