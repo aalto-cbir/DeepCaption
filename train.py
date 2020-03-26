@@ -17,7 +17,7 @@ from utils import prepare_hierarchical_targets, get_model_name, save_model, init
 # (Needed to handle Vocabulary pickle)
 from vocabulary import get_vocab
 from dataset import get_loader, DatasetParams
-from model.encoder_decoder import ModelParams, EncoderDecoder
+from model.encoder_decoder import ModelParams, EncoderDecoder, DecoderRNN
 from model.loss import HierarchicalXEntropyLoss, SharedEmbeddingXentropyLoss
 from vocabulary import caption_ids_to_words, caption_ids_ext_to_words, paragraph_ids_to_words
 
@@ -113,10 +113,13 @@ def do_validate(model, valid_loader, criterion, scorers, vocab, teacher_p, args,
                                                                        trigram_penalty_alpha=args.trigram_penalty_alpha,
                                                                        stochastic_sampling=True, output_logprobs=True,
                                                                        output_outputs=True)
+                sampled_seq = model.decoder.alt_prob_to_tensor(sampled_seq, device=device)
+
                 greedy_sampled_seq = model.sample(images, init_features, persist_features,
                                                   trigram_penalty_alpha=args.trigram_penalty_alpha,
                                                   max_seq_length=sample_len, start_token_id=vocab('<start>'),
                                                   stochastic_sampling=False)
+                greedy_sampled_seq = model.decoder.alt_prob_to_tensor(greedy_sampled_seq, device=device)
 
             if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_relative_diversity', 'sc_with_bleu_diversity', 'sc_with_repetition']:
                 loss = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
@@ -542,12 +545,13 @@ def main(args):
     else:
         all_stats = {}
 
-    if not args.validate_only:
-        total_step = len(data_loader)
-        print('Start training with num_epochs={:d} num_batches={:d} ...'.format(args.num_epochs, args.num_batches))
-
     if args.force_epoch:
         start_epoch = args.force_epoch - 1
+
+    if not args.validate_only:
+        total_step = len(data_loader)
+        print('Start training with start_epoch={:d} num_epochs={:d} num_batches={:d} ...'.
+              format(start_epoch, args.num_epochs, args.num_batches))
 
     if args.teacher_forcing != 'always':
         print('\t k: {}'.format(args.teacher_forcing_k))
@@ -666,6 +670,7 @@ def main(args):
                                                                            trigram_penalty_alpha=args.trigram_penalty_alpha,
                                                                            stochastic_sampling=True,
                                                                            output_logprobs=True, output_outputs=True)
+                    sampled_seq = model.decoder.alt_prob_to_tensor(sampled_seq, device=device)
                 else:
                     outputs = model(images, init_features, captions, lengths, persist_features, teacher_p,
                                     args.teacher_forcing, sorting_order, writer_data=writer_data)
@@ -683,9 +688,11 @@ def main(args):
                                                           max_seq_length=sample_len, start_token_id=vocab('<start>'),
                                                           trigram_penalty_alpha=args.trigram_penalty_alpha,
                                                           stochastic_sampling=False)
+                        greedy_sampled_seq = model.decoder.alt_prob_to_tensor(greedy_sampled_seq, device=device)
                     model.train()
 
-                    if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_relative_diversity', 'sc_with_bleu_diversity', 'sc_with_repetition']:
+                    if args.self_critical_loss in ['sc', 'sc_with_diversity', 'sc_with_relative_diversity',
+                                                   'sc_with_bleu_diversity', 'sc_with_repetition']:
                         loss, advantage = criterion(sampled_seq, sampled_log_probs, greedy_sampled_seq,
                                                     [gts_sc[i] for i in image_ids], scorers, vocab, return_advantage=True)
                     elif args.self_critical_loss in ['mixed']:
