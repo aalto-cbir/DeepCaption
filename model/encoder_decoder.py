@@ -653,23 +653,30 @@ class DecoderRNN(nn.Module):
             if not stochastic_sampling:
                 # greedy (beam search size = 1)
                 if block_trigrams:
+                    assert False, 'block_trigrams not implemented'
                     # i - 1 because we don't want to count i == 0, the initial features
-                    logprobs = trigram_penalty(i - 1, batch_size, sampled_ids, logprobs, trigrams, alpha=trigram_penalty_alpha)
+                    logprobs = trigram_penalty(i - 1, batch_size, sampled_ids, 
+                                               logprobs, trigrams,
+                                               alpha=trigram_penalty_alpha)
 
                 # this might still be used if alternatives==1
-                # predicted_logprobs, predicted = torch.max(logprobs, dim=1)  # max(outputs) == max(logprobs(outputs))
+                # predicted_logprobs, predicted = torch.max(logprobs, dim=1)
+                # max(outputs) == max(logprobs(outputs))
                 pred_logprobs, pred = torch.sort(logprobs, dim=1,
                                                  descending=True)
                 predicted_logprobs = pred_logprobs[:,0]
                 predicted          = pred[:,0]
 
             else:
-                assert False, 'stochastic_sampling not implemented'
+                assert alternatives==1, 'stochastic_sampling alternatives!=1 not implemented'
+                assert not probabilities, 'stochastic_sampling probabilities not implemented'
                 # predicted = logprobs.exp().multinomial(num_samples=1).view(-1)
                 # if logprobs have to be modified before
                 predicted = F.softmax(outputs, 1).multinomial(num_samples=1).\
                             view(-1)  # torch.multinomial(logprobs, 1) doesn't
                                       # work with logits
+                pred = predicted.view(-1, 1)
+                pred_logprobs = torch.zeros_like(pred)
                 if output_logprobs:
                     # gather the logprobs at sampled positions
                     predicted_logprobs = logprobs.gather(1, predicted.\
@@ -719,6 +726,8 @@ class DecoderRNN(nn.Module):
             r.append(l)
         return r
         
+    def alt_prob_to_tensor(self, s, device):
+        return torch.tensor(self.remove_alt_prob(s)).to(device=device)
 
     def sample_old(self, features, images, external_features, states=None,
                max_seq_length=20, start_token_id=None, end_token_id=None, trigram_penalty_alpha=-1,
