@@ -14,13 +14,13 @@ import torchvision
 import nltk
 
 def show_versions():
-    print('python =',       sys.version)
-    print('nltk =',         nltk.__version__)
-    print('torch =',        torch.__version__)
-    print('torchvision =',  torchvision.__version__)
-    print('cuda =',         torch.version.cuda)
-    print('cudnn =',        torch.backends.cudnn.version())
-    print('is_available =', torch.cuda.is_available())
+    print('python =',            sys.version)
+    print('nltk =',              nltk.__version__)
+    print('torch =',             torch.__version__)
+    print('torchvision =',       torchvision.__version__)
+    print('cuda =',              torch.version.cuda)
+    print('cudnn =',             torch.backends.cudnn.version())
+    print('cuda.is_available =', torch.cuda.is_available())
 
 
 def basename(fname, split=None):
