@@ -25,17 +25,21 @@ class picsom_label_index:
             try:
                 with open(path) as f:
                     #print("opened")
+                    lno = 0
                     for l in f:
+                        lno += 1
                         #print(l)
                         a = l.split()
                         #print(a)
                         if a[0][0]!='#':
-                            print('Expected # in "{}"'.format(a[0]))
+                            print('Expected # in "{}" of line {} in {}'.\
+                                  format(a[0], lno, path))
                             ok = False
                             break
                         idx = int(a[0][1:])
                         if a[1][0]!='<' or a[1][-1]!='>':
-                            print('Expected <...> in "{}"'.format(a[1]))
+                            print('Expected <...> in "{}" of line {} in {}'.\
+                                  format(a[1], lno, path))
                             ok = False
                             break
                         lab = a[1][1:-1]
