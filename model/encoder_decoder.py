@@ -684,7 +684,7 @@ class DecoderRNN(nn.Module):
 
             if i >= 1:
                 a = pred[:,:alternatives].cpu().numpy()
-                b = pred_logprobs[:,:alternatives].cpu().numpy()
+                b = pred_logprobs[:,:alternatives].detach().numpy()
                 for j in range(batch_size):
                     if probabilities:
                         ab = [ ( a[j][k], np.exp(b[j][k]) )
